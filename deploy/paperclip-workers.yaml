@@ -1,0 +1,8 @@
+- name: Configure native Paperclip host worker environments and agents
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - paperclip_workers

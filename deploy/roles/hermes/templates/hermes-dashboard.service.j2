@@ -1,0 +1,27 @@
+[Unit]
+Description=Native Hermes dashboard
+After=network-online.target nftables.service
+Wants=network-online.target
+Requires=nftables.service
+
+[Service]
+User=zelab-hermes
+Group=zelab-hermes
+WorkingDirectory=/var/lib/zelab/hermes/scratch
+Environment=HERMES_HOME=/var/lib/zelab/hermes/home
+Environment=TMPDIR=/var/lib/zelab/hermes/tmp
+EnvironmentFile=/etc/hermes-dashboard.env
+ExecStart={{ hermes_install_dir }}/.hermes/bin/hermes dashboard --host 0.0.0.0 --port 8640 --no-open --skip-build
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=control-group
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/zelab/hermes /home/zelab-hermes {{ hermes_install_dir }}
+PrivateTmp=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

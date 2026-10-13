@@ -1,0 +1,55 @@
+# Read-only: also used by preflight before any installation work.
+- name: Inspect authenticated tailnet identity
+  ansible.builtin.command:
+    argv: [rtk, proxy, tailscale, status, --json]
+  register: ui_tail_status
+  changed_when: false
+  no_log: true
+
+- name: Require the configured native tailnet hostname
+  ansible.builtin.assert:
+    that:
+      - (ui_tail_status.stdout | from_json).BackendState == 'Running'
+      - (ui_tail_status.stdout | from_json).Self.DNSName.rstrip('.') == ui_tailscale_hostname
+    fail_msg: >-
+      Tailscale must be running on this host as {{ ui_tailscale_hostname }}. Start or enroll it, or set
+      ui_tailscale_hostname to its MagicDNS name (or ui_tailscale_enabled false) in config/site.yaml.
+
+- name: Inspect existing native Serve configuration without resetting it
+  ansible.builtin.command:
+    argv: [rtk, proxy, tailscale, serve, status, --json]
+  register: ui_tail_serve
+  changed_when: false
+  no_log: true
+
+- name: Declare the owned private UI routes
+  ansible.builtin.set_fact:
+    ui_tail_routes:
+      - port: "{{ ui_tail_hermes_port }}"
+        field: ui_tail_hermes_port
+        backend: "http://127.0.0.1:{{ guest_dashboard_port }}"
+      - port: "{{ ui_tail_paperclip_port }}"
+        field: ui_tail_paperclip_port
+        backend: "http://127.0.0.1:{{ paperclip_port }}"
+    ui_tail_config: "{{ ui_tail_serve.stdout | from_json }}"
+
+- name: Add the explicit native Obsidian route
+  ansible.builtin.set_fact:
+    ui_tail_routes: "{{ ui_tail_routes + [{'port': ui_tail_obsidian_port | default(9443), 'field': 'ui_tail_obsidian_port', 'backend': 'http://127.0.0.1:' + (obsidian_backend_port | default(18645) | string)}] }}"
+  when: obsidian_enabled | default(false) | bool
+
+- name: Preserve existing routes and reject public Funnel on owned endpoints
+  ansible.builtin.assert:
+    that:
+      - "existing_handler in [{}, {'Proxy': item.backend}]"
+      - "existing_listener in [{}, {'HTTPS': true}]"
+      - not ui_tail_config.get('AllowFunnel', {}).get(endpoint, false)
+    fail_msg: >-
+      Tailnet HTTPS port {{ item.port }} already serves another route or public Funnel. Existing routes are never
+      replaced: choose a free port for {{ item.field }} in config/site.yaml (the installer lists conflicts).
+  vars:
+    endpoint: "{{ ui_tailscale_hostname }}:{{ item.port }}"
+    existing_handler: "{{ ui_tail_config.get('Web', {}).get(endpoint, {}).get('Handlers', {}).get('/', {}) }}"
+    existing_listener: "{{ ui_tail_config.get('TCP', {}).get(item.port | string, {}) }}"
+  loop: "{{ ui_tail_routes }}"
+

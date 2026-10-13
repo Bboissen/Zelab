@@ -1,0 +1,47 @@
+- name: Create the pinned Debian guest under native supervision
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - vm
+
+- name: Verify guest administrator reachability
+  hosts: guest
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Wait for native SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+    - name: Check real administrator identity
+      ansible.builtin.command: id -u
+      register: administrator
+      changed_when: false
+    - name: Require actual guest root
+      ansible.builtin.assert:
+        that: administrator.stdout == '0'
+    - name: Wait for the fresh guest's native cloud-init completion
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+    - name: Verify locked guest accounts and effective SSH password denial
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import subprocess, sys
+            for user in (sys.argv[1], 'root'):
+                result = subprocess.run(['passwd', '-S', user], check=True, capture_output=True, text=True)
+                if result.stdout.split()[1] not in ('L', 'LK'):
+                    raise SystemExit('Guest deployment and root accounts must have locked passwords.')
+            result = subprocess.run(['/usr/sbin/sshd', '-T', '-C',
+                                     'user=' + sys.argv[1] + ',addr=10.0.2.2,host=10.0.2.2'],
+                                    check=True, capture_output=True, text=True)
+            settings = dict(line.split(' ', 1) for line in result.stdout.splitlines())
+            if settings.get('passwordauthentication') != 'no' or settings.get('kbdinteractiveauthentication') != 'no':
+                raise SystemExit('Guest SSH password and keyboard-interactive authentication must be disabled.')
+            print('Guest deployment/root passwords locked; SSH password login disabled.')
+          - "{{ guest_user }}"
+      changed_when: false

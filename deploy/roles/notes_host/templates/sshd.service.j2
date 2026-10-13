@@ -1,0 +1,17 @@
+[Unit]
+Description=Zelab notes-only SFTP exports
+After=network.target
+RequiresMountsFor={{ notes_sftp_root }}/{{ notes_owner_user }}/vault {{ notes_sftp_root }}/{{ notes_shared_user }}/vault
+
+[Service]
+ExecStartPre=/usr/sbin/sshd -t -f {{ notes_config_dir }}/sshd.conf
+ExecStart=/usr/sbin/sshd -D -e -f {{ notes_config_dir }}/sshd.conf
+Restart=on-failure
+RestartSec=5
+UMask=0077
+PrivateTmp=yes
+MemoryMax=128M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

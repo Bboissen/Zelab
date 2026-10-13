@@ -1,0 +1,85 @@
+- name: Check initial owner bootstrap record
+  ansible.builtin.stat:
+    path: "{{ paperclip_home }}/owner-bootstrap-complete"
+  register: paperclip_owner
+
+- name: Bootstrap the configured local owner through native authentication
+  when: not paperclip_owner.stat.exists
+  no_log: true
+  block:
+    - name: Use the terminal-supplied initial owner password
+      ansible.builtin.set_fact:
+        paperclip_owner_password: "{{ lookup('ansible.builtin.file', (zelab_password_dir | default(private_dir)) + '/paperclip-owner.password') }}"
+
+    - name: Check for a previously registered owner after interrupted bootstrap
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/auth/sign-in/email"
+        method: POST
+        body_format: json
+        body:
+          email: "{{ paperclip_owner_email }}"
+          password: "{{ paperclip_owner_password }}"
+        headers:
+          Origin: "http://127.0.0.1:{{ paperclip_port }}"
+        status_code: [200, 401]
+      register: owner_login
+
+    - name: Register the configured local administrator login
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/auth/sign-up/email"
+        method: POST
+        body_format: json
+        body:
+          name: "{{ operator_user }}"
+          email: "{{ paperclip_owner_email }}"
+          password: "{{ paperclip_owner_password }}"
+        headers:
+          Origin: "http://127.0.0.1:{{ paperclip_port }}"
+        status_code: [200, 201]
+      when: owner_login.status != 200
+      register: owner_signup
+
+    - name: Generate the native one-time administrator claim
+      ansible.builtin.command:
+        argv:
+          - rtk
+          - proxy
+          - "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/node"
+          - "{{ paperclip_runtime_dir }}/node_modules/paperclipai/dist/index.js"
+          - auth
+          - bootstrap-ceo
+          - --config
+          - "{{ paperclip_home }}/instances/default/config.json"
+      become_user: "{{ paperclip_user }}"
+      environment:
+        HOME: "{{ paperclip_home }}"
+        PAPERCLIP_HOME: "{{ paperclip_home }}"
+        PATH: "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin:/usr/local/bin:/usr/bin:/bin"
+      register: owner_claim
+
+    - name: Claim administrator rights through the native invite API
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/invites/{{ owner_claim.stdout | regex_search('pcp_bootstrap_[a-f0-9]+') }}/accept"
+        method: POST
+        body_format: json
+        body: {requestType: human}
+        headers:
+          Origin: "http://127.0.0.1:{{ paperclip_port }}"
+          Cookie: "{{ owner_login.cookies_string if owner_login.status == 200 else owner_signup.cookies_string }}"
+        status_code: 202
+      when: owner_claim.stdout is search('pcp_bootstrap_[a-f0-9]+')
+
+    - name: Verify authenticated administrator company access
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies"
+        headers:
+          Cookie: "{{ owner_login.cookies_string if owner_login.status == 200 else owner_signup.cookies_string }}"
+        status_code: 200
+
+    - name: Record successful initial local administrator bootstrap
+      ansible.builtin.copy:
+        dest: "{{ paperclip_home }}/owner-bootstrap-complete"
+        content: "{{ paperclip_owner_email }}\n"
+        owner: "{{ paperclip_user }}"
+        group: "{{ paperclip_user }}"
+        mode: '0600'

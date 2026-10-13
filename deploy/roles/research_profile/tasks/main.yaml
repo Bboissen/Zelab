@@ -1,0 +1,303 @@
+- name: Check whether initial profile configuration has been seeded
+  ansible.builtin.stat:
+    path: /var/lib/zelab/hermes/{{ hermes_profile_name }}-config-seeded
+  register: research_seed
+
+- name: Inspect the stable native profile destination before provisioning
+  ansible.builtin.stat:
+    path: "{{ research_profile_dir }}"
+  register: research_existing
+
+- name: Require an intact deployed slot or an unused destination
+  ansible.builtin.assert:
+    that:
+      - research_seed.stat.exists == research_existing.stat.exists
+      - not research_existing.stat.exists or research_existing.stat.isdir
+    fail_msg: "Profile {{ hermes_profile_name }} was independently created, renamed or removed. Reconcile its saved state before provisioning; stable slot identities are not recreated automatically."
+
+- name: Prepare explicitly selected shared-notes membership
+  ansible.builtin.group:
+    name: zelab-notes-shared
+    gid: 61109
+  when: "'zelab-notes-shared' in research_tool_groups"
+
+- name: Inspect the declared restricted tool identity before changing it
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ research_tool_user }}"
+    fail_key: false
+
+- name: Reject an unrelated account occupying a restricted tool identity
+  ansible.builtin.assert:
+    that:
+      - existing_tool_identity == none or existing_tool_identity[1] | int == research_tool_uid | int
+      - existing_tool_identity == none or existing_tool_identity[4] == research_tool_home
+      - research_tool_uid | int >= 61110 and research_tool_uid | int <= 61199
+    fail_msg: A restricted tool account must retain its declared UID and home; reconcile an identity collision before provisioning.
+  vars:
+    existing_tool_identity: "{{ ansible_facts.getent_passwd[research_tool_user] }}"
+
+- name: Create the independent unprivileged Research tool identity
+  ansible.builtin.user:
+    name: "{{ research_tool_user }}"
+    uid: "{{ research_tool_uid }}"
+    home: "{{ research_tool_home }}"
+    shell: /bin/bash
+    create_home: true
+    groups: "{{ research_tool_groups }}"
+    append: false
+
+- name: Keep Research tool state private
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ research_tool_user }}"
+    group: "{{ research_tool_user }}"
+    mode: '0700'
+  loop:
+    - "{{ research_tool_home }}"
+    - "{{ research_tool_home }}/workspace"
+    - "{{ research_tool_home }}/.ssh"
+
+- name: Use group-readable native file writes in private tool homes and shared notes
+  ansible.builtin.blockinfile:
+    path: "{{ research_tool_home }}/.bashrc"
+    create: true
+    insertbefore: BOF
+    marker: '# {mark} Zelab native tool umask'
+    block: umask 0007
+    owner: "{{ research_tool_user }}"
+    group: "{{ research_tool_user }}"
+    mode: '0600'
+
+- name: Install the upstream locked DuckDuckGo optional dependency
+  ansible.builtin.command:
+    argv: ["{{ hermes_install_dir }}/.hermes/bin/hermes", pm, install, --extra, ddgs]
+    creates: "{{ hermes_install_dir }}/.hermes/zelab-ddgs-ready-{{ hermes_dependency_revision }}"
+  become_user: zelab-hermes
+  environment:
+    HOME: /home/zelab-hermes
+    HERMES_HOME: /var/lib/zelab/hermes/home
+  register: research_search_dependency
+
+- name: Record native locked search dependency preparation
+  ansible.builtin.copy:
+    dest: "{{ hermes_install_dir }}/.hermes/zelab-ddgs-ready-{{ hermes_dependency_revision }}"
+    content: "{{ hermes_commit }} {{ hermes_dependency_revision }} ddgs optional dependency\n"
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0600'
+
+- name: Create a blank native profile without cloning Operations state or channels
+  ansible.builtin.command:
+    argv:
+      - "{{ hermes_install_dir }}/.hermes/bin/hermes"
+      - profile
+      - create
+      - "{{ hermes_profile_name }}"
+      - --no-alias
+      - --no-skills
+      - --description
+      - "{{ research_profile_description }}"
+    creates: "{{ research_profile_dir }}"
+  become_user: zelab-hermes
+  environment:
+    HOME: /home/zelab-hermes
+    HERMES_HOME: /var/lib/zelab/hermes/home
+  register: research_created
+
+- name: Park a new restricted profile without overriding later lifecycle choices
+  ansible.builtin.copy:
+    dest: "{{ research_profile_dir }}/gateway.parked"
+    content: ""
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0600'
+    force: false
+  when: research_profile_parked and not research_seed.stat.exists
+
+- name: Keep native profile files private
+  ansible.builtin.file:
+    path: "{{ research_profile_dir }}"
+    state: directory
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0700'
+
+- name: Prepare native Research tool authentication
+  ansible.builtin.command:
+    argv: [ssh-keygen, -q, -t, ed25519, -N, '', -C, '{{ research_tool_user }}', -f, '{{ research_profile_dir }}/terminal.key']
+    creates: "{{ research_profile_dir }}/terminal.key"
+  become_user: zelab-hermes
+
+- name: Read the public Research tool key
+  ansible.builtin.slurp:
+    src: "{{ research_profile_dir }}/terminal.key.pub"
+  register: research_public_key
+
+- name: Authorize only guest-local native tool SSH
+  ansible.builtin.copy:
+    dest: "{{ research_tool_home }}/.ssh/authorized_keys"
+    content: |
+      from="127.0.0.1",restrict {{ research_public_key.content | b64decode | trim }}
+    owner: "{{ research_tool_user }}"
+    group: "{{ research_tool_user }}"
+    mode: '0600'
+
+- name: Prepare the native SSH client host-key store
+  ansible.builtin.file:
+    path: /home/zelab-hermes/.ssh
+    state: directory
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0700'
+
+- name: Read the trusted guest SSH host public key locally
+  ansible.builtin.slurp:
+    src: /etc/ssh/ssh_host_ed25519_key.pub
+  register: research_host_key
+
+- name: Pin the guest-local native SSH tool server key
+  ansible.builtin.lineinfile:
+    path: /home/zelab-hermes/.ssh/known_hosts
+    line: "127.0.0.1 {{ (research_host_key.content | b64decode).split()[:2] | join(' ') }}"
+    create: true
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0600'
+
+- name: Seed only the new profile's native configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ research_profile_dir }}/config.yaml"
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0600'
+  when: not research_seed.stat.exists
+
+- name: Read the retained restricted tool configuration
+  ansible.builtin.slurp:
+    src: "{{ research_profile_dir }}/config.yaml"
+  register: research_live_config
+  no_log: true
+
+- name: Require the restricted backend and toolsets after native UI edits
+  ansible.builtin.assert:
+    that:
+      - current.terminal.backend == 'ssh'
+      - current.terminal.ssh_host == '127.0.0.1'
+      - current.terminal.ssh_port | int == 22
+      - current.terminal.ssh_user == research_tool_user
+      - current.terminal.ssh_key == research_profile_dir + '/terminal.key'
+      - current.terminal.credential_files | default([]) == []
+      - current.terminal.env_passthrough | default([]) == []
+      - current.mcp_servers | default({}) == {}
+      - current.plugins.enabled | default([]) == []
+      - current.platform_toolsets is mapping
+      - current.platform_toolsets.keys() | difference(['cli', 'discord', 'api_server', 'webhook']) | length == 0
+      - current.platform_toolsets[item] is sequence and current.platform_toolsets[item] is not string
+      - current.platform_toolsets[item] | difference(['search', 'terminal', 'file', 'memory']) | length == 0
+      # Native source-specific toolsets can replace platform_toolsets. Hermes
+      # applies this global suppression list after those overrides are resolved.
+      - current.agent.disabled_toolsets is sequence and current.agent.disabled_toolsets is not string
+      - research_disabled_toolsets | difference(current.agent.disabled_toolsets) | length == 0
+      - current.gateway.profile_routes | default([]) == []
+    fail_msg: Restricted profile security settings drifted; reconcile in Hermes before activation. Model and personality choices are retained.
+  vars:
+    current: "{{ research_live_config.content | b64decode | from_yaml }}"
+  loop: [cli, discord, api_server, webhook]
+  no_log: true
+
+- name: Record completed initial Research configuration
+  ansible.builtin.copy:
+    dest: /var/lib/zelab/hermes/{{ hermes_profile_name }}-config-seeded
+    content: "Native Research settings seeded once; subsequent UI edits retained.\n"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Seed owner-only Discord audience without copying a bot token
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        from pathlib import Path
+        import os, sys
+        user, channel, profile_dir = sys.argv[1:]
+        if (user and not user.isdecimal()) or (channel and not channel.isdecimal()):
+            raise SystemExit('Initial owner Discord IDs must be decimal IDs.')
+        path = Path(profile_dir) / '.env'
+        text = path.read_text()
+        keys = {line.partition('=')[0].strip() for line in text.splitlines()
+                if '=' in line and not line.lstrip().startswith('#')}
+        # Unknown IDs stay absent: an empty allowlist admits nobody.
+        initial = {'DISCORD_ALLOWED_USERS': user, 'DISCORD_ALLOWED_CHANNELS': channel,
+                   'DISCORD_ALLOW_ALL_USERS': 'false', 'GATEWAY_ALLOW_ALL_USERS': 'false',
+                   'DISCORD_ALLOW_BOTS': 'false'}
+        additions = [key + '=' + value for key, value in initial.items() if value and key not in keys]
+        if additions:
+            path.write_text(text.rstrip() + '\n' + '\n'.join(additions) + '\n')
+        path.chmod(0o600)
+        os.chown(path, 61102, 61102)
+      - "{{ research_initial_allowed_user }}"
+      - "{{ research_initial_allowed_channel }}"
+      - "{{ research_profile_dir }}"
+    creates: /var/lib/zelab/hermes/{{ hermes_profile_name }}-audience-seeded
+  no_log: true
+
+- name: Check retained owner admission and native SSH environment
+  ansible.builtin.include_role:
+    name: hermes_config_check
+  vars:
+    checked_profile_home: "{{ research_profile_dir }}"
+    checked_tool_user: "{{ research_tool_user }}"
+
+- name: Record the one-time audience seed
+  ansible.builtin.copy:
+    dest: /var/lib/zelab/hermes/{{ hermes_profile_name }}-audience-seeded
+    content: "Initial owner-only audience seeded; later native UI edits retained.\n"
+    owner: root
+    group: root
+    mode: '0600'
+  when: research_initial_allowed_user | length > 0 and research_initial_allowed_channel | length > 0
+
+- name: Verify the real native SSH tool identity
+  ansible.builtin.command:
+    argv:
+      - ssh
+      - -i
+      - "{{ research_profile_dir }}/terminal.key"
+      - -o
+      - BatchMode=yes
+      - -o
+      - StrictHostKeyChecking=yes
+      - "{{ research_tool_user }}@127.0.0.1"
+      - id -u
+  become_user: zelab-hermes
+  register: research_tool_identity
+  changed_when: false
+
+- name: Require the unprivileged tool account
+  ansible.builtin.assert:
+    that: research_tool_identity.stdout | trim == research_tool_uid | string
+
+- name: Inspect whether the restricted tool account can elevate unattended
+  ansible.builtin.command:
+    argv: [sudo, -n, -l]
+  become_user: "{{ research_tool_user }}"
+  register: research_tool_sudo
+  changed_when: false
+  failed_when: research_tool_sudo.rc not in [0, 1]
+  no_log: true
+
+- name: Require no unattended sudo access for restricted tools
+  ansible.builtin.assert:
+    that: research_tool_sudo.rc != 0
+    fail_msg: The restricted tool account has sudo access; remove that grant before activating its profile.
+
+- name: Load the native dependency generation in the dashboard
+  ansible.builtin.systemd_service:
+    name: hermes-dashboard.service
+    state: restarted
+  when: research_search_dependency.changed

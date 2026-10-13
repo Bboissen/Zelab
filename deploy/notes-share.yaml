@@ -1,0 +1,16 @@
+- name: Prepare the host vault and notes-only native SFTP exports
+  hosts: host
+  gather_facts: false
+  become: true
+  roles:
+    - role: notes_host
+      when: notes_enabled | default(false) | bool
+
+- name: Mount explicitly shared notes in the Hermes guest
+  hosts: guest
+  gather_facts: false
+  become: true
+  roles:
+    - guest_network
+    - role: notes_guest
+      when: notes_enabled | default(false) | bool

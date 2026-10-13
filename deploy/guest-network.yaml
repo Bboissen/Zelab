@@ -1,0 +1,6 @@
+- name: Replace retired guest egress dependencies with native nftables
+  hosts: guest
+  gather_facts: false
+  become: true
+  roles:
+    - guest_network

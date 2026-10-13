@@ -1,0 +1,8 @@
+- name: Provision native host worker identities and SSH access
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - host_workers

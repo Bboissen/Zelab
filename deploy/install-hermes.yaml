@@ -1,0 +1,8 @@
+- name: Install pinned unmodified Hermes in the adopted guest
+  hosts: guest
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - hermes

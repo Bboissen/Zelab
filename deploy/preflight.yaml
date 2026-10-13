@@ -1,0 +1,93 @@
+# Fail before changing the host only for problems that would break this install.
+# Logins, Discord IDs and tokens are pending connection steps, not gates.
+- name: Check host prerequisites before changing the site
+  hosts: host
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Report the recommended OS baseline and require the pinned architecture
+      ansible.builtin.command:
+        argv: [rtk, proxy, python3, "{{ playbook_dir }}/doctor.py", --platform-only]
+      changed_when: false
+
+    - name: Require administrator access, KVM, Docker and the host SSH server
+      ansible.builtin.command:
+        argv:
+          - rtk
+          - proxy
+          - python3
+          - -c
+          - |
+            import os, pathlib, pwd, shutil, subprocess, sys
+            problems = []
+            if os.geteuid() != 0:
+                problems.append('unattended sudo (run make in your own terminal)')
+            if not pathlib.Path('/dev/kvm').is_char_device():
+                problems.append('KVM (/dev/kvm): enable virtualization and load the kvm module')
+            if pwd.getpwnam(sys.argv[1]).pw_uid == 0:
+                problems.append('a non-root operator_user')
+            for command, label in [('docker', 'Docker Engine'), ('sshd', 'openssh-server'), ('rtk', 'RTK')]:
+                if not shutil.which(command, path=os.environ.get('PATH', '') + ':/usr/sbin'):
+                    problems.append(label)
+            for argv, label in [(['docker', 'info'], 'a running Docker daemon'),
+                                (['docker', 'compose', 'version'], 'the Docker Compose v2 plugin')]:
+                if 'Docker Engine' not in problems and subprocess.run(['rtk', 'proxy', *argv], stdout=subprocess.DEVNULL,
+                                                                      stderr=subprocess.DEVNULL).returncode:
+                    problems.append(label)
+            if problems:
+                raise SystemExit('Missing: ' + '; '.join(problems) + '. See docs/SETUP.md.')
+          - "{{ operator_user }}"
+      changed_when: false
+
+    - name: Require free component ports unless this site's own service holds them
+      ansible.builtin.command:
+        argv:
+          - rtk
+          - proxy
+          - python3
+          - -c
+          - |
+            import json, socket, subprocess, sys
+            busy = []
+            for name, port, owner in json.loads(sys.argv[1]):
+                with socket.socket() as probe:
+                    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    try:
+                        probe.bind(('127.0.0.1', int(port)))
+                        continue
+                    except OSError:
+                        pass
+                if owner.startswith('docker:'):
+                    found = subprocess.run(['rtk', 'proxy', 'docker', 'container', 'inspect', owner[7:]],
+                                           capture_output=True, text=True)
+                    ours = found.returncode == 0 and json.loads(found.stdout)[0]['State']['Running']
+                else:
+                    ours = subprocess.run(['rtk', 'proxy', 'systemctl', 'is-active', '--quiet', owner]).returncode == 0
+                if not ours:
+                    busy.append(f'{name} {port}')
+            if busy:
+                raise SystemExit('Ports used by another program: ' + ', '.join(busy) + '. Choose free ports in config/site.yaml.')
+          - "{{ ports | to_json }}"
+      vars:
+        ports:
+          - [guest_ssh_port, "{{ guest_ssh_port | int }}", "{{ vm_service }}.service"]
+          - [guest_dashboard_port, "{{ guest_dashboard_port | int }}", "{{ vm_service }}.service"]
+          - [guest_api_port, "{{ guest_api_port | int }}", "{{ vm_service }}.service"]
+          - [paperclip_port, "{{ paperclip_port | int }}", zelab-paperclip.service]
+          - [paperclip_db_port, "{{ paperclip_db_port | int }}", zelab-paperclip.service]
+          - [notes_sftp_port, "{{ notes_sftp_port | int }}", zelab-notes-sshd.service]
+          - [obsidian_backend_port, "{{ obsidian_backend_port | int }}", "docker:zelab-obsidian"]
+      changed_when: false
+
+    - name: Check the tailnet name and Serve ports before installation
+      ansible.builtin.include_role:
+        name: private_ui
+        tasks_from: check.yaml
+      when: ui_tailscale_enabled | bool
+
+    - name: Install declared host provisioning prerequisites
+      ansible.builtin.apt:
+        name: [acl, ca-certificates, curl, git, tar, xz-utils, build-essential, python3-dev, nftables, libatomic1, openssh-client]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600

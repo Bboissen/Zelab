@@ -1,0 +1,24 @@
+{
+  "$meta": {"version": 1, "updatedAt": "2026-10-09", "source": "configure"},
+  "database": {
+    "mode": "embedded-postgres",
+    "embeddedPostgresDataDir": {{ (paperclip_home + '/instances/default/db') | to_json }},
+    "embeddedPostgresPort": {{ paperclip_db_port }},
+    "backup": {"enabled": true, "intervalMinutes": 60, "retentionDays": 90, "dir": {{ (paperclip_home + '/instances/default/data/backups') | to_json }}}
+  },
+  "logging": {"mode": "file", "logDir": {{ (paperclip_home + '/instances/default/logs') | to_json }}},
+  "server": {
+    "deploymentMode": "authenticated",
+    "exposure": "private",
+    "bind": "loopback",
+    "host": "127.0.0.1",
+    "port": {{ paperclip_port }},
+    "allowedHostnames": {{ paperclip_allowed_hosts | to_json }},
+    "serveUi": true
+  },
+  "auth": {"baseUrlMode": "auto", "disableSignUp": false},
+  "storage": {"provider": "local_disk", "localDisk": {"baseDir": {{ (paperclip_home + '/instances/default/data/storage') | to_json }}}},
+  "secrets": {"provider": "local_encrypted", "localEncrypted": {"keyFilePath": {{ (paperclip_home + '/instances/default/secrets/master.key') | to_json }}}},
+  "telemetry": {"enabled": false},
+  "updates": {"checkEnabled": false}
+}

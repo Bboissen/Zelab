@@ -1,0 +1,15 @@
+# Fresh or adopted site. Legacy removal remains an explicit migration phase.
+- import_playbook: preflight.yaml
+- import_playbook: bootstrap.yaml
+- import_playbook: guest-network.yaml
+- import_playbook: build-hermes.yaml
+- import_playbook: install-hermes.yaml
+- import_playbook: install-paperclip.yaml
+- import_playbook: host-workers.yaml
+- import_playbook: research-profile.yaml
+- import_playbook: bot-pool.yaml
+- import_playbook: paperclip-workers.yaml
+- import_playbook: hermes-bridge.yaml
+- import_playbook: hermes-gateway.yaml
+- import_playbook: hermes-api.yaml
+- import_playbook: obsidian.yaml

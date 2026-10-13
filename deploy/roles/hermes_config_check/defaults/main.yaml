@@ -1,0 +1,3 @@
+checked_profile_home: /var/lib/zelab/hermes/home
+checked_tool_user: ''
+checked_skip_parked: false

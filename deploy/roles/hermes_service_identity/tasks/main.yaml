@@ -1,0 +1,20 @@
+- name: Resolve the gateway unit through the installed native runtime
+  ansible.builtin.script:
+    cmd: "service_name.py {{ hermes_install_dir | quote }}"
+    executable: /usr/bin/python3
+  become_user: zelab-hermes
+  environment:
+    HOME: /home/zelab-hermes
+    HERMES_HOME: /var/lib/zelab/hermes/home
+    TMPDIR: /var/lib/zelab/hermes/tmp
+  register: native_gateway_identity
+  changed_when: false
+
+- name: Require an unambiguous native unit identity
+  ansible.builtin.assert:
+    that: native_gateway_identity.stdout | trim is match('^hermes-gateway(?:-[a-z0-9_-]+)?\.service$')
+    fail_msg: The native runtime did not provide a supported gateway unit identity.
+
+- name: Use the native unit identity for supervision
+  ansible.builtin.set_fact:
+    hermes_gateway_unit: "{{ native_gateway_identity.stdout | trim }}"

@@ -1,0 +1,28 @@
+- name: Prepare parked native bot reserves with independent restricted tools
+  hosts: guest
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - guest_network
+  tasks:
+    - name: Validate the declared initial pool size
+      ansible.builtin.assert:
+        that:
+          - hermes_reserve_count | default(5) | int >= 0
+          - hermes_reserve_count | default(5) | int <= 10
+
+    - name: Prepare each blank native reserve without cloning owner state
+      ansible.builtin.include_role:
+        name: research_profile
+      vars:
+        hermes_profile_name: "reserve-{{ '%02d' | format(reserve_index) }}"
+        research_tool_user: "zelab-reserve-{{ '%02d' | format(reserve_index) }}"
+        research_tool_uid: "{{ 61110 + reserve_index }}"
+        research_tool_home: "/var/lib/zelab-reserve-{{ '%02d' | format(reserve_index) }}"
+        research_profile_description: Unallocated bot identity; remains parked until deliberately assigned
+        research_profile_parked: true
+      loop: "{{ range(1, (hermes_reserve_count | default(5) | int) + 1) | list }}"
+      loop_control:
+        loop_var: reserve_index

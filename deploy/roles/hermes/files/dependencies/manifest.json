@@ -1,0 +1,20 @@
+{
+  "upstream_commit": "3637c512fc3211bdccb61b7140d09ac1018508ba",
+  "selection": [
+    "all",
+    "ddgs"
+  ],
+  "platform": "linux-x86_64",
+  "python": "3.14",
+  "files": {
+    "pyproject.toml": {
+      "upstream_sha256": "cadde2f6a92574d292103f43abf66408b1d841cd9ea332ca7f3e3dfc5dcc87fd",
+      "sha256": "1e13597a488f266d2e6f944d4b5957a0ab5c88c61518bedf71cc436d666fb610"
+    },
+    "uv.lock": {
+      "upstream_sha256": "2bc4db483e9cba927cd7147f9ccbb09635f85bb3f1f36d6e9d51d06b65d1c67e",
+      "sha256": "75041c849e067230c5b895904dabb626109bfdd2867655e1a3f467142e7fd71c"
+    }
+  },
+  "inventory_sha256": "1b8e6ee5251dcf717eaf123d3c6569b1aa28665175039632a049f6909188165c"
+}

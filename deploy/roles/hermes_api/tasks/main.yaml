@@ -1,0 +1,103 @@
+- name: Preserve the retained native API credential
+  ansible.builtin.include_role:
+    name: retained_secrets
+  vars:
+    retained_secrets:
+      - {installed: /var/lib/zelab/hermes/api-config-seeded, source: "{{ private_dir }}/hermes-api.key"}
+
+- name: Prepare native API configuration privately
+  no_log: true
+  block:
+    - name: Generate a retained strong API credential once
+      ansible.builtin.command:
+        argv:
+          - rtk
+          - proxy
+          - python3
+          - -c
+          - |
+            from pathlib import Path
+            import os, secrets, sys
+            path = Path(sys.argv[1])
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as out:
+                out.write(secrets.token_urlsafe(48) + '\n')
+          - "{{ private_dir }}/hermes-api.key"
+        creates: "{{ private_dir }}/hermes-api.key"
+      delegate_to: zelab_host
+
+    - name: Retain private operator access to the generated credential
+      ansible.builtin.file:
+        path: "{{ private_dir }}/hermes-api.key"
+        owner: "{{ operator_user }}"
+        mode: '0600'
+      delegate_to: zelab_host
+
+    - name: Inspect the one-time native API seed marker
+      ansible.builtin.stat:
+        path: /var/lib/zelab/hermes/api-config-seeded
+      register: hermes_api_seed
+
+    - name: Inspect existing native configuration before initial API seed
+      ansible.builtin.slurp:
+        src: /var/lib/zelab/hermes/home/.env
+      when: not hermes_api_seed.stat.exists
+      register: hermes_api_previous
+
+    - name: Require explicit adoption of independently configured API fields
+      ansible.builtin.assert:
+        that: (hermes_api_previous.content | b64decode | regex_findall('(?m)^API_SERVER_(KEY|HOST|PORT)=')) | length == 0
+        fail_msg: Native API configuration already exists; adopt it explicitly without rotating credentials.
+      when: not hermes_api_seed.stat.exists
+
+    - name: Seed the authenticated native API once
+      ansible.builtin.lineinfile:
+        path: /var/lib/zelab/hermes/home/.env
+        regexp: "^{{ item.name }}="
+        line: "{{ item.name }}={{ item.value }}"
+        owner: zelab-hermes
+        group: zelab-hermes
+        mode: '0600'
+      loop:
+        - {name: API_SERVER_KEY, value: "{{ lookup('ansible.builtin.file', private_dir + '/hermes-api.key') }}"}
+        - {name: API_SERVER_HOST, value: '0.0.0.0'}
+        - {name: API_SERVER_PORT, value: '8642'}
+      when: not hermes_api_seed.stat.exists
+
+- name: Record the native API configuration seed
+  ansible.builtin.copy:
+    dest: /var/lib/zelab/hermes/api-config-seeded
+    content: "Native API initialized once; later UI edits retained.\n"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Set native approval behavior for authorized owner Operations once
+  ansible.builtin.command:
+    argv: ["{{ hermes_install_dir }}/.hermes/bin/hermes", config, set, approvals.mode, 'off']
+    creates: /var/lib/zelab/hermes/operations-approvals-seeded
+  become_user: zelab-hermes
+  environment:
+    HOME: /home/zelab-hermes
+    HERMES_HOME: /var/lib/zelab/hermes/home
+    TMPDIR: /var/lib/zelab/hermes/tmp
+
+- name: Retain subsequent owner approval preferences
+  ansible.builtin.copy:
+    dest: /var/lib/zelab/hermes/operations-approvals-seeded
+    content: "Owner Operations native approvals initialized once; named profiles are independent.\n"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Load the initial API configuration in the native gateway
+  ansible.builtin.systemd_service:
+    scope: user
+    name: "{{ hermes_gateway_unit }}"
+    state: restarted
+  become_user: zelab-hermes
+  environment:
+    HOME: /home/zelab-hermes
+    XDG_RUNTIME_DIR: /run/user/61102
+    DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/61102/bus
+  when: not hermes_api_seed.stat.exists

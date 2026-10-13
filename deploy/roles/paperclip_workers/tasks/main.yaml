@@ -1,0 +1,73 @@
+- name: Seed native company and workers without exposing credentials
+  no_log: true
+  block:
+    - name: Authenticate as the configured local owner
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/auth/sign-in/email"
+        method: POST
+        body_format: json
+        body:
+          email: "{{ paperclip_owner_email }}"
+          password: "{{ lookup('ansible.builtin.file', (zelab_password_dir | default(private_dir)) + '/paperclip-owner.password') }}"
+        headers:
+          Origin: "http://127.0.0.1:{{ paperclip_port }}"
+      register: worker_owner
+
+    - name: Reuse an existing native company
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies"
+        headers: {Cookie: "{{ worker_owner.cookies_string }}"}
+      register: worker_companies
+
+    - name: Reject ambiguous company names
+      ansible.builtin.assert:
+        that: worker_companies.json | selectattr('name', 'equalto', paperclip_company_name) | list | length <= 1
+
+    - name: Create the declared native company once
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies"
+        method: POST
+        body_format: json
+        body: {name: "{{ paperclip_company_name }}", description: Private server Operations and coding}
+        headers: {Cookie: "{{ worker_owner.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+        status_code: 201
+      when: worker_companies.json | selectattr('name', 'equalto', paperclip_company_name) | list | length == 0
+      register: worker_company_created
+      changed_when: true
+
+    - name: Resolve native company identity
+      ansible.builtin.set_fact:
+        worker_company: "{{ worker_company_created.json if worker_company_created is not skipped else (worker_companies.json | selectattr('name', 'equalto', paperclip_company_name) | first) }}"
+
+    - name: Set initial native owner provisioning policy
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ worker_company.id }}"
+        method: PATCH
+        body_format: json
+        body: {requireBoardApprovalForNewAgents: false}
+        headers: {Cookie: "{{ worker_owner.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+      when: worker_company_created is not skipped
+      changed_when: true
+
+    - name: Seed two native worker definitions without rewriting later UI edits
+      ansible.builtin.include_tasks: worker.yaml
+      loop:
+        - role: ops
+          name: Operations
+          agent_role: devops
+          user: "{{ worker_ops_user }}"
+          home: "{{ worker_ops_home }}"
+        - role: code
+          name: Coding
+          agent_role: engineer
+          user: "{{ worker_code_user }}"
+          home: "{{ worker_code_home }}"
+      loop_control:
+        loop_var: worker
+
+    - name: Save native resource IDs privately for operational checks
+      ansible.builtin.copy:
+        dest: "{{ private_dir }}/paperclip-worker-ids.json"
+        content: "{{ {'company_id': worker_company.id, 'workers': worker_ids} | to_nice_json }}\n"
+        owner: "{{ operator_user }}"
+        mode: '0600'

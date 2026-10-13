@@ -1,0 +1,62 @@
+- name: Prepare the public native CLI download cache
+  ansible.builtin.file:
+    path: /var/cache/zelab
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Download checksum-verified upstream native Claude Code
+  ansible.builtin.get_url:
+    url: "{{ claude_binary_url }}"
+    dest: "/var/cache/zelab/claude-{{ claude_version }}"
+    checksum: "sha256:{{ claude_binary_sha256 }}"
+    owner: root
+    group: root
+    mode: '0755'
+  register: download
+  until: download is succeeded
+  retries: 5
+  delay: 30
+
+- name: Create independent native CLI location
+  ansible.builtin.file:
+    path: "/opt/zelab-tools/claude-{{ claude_version }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the unmodified pinned Claude Code binary
+  ansible.builtin.copy:
+    src: "/var/cache/zelab/claude-{{ claude_version }}"
+    dest: "/opt/zelab-tools/claude-{{ claude_version }}/claude"
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Inspect the optional worker command before publishing it
+  ansible.builtin.stat:
+    path: /usr/local/bin/zelab-claude
+    follow: false
+  register: claude_command
+
+- name: Preserve an independently managed worker command
+  ansible.builtin.assert:
+    that: not claude_command.stat.exists or (claude_command.stat.islnk and claude_command.stat.lnk_source.startswith('/opt/zelab-tools/claude-'))
+
+- name: Publish the explicitly selected worker command
+  ansible.builtin.file:
+    src: "/opt/zelab-tools/claude-{{ claude_version }}/claude"
+    dest: /usr/local/bin/zelab-claude
+    state: link
+    owner: root
+    group: root
+
+- name: Verify actual native CLI version
+  ansible.builtin.command:
+    argv: [rtk, proxy, /usr/local/bin/zelab-claude, --version]
+  register: claude_installed
+  changed_when: false
+  failed_when: claude_version not in claude_installed.stdout

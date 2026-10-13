@@ -1,0 +1,276 @@
+- name: Inspect the explicitly selected fresh disk
+  ansible.builtin.stat:
+    path: "{{ vm_disk }}"
+  register: fresh_disk
+
+- name: Inspect the fresh creation receipt
+  ansible.builtin.stat:
+    path: "{{ vm_bootstrap_dir }}/created"
+  register: fresh_receipt
+
+- name: Inspect an unfinished creation from an interrupted run
+  ansible.builtin.stat:
+    path: "{{ vm_bootstrap_dir }}/creating"
+  register: fresh_intent
+
+- name: Inspect the selected native service before any host mutation
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ vm_service }}.service"
+  register: fresh_existing_unit
+
+- name: Refuse replacement or ambiguous reuse of an existing disk
+  ansible.builtin.assert:
+    that:
+      - not fresh_disk.stat.exists or fresh_receipt.stat.exists or fresh_intent.stat.exists
+      - not fresh_receipt.stat.exists or fresh_disk.stat.exists
+      - not fresh_disk.stat.exists or fresh_disk.stat.isreg
+      - not fresh_disk.stat.exists or not fresh_disk.stat.islnk
+      - not fresh_existing_unit.stat.exists or fresh_receipt.stat.exists
+    fail_msg: >-
+      {{ vm_disk }} or {{ vm_service }}.service exists without this site's creation receipt, so it may
+      belong to something else and is never replaced. Move it aside or choose another vm_data/vm_service
+      in config/site.yaml. If it is this site's own install, `rtk proxy make fclean` previews a project reset.
+
+- name: Require public package egress for first boot
+  ansible.builtin.assert:
+    that: vm_isolated == false
+    fail_msg: Set vm_isolated false; a new guest downloads packages on first boot and provisioning then restricts its network.
+
+- name: Validate creation receipts before reusing state
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - python3
+      - -c
+      - |
+        from pathlib import Path
+        import sys
+        assert Path(sys.argv[1]).read_text()=='\n'.join(sys.argv[2:])+'\n', 'Creation receipt does not match the selected disk, instance and service'
+      - "{{ vm_bootstrap_dir }}/{{ item }}"
+      - "{{ vm_disk }}"
+      - "{{ vm_instance }}"
+      - "{{ vm_service }}"
+  loop: "{{ ['created'] if fresh_receipt.stat.exists else (['creating'] if fresh_intent.stat.exists else []) }}"
+  changed_when: false
+
+# A disk with only the intent receipt was never booted: the service is installed
+# after the final receipt. Its content may be a partial conversion, so recreate it.
+- name: Discard this site's own unfinished, never-booted disk
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: ["{{ vm_disk }}", "{{ vm_data }}/cloud-init.iso"]
+  when: fresh_intent.stat.exists and not fresh_receipt.stat.exists
+
+- name: Re-inspect the selected disk after unfinished-creation cleanup
+  ansible.builtin.stat:
+    path: "{{ vm_disk }}"
+  register: fresh_disk
+
+- name: Refuse symlinked directories and initial port collisions
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - python3
+      - -c
+      - |
+        from pathlib import Path
+        import socket,sys
+        for name in sys.argv[2:5]:
+          p=Path(name)
+          assert p.resolve()==p, 'Fresh VM directories cannot use symlink aliases'
+        if sys.argv[1]=='new':
+          for port in sys.argv[5:]:
+            with socket.socket() as listener:
+              listener.bind(('127.0.0.1',int(port)))
+      - "{{ 'existing' if fresh_receipt.stat.exists else 'new' }}"
+      - "{{ vm_data }}"
+      - "{{ vm_root }}"
+      - "{{ vm_bootstrap_dir }}"
+      - "{{ guest_ssh_port | string }}"
+      - "{{ guest_dashboard_port | string }}"
+      - "{{ guest_api_port | string }}"
+  changed_when: false
+
+# Fail only on the actual need (full guest disk size and guest memory); report
+# the preferred host reserves as warnings. Measure vm_data's own filesystem.
+- name: Check free resources before creating a guest
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - python3
+      - -c
+      - |
+        import shutil,sys
+        from pathlib import Path
+        data,disk,reserve,memory,memory_reserve=sys.argv[1],*map(int,sys.argv[2:])
+        path=Path(data)
+        while not path.exists(): path=path.parent
+        free=shutil.disk_usage(path).free/2**30
+        assert free>=disk+2, f'{free:.0f} GiB free on the vm_data filesystem; the guest disk needs {disk+2} GiB. Free space or lower vm_disk_gib.'
+        mem={x.split(':')[0]:int(x.split()[1])*1024 for x in Path('/proc/meminfo').read_text().splitlines()}
+        available=mem['MemAvailable']/2**20
+        assert available>=memory, f'{available:.0f} MiB RAM available; the guest needs {memory} MiB. Lower vm_memory_mb or stop other workloads.'
+        warnings=[]
+        if free<disk+reserve: warnings.append(f'disk headroom below host_disk_reserve_gib ({free:.0f} GiB free)')
+        if available<memory+memory_reserve*1024: warnings.append(f'RAM headroom below host_memory_reserve_gib ({available/1024:.1f} GiB available)')
+        print('; '.join(warnings))
+      - "{{ vm_data }}"
+      - "{{ vm_disk_gib | string }}"
+      - "{{ host_disk_reserve_gib | default(20) | string }}"
+      - "{{ vm_memory_mb | string }}"
+      - "{{ host_memory_reserve_gib | default(8) | string }}"
+  register: fresh_resources
+  when: not fresh_disk.stat.exists
+  changed_when: false
+
+- name: Report reduced host headroom without blocking installation
+  ansible.builtin.debug:
+    msg: "WARNING: {{ fresh_resources.stdout }}"
+  when: fresh_resources.stdout | default('') | length > 0
+
+- name: Install declared native VM prerequisites
+  ansible.builtin.apt:
+    name: [qemu-system-x86, qemu-utils, cloud-image-utils, openssh-client]
+    state: present
+
+- name: Inspect the selected host VM identity
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ vm_user }}"
+    fail_key: false
+
+- name: Refuse an unrelated host identity
+  ansible.builtin.assert:
+    that: ansible_facts.getent_passwd[vm_user] == none or ansible_facts.getent_passwd[vm_user][3] == 'Zelab native VM'
+
+- name: Create the native VM identity without administrator access
+  ansible.builtin.user:
+    name: "{{ vm_user }}"
+    comment: Zelab native VM
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+
+- name: Prepare independent native VM directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ vm_user }}"
+    group: "{{ vm_user }}"
+    mode: '0700'
+  loop: ["{{ vm_data }}", "{{ vm_root }}"]
+
+- name: Prepare the private creation directory
+  ansible.builtin.file:
+    path: "{{ vm_bootstrap_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Prepare the public official image cache
+  ansible.builtin.file:
+    path: /var/cache/zelab
+    state: directory
+    mode: '0755'
+
+- name: Download and verify the pinned official Debian cloud image
+  ansible.builtin.get_url:
+    url: "{{ guest_image_url }}"
+    dest: "/var/cache/zelab/{{ guest_image_url | basename }}"
+    checksum: "sha512:{{ guest_image_sha512 }}"
+    mode: '0644'
+  # Mirrors rate-limit or drop connections now and then (HTTP 429/5xx); retry before failing.
+  register: download
+  until: download is succeeded
+  retries: 5
+  delay: 30
+
+- name: Generate the guest host key once for verified first SSH
+  ansible.builtin.command:
+    argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -f, "{{ vm_bootstrap_dir }}/ssh_host_ed25519_key"]
+    creates: "{{ vm_bootstrap_dir }}/ssh_host_ed25519_key"
+
+- name: Read the private guest host key for cloud-init
+  ansible.builtin.slurp:
+    src: "{{ vm_bootstrap_dir }}/ssh_host_ed25519_key"
+  register: fresh_host_key
+  no_log: true
+
+- name: Read its public SSH pin
+  ansible.builtin.slurp:
+    src: "{{ vm_bootstrap_dir }}/ssh_host_ed25519_key.pub"
+  register: fresh_host_public
+
+- name: Record creation intent before writing a disk
+  ansible.builtin.copy:
+    dest: "{{ vm_bootstrap_dir }}/creating"
+    content: "{{ vm_disk }}\n{{ vm_instance }}\n{{ vm_service }}\n"
+    owner: root
+    group: root
+    mode: '0600'
+  when: not fresh_receipt.stat.exists
+
+- name: Create the self-contained fresh disk without a backing chain
+  ansible.builtin.command:
+    argv: [rtk, proxy, qemu-img, convert, -f, qcow2, -O, qcow2, "{{ '/var/cache/zelab/' + (guest_image_url | basename) }}", "{{ vm_disk }}"]
+    creates: "{{ vm_disk }}"
+  register: fresh_disk_created
+
+- name: Set the initial small disk capacity once
+  ansible.builtin.command:
+    argv: [rtk, proxy, qemu-img, resize, "{{ vm_disk }}", "{{ vm_disk_gib }}G"]
+  when: fresh_disk_created.changed
+
+- name: Write declarative native cloud-init settings
+  ansible.builtin.template:
+    src: cloud-init.yaml.j2
+    dest: "{{ vm_bootstrap_dir }}/user-data"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+
+- name: Write stable cloud-init instance metadata
+  ansible.builtin.copy:
+    dest: "{{ vm_bootstrap_dir }}/meta-data"
+    content: "instance-id: {{ vm_instance }}\nlocal-hostname: {{ vm_instance }}\n"
+    mode: '0600'
+
+- name: Generate the native cloud-init configuration media once
+  ansible.builtin.command:
+    argv: [rtk, proxy, cloud-localds, "{{ vm_data }}/cloud-init.iso", "{{ vm_bootstrap_dir }}/user-data", "{{ vm_bootstrap_dir }}/meta-data"]
+    creates: "{{ vm_data }}/cloud-init.iso"
+
+- name: Permit only the VM identity to read its disk and configuration media
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "{{ vm_user }}"
+    group: "{{ vm_user }}"
+    mode: '0600'
+  loop: ["{{ vm_disk }}", "{{ vm_data }}/cloud-init.iso"]
+
+- name: Publish the seeded SSH host key without first-contact trust bypass
+  ansible.builtin.copy:
+    dest: "{{ guest_known_hosts }}"
+    content: "[127.0.0.1]:{{ guest_ssh_port }} {{ (fresh_host_public.content | b64decode).split()[0:2] | join(' ') }}\n"
+    owner: "{{ operator_user }}"
+    mode: '0600'
+
+- name: Record the completed fresh disk preparation
+  ansible.builtin.copy:
+    dest: "{{ vm_bootstrap_dir }}/created"
+    content: "{{ vm_disk }}\n{{ vm_instance }}\n{{ vm_service }}\n"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Retire the creation intent once the final receipt exists
+  ansible.builtin.file:
+    path: "{{ vm_bootstrap_dir }}/creating"
+    state: absent

@@ -1,0 +1,26 @@
+- name: Recheck the tailnet identity and route ownership
+  ansible.builtin.import_tasks: check.yaml
+
+- name: Activate only the declared native private routes
+  ansible.builtin.command:
+    argv: [rtk, proxy, tailscale, serve, --bg, "--https={{ item.port }}", "{{ item.backend }}"]
+  vars:
+    endpoint: "{{ ui_tailscale_hostname }}:{{ item.port }}"
+  when: ui_tail_config.get('Web', {}).get(endpoint, {}).get('Handlers', {}).get('/', {}).get('Proxy', '') != item.backend
+  loop: "{{ ui_tail_routes }}"
+
+- name: Verify publicly trusted TLS and native unauthenticated API denial
+  ansible.builtin.uri:
+    url: "{{ item.url }}"
+    status_code: "{{ item.status }}"
+  loop:
+    - url: "https://{{ ui_tailscale_hostname }}:{{ ui_tail_hermes_port }}/api/profiles"
+      status: 401
+    - url: "https://{{ ui_tailscale_hostname }}:{{ ui_tail_paperclip_port }}/api/companies"
+      status: 403
+
+- name: Verify trusted tailnet HTTPS and anonymous Obsidian denial
+  ansible.builtin.uri:
+    url: "https://{{ ui_tailscale_hostname }}:{{ ui_tail_obsidian_port | default(9443) }}/"
+    status_code: 401
+  when: obsidian_enabled | default(false) | bool

@@ -1,0 +1,7 @@
+notes_guest_root: /var/lib/zelab-notes
+notes_sftp_port: 12923
+notes_owner_user: zelab-notes-owner
+notes_shared_user: zelab-notes-shared
+notes_shared_profiles: [research]
+notes_guest_group: zelab-notes-shared
+notes_guest_gid: 61109

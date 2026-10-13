@@ -1,0 +1,16 @@
+- name: Inspect tasks before retiring the legacy submission credential
+  ansible.builtin.uri:
+    # Filter on the server before pagination. One unfinished task is enough to
+    # stop migration; the first default page of all company history is not.
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ bridge_workers.company_id }}/issues?originKind=task_bridge&originId={{ item.id }}&status=backlog,todo,in_progress,in_review,blocked&limit=1&includeRoutineExecutions=true&includePluginOperations=true"
+    headers: {Cookie: "{{ bridge_owner.cookies_string }}"}
+  delegate_to: zelab_host
+  register: bridge_legacy_issues
+  loop: "{{ bridge_legacy_active }}"
+
+- name: Finish legacy bridge work before moving its submission identity
+  ansible.builtin.assert:
+    that:
+      - bridge_legacy_active | length <= 1
+      - bridge_legacy_issues.results | map(attribute='json') | flatten | length == 0
+    fail_msg: Finish or cancel active legacy bridge tasks before reapplying. Completed history stays in Paperclip; the new principal reads only its own submissions. If the migration already paused the gateway, it stays stopped until a successful reapply.

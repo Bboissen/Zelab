@@ -1,0 +1,20 @@
+{
+  "name": "zelab-paperclip-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "paperclipai": "2026.1005.0"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "1.14.5",
+    "svix": {
+      "uuid": "11.1.1"
+    }
+  },
+  "allowScripts": {
+    "@embedded-postgres/linux-x64": true,
+    "cpu-features": true,
+    "protobufjs": true,
+    "ssh2": true
+  }
+}

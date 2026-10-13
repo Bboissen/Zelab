@@ -1,0 +1,87 @@
+- name: Show owned host service and container state without private logs
+  hosts: host
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Read native host supervision state
+      ansible.builtin.command:
+        argv: [rtk, proxy, systemctl, show, "{{ vm_service | default('zelab-vm') }}.service", zelab-paperclip-db.service, zelab-paperclip.service, zelab-notes-sshd.service, '--property=Id,LoadState,ActiveState,SubState,UnitFileState,Result,ExecMainStatus,NRestarts', --no-pager]
+      register: host_services
+      changed_when: false
+      failed_when: host_services.rc != 0 and 'LoadState=not-found' not in host_services.stdout
+    - ansible.builtin.debug:
+        var: host_services.stdout_lines
+    - name: Read owned running container state without environments
+      ansible.builtin.command:
+        argv: [rtk, proxy, docker, ps, -a, --filter, 'name=^zelab-', --format, '{{ "{{.Names}} {{.State}} {{.Status}}" }}']
+      register: host_containers
+      changed_when: false
+    - ansible.builtin.debug:
+        var: host_containers.stdout_lines
+    - name: Read whether the selected VM can provide guest status
+      ansible.builtin.command:
+        argv: [rtk, proxy, systemctl, show, "{{ vm_service | default('zelab-vm') }}.service", -p, ActiveState, --value]
+      register: status_vm
+      changed_when: false
+      failed_when: status_vm.rc not in [0, 1]
+    - name: Probe native application readiness without credentials or response bodies
+      ansible.builtin.uri:
+        url: "{{ item.url }}"
+        status_code: "{{ item.expected }}"
+        timeout: 3
+        return_content: false
+      loop: >-
+        {{ [{'name': 'Paperclip health', 'url': 'http://127.0.0.1:' + (paperclip_port | string) + '/api/health', 'expected': 200},
+            {'name': 'Hermes authentication', 'url': 'http://127.0.0.1:' + (guest_dashboard_port | string) + '/api/profiles', 'expected': 401}]
+           + ([{'name': 'Obsidian authentication', 'url': 'http://127.0.0.1:' + (obsidian_backend_port | string) + '/', 'expected': 401}]
+              if obsidian_enabled | default(true) else []) }}
+      when: status_vm.stdout == 'active' or item.name != 'Hermes authentication'
+      no_log: true
+      failed_when: false
+      changed_when: false
+      register: status_applications
+    - name: Report application status codes
+      ansible.builtin.debug:
+        msg: "{{ item.item.name }}: {{ 'VM stopped' if item.skipped | default(false) else ('HTTP ' + (item.status | default(0) | string) + (' ready' if item.status | default(0) == item.item.expected else ' needs attention')) }}"
+      loop: "{{ status_applications.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+    - name: Show configured private browser endpoints
+      ansible.builtin.debug:
+        msg:
+          Localhost: ["http://127.0.0.1:{{ guest_dashboard_port }}/", "http://127.0.0.1:{{ paperclip_port }}/", "http://127.0.0.1:{{ obsidian_backend_port }}/"]
+          Tailscale: "{{ ['https://' + ui_tailscale_hostname + ':' + (ui_tail_hermes_port | string) + '/', 'https://' + ui_tailscale_hostname + ':' + (ui_tail_paperclip_port | string) + '/', 'https://' + ui_tailscale_hostname + ':' + (ui_tail_obsidian_port | string) + '/'] if ui_tailscale_enabled | default(false) else [] }}"
+          Login: "Hermes user {{ dashboard_username }}, Paperclip {{ paperclip_owner_email }}, Obsidian user {{ obsidian_username }}"
+          Passwords: "Use your password manager. Legacy recovery copies, if retained, are in {{ private_dir }}; never paste passwords in chat."
+
+- name: Show native guest supervision state
+  hosts: guest
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Read native dashboard and user-manager state
+      ansible.builtin.command:
+        argv: [systemctl, show, hermes-dashboard.service, user@61102.service, '--property=Id,ActiveState,SubState,UnitFileState', --no-pager]
+      register: guest_services
+      changed_when: false
+      when: hostvars['zelab_host'].status_vm.stdout == 'active'
+    - ansible.builtin.debug:
+        var: guest_services.stdout_lines
+      when: hostvars['zelab_host'].status_vm.stdout == 'active'
+    - name: Resolve the installed native gateway identity
+      ansible.builtin.include_role:
+        name: hermes_service_identity
+      when: hostvars['zelab_host'].status_vm.stdout == 'active'
+    - name: Read the upstream shared gateway user service
+      ansible.builtin.command:
+        argv: [systemctl, --user, show, "{{ hermes_gateway_unit }}", '--property=Id,ActiveState,SubState,UnitFileState', --no-pager]
+      become_user: zelab-hermes
+      environment:
+        XDG_RUNTIME_DIR: /run/user/61102
+        DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/61102/bus
+      register: guest_gateway
+      changed_when: false
+      when: hostvars['zelab_host'].status_vm.stdout == 'active'
+    - ansible.builtin.debug:
+        var: guest_gateway.stdout_lines
+      when: hostvars['zelab_host'].status_vm.stdout == 'active'

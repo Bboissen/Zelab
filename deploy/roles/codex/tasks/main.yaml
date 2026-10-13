@@ -1,0 +1,62 @@
+- name: Prepare the public native CLI download cache
+  ansible.builtin.file:
+    path: /var/cache/zelab
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Download checksum-verified upstream native Codex
+  ansible.builtin.get_url:
+    url: "{{ codex_archive_url }}"
+    dest: "/var/cache/zelab/codex-package-{{ codex_version }}.tar.gz"
+    checksum: "sha256:{{ codex_archive_sha256 }}"
+    owner: root
+    group: root
+    mode: '0644'
+  # Mirrors rate-limit or drop connections now and then (HTTP 429/5xx); retry before failing.
+  register: download
+  until: download is succeeded
+  retries: 5
+  delay: 30
+
+- name: Create independent native CLI location
+  ansible.builtin.file:
+    path: "/opt/zelab-tools/codex-{{ codex_version }}-package"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Extract unmodified upstream native CLI
+  ansible.builtin.unarchive:
+    src: "/var/cache/zelab/codex-package-{{ codex_version }}.tar.gz"
+    remote_src: true
+    dest: "/opt/zelab-tools/codex-{{ codex_version }}-package"
+    owner: root
+    group: root
+    creates: "/opt/zelab-tools/codex-{{ codex_version }}-package/bin/codex"
+
+- name: Verify the native code execution helper is present
+  ansible.builtin.stat:
+    path: "/opt/zelab-tools/codex-{{ codex_version }}-package/bin/codex-code-mode-host"
+  register: codex_helper
+
+- name: Require a complete upstream distribution
+  ansible.builtin.assert:
+    that: codex_helper.stat.exists and codex_helper.stat.executable
+
+- name: Publish the explicitly selected worker command
+  ansible.builtin.file:
+    src: "/opt/zelab-tools/codex-{{ codex_version }}-package/bin/codex"
+    dest: /usr/local/bin/zelab-codex
+    state: link
+    owner: root
+    group: root
+
+- name: Verify actual native CLI version
+  ansible.builtin.command:
+    argv: [rtk, proxy, /usr/local/bin/zelab-codex, --version]
+  register: codex_installed
+  changed_when: false
+  failed_when: "codex_version not in codex_installed.stdout"

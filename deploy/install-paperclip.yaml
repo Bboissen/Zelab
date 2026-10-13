@@ -1,0 +1,8 @@
+- name: Install pinned native Paperclip on the host
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - paperclip

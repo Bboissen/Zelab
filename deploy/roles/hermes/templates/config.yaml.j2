@@ -1,0 +1,21 @@
+# Initial native configuration. UI changes are retained on subsequent applies.
+{% if hermes_initial_model %}
+model:
+  default: {{ hermes_initial_model }}
+{% endif %}
+fallback_providers: []
+fallback_model: []
+max_concurrent_sessions: 2
+max_live_sessions: 4
+mcp_servers: {}
+plugins:
+  enabled: []
+  disabled: []
+dashboard:
+  trusted_proxies: [10.0.2.2]
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+  write_approval: false
+skills:
+  write_approval: false

@@ -1,0 +1,81 @@
+- name: Prepare the pinned native build runtime
+  ansible.builtin.import_role:
+    name: node_runtime
+
+- name: Download verified Hermes source archive
+  ansible.builtin.get_url:
+    url: "{{ hermes_archive_url }}"
+    dest: "/var/cache/zelab/hermes-{{ hermes_commit }}.tar.gz"
+    checksum: "sha256:{{ hermes_archive_sha256 }}"
+    mode: '0644'
+  # Mirrors rate-limit or drop connections now and then (HTTP 429/5xx); retry before failing.
+  register: download
+  until: download is succeeded
+  retries: 5
+  delay: 30
+
+- name: Extract upstream source for the host build
+  ansible.builtin.unarchive:
+    src: "/var/cache/zelab/hermes-{{ hermes_commit }}.tar.gz"
+    remote_src: true
+    dest: /var/cache/zelab
+    creates: "/var/cache/zelab/hermes-agent-{{ hermes_commit }}/package.json"
+    owner: "{{ operator_user }}"
+
+- name: Install only locked web build dependencies
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/npm"
+      - ci
+      - --workspace
+      - web
+      - --include-workspace-root
+      - --no-audit
+      - --no-fund
+    chdir: "/var/cache/zelab/hermes-agent-{{ hermes_commit }}"
+    creates: "/var/cache/zelab/hermes-agent-{{ hermes_commit }}/node_modules/.package-lock.json"
+  become_user: "{{ operator_user }}"
+  environment:
+    PATH: "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin:/usr/local/bin:/usr/bin:/bin"
+
+- name: Build native dashboard assets on host
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/npm"
+      - run
+      - build
+      - --workspace
+      - web
+    chdir: "/var/cache/zelab/hermes-agent-{{ hermes_commit }}"
+    creates: "/var/cache/zelab/hermes-agent-{{ hermes_commit }}/hermes_cli/web_dist/index.html"
+  become_user: "{{ operator_user }}"
+  environment:
+    PATH: "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin:/usr/local/bin:/usr/bin:/bin"
+    NODE_OPTIONS: --max-old-space-size=2048
+    RAYON_NUM_THREADS: '2'
+
+- name: Package only native web build output for transfer
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - tar
+      - -C
+      - "/var/cache/zelab/hermes-agent-{{ hermes_commit }}"
+      - -cf
+      - "/var/cache/zelab/hermes-web-{{ hermes_commit }}.tar"
+      - hermes_cli/web_dist
+    creates: "/var/cache/zelab/hermes-web-{{ hermes_commit }}.tar"
+
+# The guest copy action reads its source as the unprivileged controller, even
+# when the remote task uses become. Do not inherit root's packaging umask.
+- name: Make the public dashboard archive readable by the controller
+  ansible.builtin.file:
+    path: "/var/cache/zelab/hermes-web-{{ hermes_commit }}.tar"
+    owner: root
+    group: root
+    mode: '0644'

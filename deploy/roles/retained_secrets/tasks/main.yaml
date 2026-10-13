@@ -1,0 +1,28 @@
+# A missing private source is a recovery problem, not permission to rotate it.
+- name: Inspect installed state before generating retained credentials
+  ansible.builtin.stat:
+    path: "{{ item.installed }}"
+    get_checksum: false
+  loop: "{{ retained_secrets }}"
+  register: retained_installed
+  no_log: true
+
+- name: Inspect the corresponding private credential sources
+  ansible.builtin.stat:
+    path: "{{ item.source }}"
+    get_checksum: false
+  loop: "{{ retained_secrets }}"
+  delegate_to: zelab_host
+  register: retained_sources
+  no_log: true
+
+- name: Refuse implicit rotation when deployed credentials lose their private source
+  ansible.builtin.assert:
+    that:
+      - not retained_installed.results[secret_index].stat.exists or retained_sources.results[secret_index].stat.isreg | default(false)
+    fail_msg: Restore the deployment's retained private credential sources before reapplying; existing credentials will not be rotated automatically.
+  loop: "{{ retained_secrets }}"
+  loop_control:
+    index_var: secret_index
+    label: retained credential
+

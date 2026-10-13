@@ -1,0 +1,273 @@
+- name: Validate private Paperclip inputs
+  ansible.builtin.assert:
+    that:
+      - paperclip_port | int > 1024
+      - paperclip_home.startswith('/')
+      - paperclip_user != operator_user
+
+- name: Install declared native host prerequisites
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, git, openssh-client, libatomic1, nftables]
+    state: present
+
+- name: Prepare the pinned native coordinator runtime
+  ansible.builtin.import_role:
+    name: node_runtime
+
+- name: Create dedicated Paperclip coordinator account
+  ansible.builtin.user:
+    name: "{{ paperclip_user }}"
+    home: "{{ paperclip_home }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: true
+  register: paperclip_identity
+
+- name: Resolve designated host Operations identity
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ operator_user }}"
+
+- name: Restrict embedded database access to its service and host administrators
+  ansible.builtin.template:
+    src: paperclip-db.nft.j2
+    dest: /etc/zelab-paperclip-db.nft
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/sbin/nft -c -f %s
+  register: paperclip_db_rules
+
+- name: Install native database socket boundary unit
+  ansible.builtin.template:
+    src: paperclip-db.service.j2
+    dest: /etc/systemd/system/zelab-paperclip-db.service
+    owner: root
+    group: root
+    mode: '0644'
+  register: paperclip_db_unit
+
+- name: Apply database boundary before coordinator startup
+  ansible.builtin.systemd_service:
+    name: zelab-paperclip-db.service
+    daemon_reload: true
+    enabled: true
+    state: "{{ 'restarted' if paperclip_db_unit.changed or paperclip_db_rules.changed else 'started' }}"
+
+- name: Keep coordinator state private
+  ansible.builtin.file:
+    path: "{{ paperclip_home }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: '0700'
+
+- name: Create native release and instance directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: '0700'
+  loop:
+    - "{{ paperclip_runtime_dir }}"
+    - "{{ paperclip_home }}/instances/default"
+    - "{{ paperclip_home }}/instances/default/secrets"
+
+- name: Preserve retained native coordinator credentials
+  ansible.builtin.include_role:
+    name: retained_secrets
+  vars:
+    retained_secrets:
+      - {installed: "{{ paperclip_home }}/instances/default/secrets/master.key", source: "{{ private_dir }}/paperclip-master.key"}
+      - {installed: /etc/zelab-paperclip.env, source: "{{ private_dir }}/paperclip-agent-jwt.secret"}
+      - {installed: "{{ paperclip_home }}/owner-bootstrap-complete", source: "{{ zelab_password_dir | default(private_dir) }}/paperclip-owner.password"}
+
+- name: Preserve the native encryption key outside software releases
+  ansible.builtin.copy:
+    dest: "{{ paperclip_home }}/instances/default/secrets/master.key"
+    content: "{{ lookup('ansible.builtin.password', private_dir + '/paperclip-master.key', length=64, chars=['0123456789abcdef']) }}\n"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: '0600'
+    force: false
+  no_log: true
+  diff: false
+
+- name: Copy exact native npm dependency declaration and lock
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ paperclip_runtime_dir }}/{{ item }}"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: '0600'
+  loop:
+    - package.json
+    - package-lock.json
+  register: paperclip_lock
+
+- name: Check completed installation marker
+  ansible.builtin.stat:
+    path: "{{ paperclip_runtime_dir }}/.zelab-runtime-ready"
+  register: paperclip_ready
+
+- name: Install locked published native runtime
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/npm"
+      - ci
+      - --omit=dev
+      - --no-audit
+      - --no-fund
+    chdir: "{{ paperclip_runtime_dir }}"
+  when: paperclip_lock.changed or not paperclip_ready.stat.exists
+  become_user: "{{ paperclip_user }}"
+  environment:
+    HOME: "{{ paperclip_home }}"
+    PATH: "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin:/usr/local/bin:/usr/bin:/bin"
+    NODE_OPTIONS: --max-old-space-size=4096
+    npm_config_registry: https://registry.npmjs.org
+  register: paperclip_install
+
+# The pinned embedded-postgres runtime requires r-x for every class and tries
+# to chmod otherwise. Prepare those public binaries before ProtectSystem=strict
+# makes the installed runtime read-only; npm can inherit a restrictive umask.
+- name: Prepare native database executables for the read-only service runtime
+  ansible.builtin.file:
+    path: "{{ paperclip_runtime_dir }}/node_modules/@embedded-postgres/linux-x64/native/bin/{{ item }}"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: '0755'
+  loop: [postgres, pg_ctl, initdb]
+  register: paperclip_bin_permissions
+
+- name: Verify published server build matches selected source commit
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/node"
+      - --input-type=module
+      - -e
+      - "import fs from 'node:fs'; const info=JSON.parse(fs.readFileSync('node_modules/@paperclipai/server/dist/build-info.json')); if(info.commit !== '{{ paperclip_commit }}') process.exit(1); console.log(info.commit);"
+    chdir: "{{ paperclip_runtime_dir }}"
+  changed_when: false
+
+- name: Record successful native runtime installation
+  ansible.builtin.copy:
+    dest: "{{ paperclip_runtime_dir }}/.zelab-runtime-ready"
+    content: "{{ paperclip_commit }}\n"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: '0600'
+
+- name: Seed native instance configuration without overwriting UI changes
+  ansible.builtin.template:
+    src: config.json.j2
+    dest: "{{ paperclip_home }}/instances/default/config.json"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: '0600'
+    force: false
+
+- name: Check whether initial owner signup has completed
+  ansible.builtin.stat:
+    path: "{{ paperclip_home }}/owner-bootstrap-complete"
+  register: owner_bootstrap_check
+
+- name: Retain native authentication signing secret
+  ansible.builtin.template:
+    src: paperclip.env.j2
+    dest: /etc/zelab-paperclip.env
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+  register: paperclip_env
+
+- name: Install native Paperclip service
+  ansible.builtin.template:
+    src: paperclip.service.j2
+    dest: /etc/systemd/system/zelab-paperclip.service
+    owner: root
+    group: root
+    mode: '0644'
+  register: paperclip_unit
+
+- name: Start authenticated Paperclip with persistent embedded PostgreSQL
+  ansible.builtin.systemd_service:
+    name: zelab-paperclip.service
+    daemon_reload: true
+    enabled: true
+    state: "{{ 'restarted' if paperclip_unit.changed or paperclip_env.changed or paperclip_install.changed or paperclip_bin_permissions.changed else 'started' }}"
+
+- name: Wait for the native health endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/health"
+    return_content: true
+  register: paperclip_health
+  until: paperclip_health.status == 200
+  retries: 30
+  delay: 2
+
+- name: Require actual authenticated private deployment
+  ansible.builtin.assert:
+    that:
+      - paperclip_health.json.deploymentMode == 'authenticated'
+      - paperclip_health.json.deploymentExposure == 'private'
+
+- name: Verify an unrelated host account cannot open the embedded database socket
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - runuser
+      - -u
+      - nobody
+      - --
+      - python3
+      - -c
+      - |
+        import socket, sys
+        try:
+            connection = socket.create_connection(('127.0.0.1', int(sys.argv[1])), timeout=3)
+        except OSError:
+            print('Unrelated host UID denied embedded database socket access.')
+        else:
+            connection.close()
+            raise SystemExit('Embedded database boundary failed: unrelated host UID can connect.')
+      - "{{ paperclip_db_port }}"
+  changed_when: false
+
+- name: Provision initial local owner without exposing credentials
+  ansible.builtin.import_tasks: owner.yaml
+
+- name: Close initial signup after successful owner bootstrap
+  ansible.builtin.template:
+    src: paperclip.env.j2
+    dest: /etc/zelab-paperclip.env
+    owner: root
+    group: root
+    mode: '0600'
+  vars:
+    paperclip_signup_closed: true
+  no_log: true
+  diff: false
+  register: signup_closed
+
+- name: Activate completed owner signup policy
+  ansible.builtin.systemd_service:
+    name: zelab-paperclip.service
+    state: restarted
+  when: signup_closed.changed
+
+- name: Confirm coordinator health after initial signup policy activation
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/health"
+  register: final_paperclip_health
+  until: final_paperclip_health.status == 200
+  retries: 30
+  delay: 2

@@ -1,0 +1,25 @@
+#!/usr/sbin/nft -f
+# Guest-only rules. Never applied on the host.
+table inet zelab {}
+flush table inet zelab
+table inet zelab {
+    chain output {
+        type filter hook output priority filter; policy accept;
+        oifname "lo" accept
+        ct state established,related accept
+        ip daddr 10.0.2.3 udp dport 53 accept
+        ip daddr 10.0.2.3 tcp dport 53 accept
+        ip daddr { 10.0.2.2, 255.255.255.255 } udp sport 68 udp dport 67 accept
+        # Research tools cannot use the privileged coordinator exception.
+        # 61110-61199 is reserved for independent restricted tool identities.
+        meta skuid 61110-61199 ip daddr 10.0.2.2 tcp dport {{ paperclip_port }} reject
+        # Explicit host API path; authorization is still enforced by Paperclip.
+        ip daddr 10.0.2.2 tcp dport {{ paperclip_port }} accept
+{% if notes_enabled | default(false) | bool %}
+        # Dedicated chrooted SFTP listener; only notes mount keys authenticate.
+        ip daddr 10.0.2.2 tcp dport {{ notes_sftp_port | default(12923) }} accept
+{% endif %}
+        ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 } reject
+        meta nfproto ipv6 reject
+    }
+}

@@ -1,0 +1,207 @@
+- name: Validate notes-only paths and listener
+  ansible.builtin.assert:
+    that:
+      - notes_vault_dir is match('^/[A-Za-z0-9_./-]+$')
+      - notes_sftp_root is match('^/var/lib/[A-Za-z0-9_/-]+$')
+      - notes_config_dir is match('^/etc/[A-Za-z0-9_/-]+$')
+      - notes_sftp_root != notes_vault_dir
+      - notes_owner_user == notes_container_user
+      - notes_sftp_port | int > 1024
+      - notes_sftp_port | int not in [guest_ssh_port | int, worker_ssh_port | int, paperclip_port | int]
+
+- name: Require installed native SSH and ACL prerequisites
+  ansible.builtin.command:
+    argv: [rtk, proxy, python3, -c, "import shutil; assert all(shutil.which(x) for x in ['sshd','getfacl','setfacl'])"]
+  changed_when: false
+
+- name: Create distinct vault access groups
+  ansible.builtin.group:
+    name: "{{ item }}"
+    system: true
+  loop: ["{{ notes_owner_group }}", "{{ notes_shared_group }}"]
+
+- name: Create the native container filesystem identity
+  ansible.builtin.user:
+    name: "{{ notes_container_user }}"
+    home: /vault
+    shell: /usr/sbin/nologin
+    group: "{{ notes_owner_group }}"
+    groups: "{{ notes_shared_group }}"
+    system: true
+    create_home: false
+
+- name: Create separate notes-only SFTP identities without shell access
+  ansible.builtin.user:
+    name: "{{ item.user }}"
+    home: /vault
+    shell: /usr/sbin/nologin
+    group: "{{ item.group }}"
+    groups: "{{ item.groups }}"
+    system: true
+    create_home: false
+  loop:
+    - {user: "{{ notes_shared_user }}", group: "{{ notes_shared_group }}", groups: ''}
+
+- name: Grant designated host workers their explicit notes scope
+  ansible.builtin.user:
+    name: "{{ item.user }}"
+    groups: "{{ item.groups }}"
+    append: true
+  loop:
+    - {user: "{{ worker_ops_user }}", groups: "{{ notes_owner_group }},{{ notes_shared_group }}"}
+    - {user: "{{ worker_code_user }}", groups: "{{ notes_shared_group }}"}
+
+- name: Prepare vault roots without recursively changing existing notes
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ notes_container_user }}"
+    group: "{{ item.group }}"
+    mode: '2770'
+  loop:
+    - {path: "{{ notes_vault_dir }}", group: "{{ notes_owner_group }}"}
+    - {path: "{{ notes_vault_dir }}/Private", group: "{{ notes_owner_group }}"}
+    - {path: "{{ notes_vault_dir }}/Shared", group: "{{ notes_shared_group }}"}
+
+- name: Read the local owner editor identity
+  ansible.builtin.command:
+    argv: [rtk, proxy, id, -u, "{{ operator_user }}"]
+  register: notes_operator_uid
+  changed_when: false
+
+- name: Maintain inherited group access and local owner editor ACLs
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - python3
+      - -c
+      - |
+        import subprocess,sys,json,grp
+        uid, shared_group, *paths = sys.argv[1:]
+        required = {'user:'+uid+':rwx', 'mask::rwx', 'default:user::rwx',
+                    'default:user:'+uid+':rwx', 'default:group::rwx',
+                    'default:mask::rwx', 'default:other::---'}
+        changed = False
+        for index,path in enumerate(paths):
+            wanted = required | ({'group:'+str(grp.getgrnam(shared_group).gr_gid)+':--x'} if index == 0 else set())
+            current = subprocess.check_output(['rtk','proxy','getfacl','-cpn',path],text=True)
+            if not wanted.issubset(set(current.splitlines())):
+                subprocess.run(['rtk','proxy','setfacl','-m',','.join(sorted(wanted)),path],check=True)
+                changed = True
+        print(json.dumps({'changed':changed}))
+      - "{{ notes_operator_uid.stdout | trim }}"
+      - "{{ notes_shared_group }}"
+      - "{{ notes_vault_dir }}"
+      - "{{ notes_vault_dir }}/Private"
+      - "{{ notes_vault_dir }}/Shared"
+  register: notes_acl
+  changed_when: (notes_acl.stdout | from_json).changed
+
+- name: Prepare root-owned chroot and authentication directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ notes_config_dir }}"
+    - "{{ notes_config_dir }}/authorized_keys"
+    - "{{ notes_sftp_root }}"
+    - "{{ notes_sftp_root }}/{{ notes_owner_user }}"
+    - "{{ notes_sftp_root }}/{{ notes_shared_user }}"
+
+- name: Create export mount destinations without changing a mounted vault
+  ansible.builtin.command:
+    argv: [rtk, proxy, install, -d, -m, '0755', "{{ notes_sftp_root }}/{{ item }}/vault"]
+    creates: "{{ notes_sftp_root }}/{{ item }}/vault"
+  loop: ["{{ notes_owner_user }}", "{{ notes_shared_user }}"]
+
+- name: Preserve retained native notes keys
+  ansible.builtin.include_role:
+    name: retained_secrets
+  vars:
+    retained_secrets:
+      - {installed: "{{ notes_config_dir }}/authorized_keys/{{ notes_owner_user }}", source: "{{ private_dir }}/notes-owner.key"}
+      - {installed: "{{ notes_config_dir }}/authorized_keys/{{ notes_shared_user }}", source: "{{ private_dir }}/notes-shared.key"}
+
+- name: Generate persistent native mount keys outside Git
+  ansible.builtin.command:
+    argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -C, "zelab-notes-{{ item }}", -f, "{{ private_dir }}/notes-{{ item }}.key"]
+    creates: "{{ private_dir }}/notes-{{ item }}.key"
+  loop: [owner, shared]
+  become: false
+  no_log: true
+
+- name: Authorize the two notes keys only on this listener
+  ansible.builtin.copy:
+    dest: "{{ notes_config_dir }}/authorized_keys/{{ item.user }}"
+    content: "from=\"127.0.0.1\",restrict {{ lookup('ansible.builtin.file', private_dir + '/notes-' + item.role + '.key.pub') }}\n"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - {user: "{{ notes_owner_user }}", role: owner}
+    - {user: "{{ notes_shared_user }}", role: shared}
+
+- name: Declare only the intended exports
+  ansible.builtin.set_fact:
+    notes_exports:
+      - {role: owner, user: "{{ notes_owner_user }}", source: "{{ notes_vault_dir }}"}
+      - {role: shared, user: "{{ notes_shared_user }}", source: "{{ notes_vault_dir }}/Shared"}
+
+- name: Derive canonical native bind mount unit names
+  ansible.builtin.command:
+    argv: [rtk, proxy, systemd-escape, --path, --suffix=mount, "{{ notes_sftp_root }}/{{ item.user }}/vault"]
+  loop: "{{ notes_exports }}"
+  register: notes_mount_names
+  changed_when: false
+
+- name: Install persistent notes-only bind exports
+  ansible.builtin.template:
+    src: bind.mount.j2
+    dest: "/etc/systemd/system/{{ notes_mount_names.results[export_index].stdout | trim }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ notes_exports }}"
+  loop_control:
+    index_var: export_index
+  register: notes_bind_units
+
+- name: Start and enable the native bind exports
+  ansible.builtin.systemd_service:
+    name: "{{ item.stdout | trim }}"
+    state: started
+    enabled: true
+    daemon_reload: "{{ notes_bind_units.changed }}"
+  loop: "{{ notes_mount_names.results }}"
+  loop_control:
+    label: "{{ item.stdout | trim }}"
+
+- name: Install the dedicated native SSH configuration
+  ansible.builtin.template:
+    src: sshd.conf.j2
+    dest: "{{ notes_config_dir }}/sshd.conf"
+    owner: root
+    group: root
+    mode: '0600'
+    validate: /usr/sbin/sshd -t -f %s
+  register: notes_sshd_config
+
+- name: Install the native notes listener service
+  ansible.builtin.template:
+    src: sshd.service.j2
+    dest: /etc/systemd/system/zelab-notes-sshd.service
+    owner: root
+    group: root
+    mode: '0644'
+  register: notes_sshd_unit
+
+- name: Start and enable only the new notes listener
+  ansible.builtin.systemd_service:
+    name: zelab-notes-sshd.service
+    state: "{{ 'restarted' if notes_sshd_config.changed or notes_sshd_unit.changed else 'started' }}"
+    enabled: true
+    daemon_reload: "{{ notes_sshd_unit.changed }}"

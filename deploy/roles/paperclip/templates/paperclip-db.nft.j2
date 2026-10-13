@@ -1,0 +1,11 @@
+# Host-only: leave all unrelated firewall tables and family services untouched.
+table inet zelab_paperclip_db {}
+flush table inet zelab_paperclip_db
+table inet zelab_paperclip_db {
+    chain output {
+        type filter hook output priority filter; policy accept;
+        # Native embedded PostgreSQL uses a known local database password.
+        # Unprivileged workers must not bypass the authenticated API through SQL.
+        oifname "lo" tcp dport {{ paperclip_db_port }} meta skuid != { 0, {{ ansible_facts.getent_passwd[operator_user][1] }}, {{ paperclip_identity.uid }} } reject
+    }
+}

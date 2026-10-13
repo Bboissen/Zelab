@@ -1,0 +1,21 @@
+# Gitleaks configuration for the documented release scans (docs/RELEASING.md).
+# Keeps the default rules and ignores local tool caches and synthetic fixtures.
+title = "Zelab"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignored local directories and synthetic test fixtures"
+paths = [
+  '''^\.venv/''',
+  '''^\.cache/''',
+  '''^dist/''',
+  '''^archive/''',
+  '''(^|/)__pycache__/''',
+]
+# Sequential fixture IDs and the base64 placeholder token used in tests.
+regexes = [
+  '''[12]234567890123456[0-9]{2}''',
+  '''MTIzNDU2Nzg5MDEyMzQ1Njc4\.''',
+]

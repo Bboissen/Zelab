@@ -1,0 +1,14 @@
+[Unit]
+Description=Zelab {{ item.role }} notes via native SSHFS
+Wants=network-online.target
+After=network-online.target
+
+[Mount]
+What={{ item.user }}@10.0.2.2:/vault
+Where={{ notes_guest_root }}/{{ item.role }}
+Type=fuse.sshfs
+Options=_netdev,nodev,nosuid,noexec,reconnect,allow_other,default_permissions,uid={{ item.uid }},gid={{ item.gid }},IdentityFile=/etc/zelab-notes/{{ item.key }}.key,IdentitiesOnly=yes,BatchMode=yes,StrictHostKeyChecking=yes,UserKnownHostsFile=/etc/zelab-notes/known_hosts,port={{ notes_sftp_port }},ConnectTimeout=10,ServerAliveInterval=15,ServerAliveCountMax=3
+TimeoutSec=45
+
+[Install]
+WantedBy=multi-user.target

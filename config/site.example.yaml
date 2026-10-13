@@ -1,0 +1,32 @@
+# Example only. `rtk proxy make` writes config/site.yaml for you from
+# this host (operator, SSH listener, tailnet name, free HTTPS ports). Every
+# other value comes from config/defaults.yaml; add a key to override one.
+
+# operator_user is discovered from the account running the installer.
+
+# Existing host SSH listener used by local Paperclip workers.
+worker_ssh_host: 127.0.0.1
+worker_ssh_port: 22
+
+# Optional Paperclip harness. Plain make offers Codex, Claude Code, both or skip.
+worker_harness: none      # codex, claude, both or none
+# worker_model: ''        # native default; choose models in Paperclip later
+
+# Private HTTPS through Tailscale Serve; requires MagicDNS and HTTPS in the tailnet.
+# Plain make discovers an enrolled tailnet. A copied example remains private
+# on localhost; enable Tailscale after entering this host's actual DNS name.
+ui_tailscale_enabled: false
+# ui_tailscale_hostname:  # from: rtk proxy tailscale status --json
+ui_tail_hermes_port: 443
+ui_tail_paperclip_port: 8443
+ui_tail_obsidian_port: 9443
+
+# Discord: needed before the first Discord test, not for installation.
+discord_owner_id: ''      # your numeric Discord user ID (Developer Mode → Copy ID)
+discord_channel_id: ''    # a private test channel for Research
+
+# Common optional overrides (defaults shown in config/defaults.yaml):
+# private_dir, backup_dir and worker_codex_auth_source follow the operator's
+# account home/environment. Override only with actual absolute paths.
+# vm_disk_gib: 16
+# hermes_reserve_count: 5

@@ -1,0 +1,12 @@
+- import_playbook: notes-share.yaml
+
+- name: Deploy the native Obsidian browser container and private HTTPS
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - role: obsidian_host
+      when: obsidian_enabled | default(false) | bool
+    - private_ui

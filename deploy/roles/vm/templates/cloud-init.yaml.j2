@@ -1,0 +1,38 @@
+#cloud-config
+hostname: {{ vm_instance }}
+manage_etc_hosts: true
+disable_root: true
+ssh_pwauth: false
+users:
+  - name: {{ guest_user }}
+    gecos: Zelab deployment administrator
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: 'ALL=(ALL:ALL) NOPASSWD: ALL'
+    ssh_authorized_keys:
+      - 'restrict,from="10.0.2.2" {{ lookup("ansible.builtin.file", deploy_key + ".pub") }}'
+ssh_keys:
+  ed25519_private: |
+{{ fresh_host_key.content | b64decode | indent(4, true) }}
+  ed25519_public: {{ fresh_host_public.content | b64decode | trim }}
+package_update: true
+packages: [python3, sudo, nftables]
+write_files:
+  - path: /etc/nftables.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      # Guest public egress; restricted identities have no host API access.
+      table inet zelab {
+        chain output {
+          type filter hook output priority filter; policy accept;
+          oifname "lo" accept
+          ct state established,related accept
+          ip daddr 10.0.2.3 meta l4proto {tcp, udp} th dport 53 accept
+          ip daddr {10.0.2.2, 255.255.255.255} udp sport 68 udp dport 67 accept
+          ip daddr {0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4} reject
+          meta nfproto ipv6 reject
+        }
+      }
+runcmd:
+  - [systemctl, enable, --now, nftables.service]

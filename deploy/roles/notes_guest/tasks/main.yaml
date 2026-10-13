@@ -1,0 +1,161 @@
+- name: Validate guest mount paths and declared shared audiences
+  ansible.builtin.assert:
+    that:
+      - notes_guest_root is match('^/var/lib/[A-Za-z0-9_/-]+$')
+      - notes_guest_group == 'zelab-notes-shared'
+      - notes_shared_profiles | select('match', '^(research|reserve-0[1-9]|reserve-10)$') | list | length == notes_shared_profiles | length
+    fail_msg: Notes audiences must map to declared Research or reserve tool accounts.
+
+- name: Install the standard guest SSHFS client
+  ansible.builtin.apt:
+    name: sshfs
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Create the explicit guest shared-notes group
+  ansible.builtin.group:
+    name: "{{ notes_guest_group }}"
+    gid: "{{ notes_guest_gid }}"
+
+- name: Require each selected profile's existing tool identity
+  ansible.builtin.command:
+    argv: [id, -u, "{{ 'zelab-research-tools' if item == 'research' else 'zelab-' + item }}"]
+  loop: "{{ notes_shared_profiles }}"
+  register: notes_selected_identities
+  changed_when: false
+
+- name: Inspect existing restricted profile accounts
+  ansible.builtin.getent:
+    database: passwd
+
+- name: Reconcile shared-notes membership for existing restricted tool accounts
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: "{{ [notes_guest_group] if ('research' if item == 'zelab-research-tools' else item.removeprefix('zelab-')) in notes_shared_profiles else [] }}"
+    append: false
+  loop: "{{ ansible_facts.getent_passwd.keys() | select('match', '^zelab-(research-tools|reserve-0[1-9]|reserve-10)$') | list }}"
+
+- name: Prepare private native mount authentication
+  ansible.builtin.file:
+    path: /etc/zelab-notes
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Copy private native mount keys without rotating them
+  ansible.builtin.copy:
+    src: "{{ private_dir }}/notes-{{ item }}.key"
+    dest: "/etc/zelab-notes/{{ item }}.key"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  loop: [owner, shared]
+  no_log: true
+  diff: false
+
+- name: Pin the trusted host notes listener key
+  ansible.builtin.copy:
+    dest: /etc/zelab-notes/known_hosts
+    content: "[10.0.2.2]:{{ notes_sftp_port }} {{ lookup('ansible.builtin.file', '/etc/ssh/ssh_host_ed25519_key.pub') }}\n"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Verify fresh native SFTP authentication for both notes scopes
+  ansible.builtin.command:
+    argv: [sftp, -q, -b, /dev/null, -P, "{{ notes_sftp_port }}", -i, "/etc/zelab-notes/{{ item.role }}.key", -o, BatchMode=yes, -o, StrictHostKeyChecking=yes, -o, UserKnownHostsFile=/etc/zelab-notes/known_hosts, "{{ item.user }}@10.0.2.2"]
+  loop:
+    - {role: owner, user: "{{ notes_owner_user }}"}
+    - {role: shared, user: "{{ notes_shared_user }}"}
+  changed_when: false
+
+- name: Prepare the mount parent
+  ansible.builtin.file:
+    path: "{{ notes_guest_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Declare the private owner mount
+  ansible.builtin.set_fact:
+    notes_guest_mounts:
+      - {role: owner, user: "{{ notes_owner_user }}", uid: 61102, gid: 61102, key: owner}
+
+- name: Give each selected profile its own ownership-correct view of shared notes
+  ansible.builtin.set_fact:
+    notes_guest_mounts: "{{ notes_guest_mounts + [{'role': ('shared' if item == 'research' else item), 'user': notes_shared_user, 'uid': notes_selected_identities.results[profile_index].stdout | int, 'gid': notes_guest_gid, 'key': 'shared'}] }}"
+  loop: "{{ notes_shared_profiles }}"
+  loop_control:
+    index_var: profile_index
+
+- name: Create inaccessible unmounted destinations without changing mounted notes
+  ansible.builtin.command:
+    argv: [install, -d, -m, '0700', "{{ notes_guest_root }}/{{ item.role }}"]
+    creates: "{{ notes_guest_root }}/{{ item.role }}"
+  loop: "{{ notes_guest_mounts }}"
+
+- name: Derive canonical native SSHFS mount unit names
+  ansible.builtin.command:
+    argv: [systemd-escape, --path, --suffix=mount, "{{ notes_guest_root }}/{{ item.role }}"]
+  loop: "{{ notes_guest_mounts }}"
+  register: notes_guest_mount_names
+  changed_when: false
+
+- name: Install persistent native SSHFS mounts
+  ansible.builtin.template:
+    src: sshfs.mount.j2
+    dest: "/etc/systemd/system/{{ notes_guest_mount_names.results[mount_index].stdout | trim }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ notes_guest_mounts }}"
+  loop_control:
+    index_var: mount_index
+  register: notes_guest_units
+
+- name: Derive the native mount directory prefix
+  ansible.builtin.command:
+    argv: [systemd-escape, --path, "{{ notes_guest_root }}"]
+  register: notes_guest_unit_prefix
+  changed_when: false
+
+- name: Find previously managed notes mounts
+  ansible.builtin.find:
+    paths: /etc/systemd/system
+    patterns: "{{ notes_guest_unit_prefix.stdout | trim }}-*.mount"
+  register: notes_previous_mounts
+
+- name: Stop and disable mount access removed from the audience configuration
+  ansible.builtin.systemd_service:
+    name: "{{ item.path | basename }}"
+    state: stopped
+    enabled: false
+  loop: "{{ notes_previous_mounts.files }}"
+  when: (item.path | basename) not in (notes_guest_mount_names.results | map(attribute='stdout') | list)
+  loop_control:
+    label: "{{ item.path | basename }}"
+
+- name: Remove only the disabled generated mount units
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ notes_previous_mounts.files }}"
+  when: (item.path | basename) not in (notes_guest_mount_names.results | map(attribute='stdout') | list)
+  loop_control:
+    label: "{{ item.path | basename }}"
+  register: notes_removed_units
+
+- name: Start and enable the intended notes mounts
+  ansible.builtin.systemd_service:
+    name: "{{ item.stdout | trim }}"
+    state: "{{ 'restarted' if notes_guest_units.results[mount_index].changed else 'started' }}"
+    enabled: true
+    daemon_reload: "{{ notes_guest_units.changed or notes_removed_units.changed }}"
+  loop: "{{ notes_guest_mount_names.results }}"
+  loop_control:
+    index_var: mount_index
+    label: "{{ item.stdout | trim }}"

@@ -1,0 +1,37 @@
+# Initial native seed only. Later native UI edits are retained.
+{% if hermes_initial_model %}
+model:
+  default: {{ hermes_initial_model }}
+{% endif %}
+fallback_providers: []
+fallback_model: []
+max_concurrent_sessions: 1
+max_live_sessions: 2
+mcp_servers: {}
+plugins:
+  enabled: []
+  disabled: []
+terminal:
+  backend: ssh
+  cwd: {{ research_tool_home }}/workspace
+  ssh_host: 127.0.0.1
+  ssh_user: {{ research_tool_user }}
+  ssh_port: 22
+  ssh_key: {{ research_profile_dir }}/terminal.key
+  credential_files: []
+  env_passthrough: []
+  timeout: 60
+web:
+  search_backend: ddgs
+  keyless_fallback: false
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+  write_approval: false
+platform_toolsets:
+  cli: [search, terminal, file, memory]
+  discord: [search, terminal, file, memory]
+  api_server: [search, terminal, file, memory]
+  webhook: [search, terminal, file, memory]
+agent:
+  disabled_toolsets: {{ research_disabled_toolsets | to_json }}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Zelab {{ item.role }} notes export
+
+[Mount]
+What={{ item.source }}
+Where={{ notes_sftp_root }}/{{ item.user }}/vault
+Type=none
+Options=bind,nodev,nosuid,noexec
+
+[Install]
+WantedBy=multi-user.target

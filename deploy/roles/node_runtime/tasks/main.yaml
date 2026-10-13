@@ -1,0 +1,31 @@
+- name: Prepare the shared public release cache and runtime directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: [/var/cache/zelab, /opt/zelab-tools]
+
+- name: Download the checksum-pinned upstream Node runtime
+  ansible.builtin.get_url:
+    url: "{{ node_archive_url }}"
+    dest: "/var/cache/zelab/node-{{ node_version }}.tar.xz"
+    checksum: "sha256:{{ node_archive_sha256 }}"
+    owner: root
+    group: root
+    mode: '0644'
+  # Mirrors rate-limit or drop connections now and then (HTTP 429/5xx); retry before failing.
+  register: download
+  until: download is succeeded
+  retries: 5
+  delay: 30
+
+- name: Extract the independent native Node runtime
+  ansible.builtin.unarchive:
+    src: "/var/cache/zelab/node-{{ node_version }}.tar.xz"
+    remote_src: true
+    dest: /opt/zelab-tools
+    owner: root
+    group: root
+    creates: "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/node"

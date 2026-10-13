@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zelab setup</title>
+<style>
+* { box-sizing: border-box; }
+body { max-width: 54rem; margin: 1.5rem auto; padding: 0 1.2rem; font: 15px/1.4 system-ui,sans-serif; color: #172b3a; background: #fff; }
+h1 { font-size: 1.5rem; margin: 0 0 .6rem; }
+h3 { font-size: 1rem; margin: 0; display: inline-flex; gap: .4rem; align-items: center; }
+.step { margin: .55rem 0; } .step p { display: inline; margin: 0; }
+p { margin: .15rem 0 .5rem; }
+a { color: #00667d; overflow-wrap: anywhere; }
+pre, code { background: #edf2f7; border-radius: 4px; }
+code { padding: .1rem .2rem; overflow-wrap: anywhere; }
+pre { padding: .65rem; overflow-x: auto; margin: .5rem 0; }
+pre code { padding: 0; }
+.summary { background: #eaf6f8; border-left: 3px solid #00758a; padding: .6rem; margin-bottom: .6rem; }
+.status { font-size: .75rem; border-radius: 4px; padding: .1rem .4rem; color: #172b3a; }
+.PASS { background: #c8edda; } .PENDING, .WARN { background: #ffe8a3; }
+.FAIL { background: #ffd0d0; } .MANUAL, .UNKNOWN { background: #e0e7ed; }
+input { accent-color: #00758a; }
+.failure { color: #a22121; }
+.applications { border-top: 1px solid #91a8b6; margin-top: .7rem; padding-top: .5rem; }
+.application { margin: .35rem 0; }
+.application small { display: block; overflow-wrap: anywhere; }
+@media (prefers-color-scheme: dark) {
+  body { color: #edf3fa; background: #172431; }
+  pre, code { background: #243646; } a { color: #85e3f1; }
+  .summary { background: #183c46; } .failure { color: #ffabab; }
+}
+@media print { body { font-size: 10pt; margin: 0; } }
+</style></head><body>
+<h1 id="guide-top">Zelab setup</h1>
+<p>On the Linux server, from the checkout: <code>rtk proxy make</code>. From a Mac/Linux laptop (checkout already on the server):</p>
+<pre><code>rtk proxy make REMOTE_HOST=user@server REMOTE_DIR=/absolute/path/to/Zelab</code></pre>
+<div class="step"><h3 id="host"><input type="checkbox" id="step-host"><label for="step-host">Server</label></h3> <p>x86-64 Debian/Ubuntu, KVM, Docker Compose, SSH, Python 3.12+, Make and <a href="https://github.com/rtk-ai/rtk">RTK</a>; 24 GiB disk, 4 GiB available RAM. Laptop: Python 3.9+, Make, RTK and SSH. Bash/zsh work.</p></div>
+<div class="step"><h3 id="admin"><input type="checkbox" id="step-admin"><label for="step-admin">Administrator</label></h3> <p>Enter your sudo password when prompted. Configuration is created automatically.</p></div>
+<div class="step"><h3 id="tailscale"><input type="checkbox" id="step-tailscale"><label for="step-tailscale">Tailscale</label></h3> <p>Enroll server and devices; enable MagicDNS and HTTPS certificates.</p></div>
+<div class="step"><h3 id="harness"><input type="checkbox" id="step-harness"><label for="step-harness">Worker harness</label></h3> <p>Setup offers <strong>Codex</strong>, <strong>Claude Code</strong>, <strong>both</strong>, or <strong>skip</strong> and saves <code>worker_harness</code> in <code>config/site.yaml</code>. Every interactive run asks again; Enter retains the saved choice, or skips when no choice exists. Only the selected CLIs are installed. Noninteractive setup skips unless the file selects <code>codex</code>, <code>claude</code> or <code>both</code>. Change <code>none</code> later and rerun <code>rtk proxy make</code> to configure the paused placeholder workers.</p></div>
+<p>With <code>both</code>, new workers stay paused until you choose each worker's <strong>Codex</strong> or <strong>Claude Code</strong> adapter in Paperclip. Use the CLI engine and its installed command (<code>/usr/local/bin/zelab-codex</code> or <code>/usr/local/bin/zelab-claude</code>), and select the declared SSH environment (<code>Zelab Operations host</code> or <code>Zelab Coding host</code>). Inert placeholders have no execution environment; select the SSH environment when choosing the adapter. Claude Operations uses <code>CLAUDE_CONFIG_DIR</code> set to its account's <code>.claude</code> directory and <code>DISABLE_UPDATES=1</code>, <code>DISABLE_AUTOUPDATER=1</code>. After signing in and testing, enable wake on demand and resume Operations; keep Coding paused.</p>
+<p>For Codex, on the server as the operator: <code>rtk proxy /usr/local/bin/zelab-codex login --device-auth</code>, then rerun make. For Claude Code, sign in as the Operations worker (default account shown): <code>rtk proxy sudo -u zelab-ops -H /usr/local/bin/zelab-claude auth login --claudeai</code>. In Paperclip, use <strong>Test Environment</strong> before submitting a worker task. Choose models in Paperclip; Coding stays paused until sandbox execution is supported.</p>
+<p><strong>UI passwords</strong></p>
+<p>On a fresh install, choose three separate UI passwords in the terminal: Hermes, Paperclip and Obsidian. Input is hidden and each new password is entered twice; paste unique passwords of at least 16 characters from your password manager. Hermes retains only a scrypt hash. Paperclip's provisioning copy is temporary; reapply asks for its current owner password. Obsidian needs a persistent native root-owned password file for container startup. No password is printed or logged.</p>
+<p>Existing sites reuse current password files without rotation. After a successful apply, the terminal offers to remove redundant deployment copies once you confirm the UI passwords are saved in your password manager. The required Obsidian runtime file and machine keys remain. Old backups or snapshots may retain earlier copies.</p>
+<div class="step"><h3 id="hermes"><input type="checkbox" id="step-hermes"><label for="step-hermes">Hermes</label></h3> <p>Open the printed Hermes URL, use your saved password, and sign in to your chosen provider and model on the default Operations profile using native setup.</p></div>
+<div class="step"><h3 id="discord"><input type="checkbox" id="step-discord"><label for="step-discord">Discord</label></h3> <p><a href="https://discord.com/developers/applications">Create and invite a bot</a>, enable Message Content Intent, then paste its token in Hermes → Channels → Discord. Set <code>discord_owner_id</code> and <code>discord_channel_id</code> in <code>config/site.yaml</code>.</p></div>
+<div class="step"><h3 id="proof"><input type="checkbox" id="step-proof"><label for="step-proof">Test</label></h3> <p>After choosing and signing in to a worker harness, rerun the install command. Ask Operations in Discord to report the host's CPU, memory and Docker containers through Paperclip, returning its task ID.</p></div>
+<p>Failed? Fix the cause and rerun <code>rtk proxy make</code>; it resumes and refreshes the guide. <code>make clean</code> clears local deployment choices and generated files, retaining host connections and resource locations. <code>make fclean</code> previews/confirms a project reset and then clears those local choices; <code>make re</code> resets and reinstalls (<strong>deletes Zelab data</strong>). <code>make backup</code> saves encrypted state; <code>make restore</code> selects/verifies/restores it. <code>make help</code> lists the seven commands.</p>
+<p>Fresh installs temporarily use up to 70% of spare CPU/RAM, keep host headroom, then restart at normal limits. Running VMs stay unchanged. Disable with <code>vm_install_resource_fraction: 0</code> in <code>config/site.yaml</code>. Timings stay in private logs.</p>
+</body></html>

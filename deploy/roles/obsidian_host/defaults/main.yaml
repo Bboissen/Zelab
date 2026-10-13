@@ -1,0 +1,8 @@
+obsidian_state_dir: /var/lib/zelab-obsidian
+obsidian_config_dir: /etc/zelab-obsidian
+obsidian_backend_port: 18645
+obsidian_username: owner
+obsidian_timezone: Europe/Paris
+notes_vault_dir: /var/lib/zelab-vault
+notes_container_user: zelab-notes-owner
+notes_shared_group: zelab-vault-shared

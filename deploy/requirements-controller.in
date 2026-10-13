@@ -1,0 +1,2 @@
+# Deployment controller only; Hermes/Paperclip runtime pins are separate.
+ansible-core==2.21.5

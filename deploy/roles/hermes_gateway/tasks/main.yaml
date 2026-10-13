@@ -1,0 +1,79 @@
+- name: Recheck default owner admission before starting the native gateway
+  ansible.builtin.include_role:
+    name: hermes_config_check
+
+- name: Find named native profiles before gateway activation
+  ansible.builtin.find:
+    paths: /var/lib/zelab/hermes/home/profiles
+    file_type: directory
+    recurse: false
+  register: gateway_profiles
+
+- name: Require owner-only admission in every active named profile
+  ansible.builtin.include_role:
+    name: hermes_config_check
+  vars:
+    checked_profile_home: "{{ gateway_profile.path }}"
+    checked_skip_parked: true
+  loop: "{{ gateway_profiles.files }}"
+  loop_control:
+    loop_var: gateway_profile
+    label: "{{ gateway_profile.path | basename }}"
+
+- name: Enable native user services without a login session
+  ansible.builtin.command:
+    argv: [loginctl, enable-linger, zelab-hermes]
+    creates: /var/lib/systemd/linger/zelab-hermes
+
+- name: Start the native Hermes user service manager
+  ansible.builtin.systemd_service:
+    name: user@61102.service
+    state: started
+
+- name: Install the unmodified native shared gateway user unit
+  ansible.builtin.command:
+    argv:
+      - "{{ hermes_install_dir }}/.hermes/bin/hermes"
+      - gateway
+      - install
+      - --if-missing
+      - --no-start-now
+      - --start-on-login
+    creates: "/home/zelab-hermes/.config/systemd/user/{{ hermes_gateway_unit }}"
+  become_user: zelab-hermes
+  environment:
+    HOME: /home/zelab-hermes
+    HERMES_HOME: /var/lib/zelab/hermes/home
+    XDG_RUNTIME_DIR: /run/user/61102
+    DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/61102/bus
+    TMPDIR: /var/lib/zelab/hermes/tmp
+
+- name: Prepare conventional native gateway environment drop-in
+  ansible.builtin.file:
+    path: "/home/zelab-hermes/.config/systemd/user/{{ hermes_gateway_unit }}.d"
+    state: directory
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0700'
+
+- name: Keep native SSH socket paths short in the shared gateway
+  ansible.builtin.copy:
+    dest: "/home/zelab-hermes/.config/systemd/user/{{ hermes_gateway_unit }}.d/zelab.conf"
+    content: "[Service]\nEnvironment=TMPDIR=/var/lib/zelab/hermes/tmp\nUMask=0077\n"
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0600'
+  register: native_gateway_environment
+
+- name: Enable and start the native shared gateway
+  ansible.builtin.systemd_service:
+    scope: user
+    name: "{{ hermes_gateway_unit }}"
+    daemon_reload: true
+    enabled: true
+    state: "{{ 'restarted' if native_gateway_environment.changed or (hermes_dependencies is defined and hermes_dependencies.changed) else 'started' }}"
+  become_user: zelab-hermes
+  environment:
+    HOME: /home/zelab-hermes
+    XDG_RUNTIME_DIR: /run/user/61102
+    DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/61102/bus

@@ -1,0 +1,11 @@
+[Unit]
+Description=Private Paperclip database socket access
+Before=zelab-paperclip.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nft -f /etc/zelab-paperclip-db.nft
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

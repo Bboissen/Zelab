@@ -1,0 +1,8 @@
+- name: Install the native Hermes to Paperclip task bridge
+  hosts: guest
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - hermes_bridge

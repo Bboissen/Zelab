@@ -1,0 +1,16 @@
+- name: Seed the native Hermes API without resetting profile configuration
+  hosts: guest
+  gather_facts: false
+  become: true
+  roles:
+    - hermes_service_identity
+    - hermes_api
+
+- name: Configure the native Paperclip Hermes gateway agent
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - paperclip_hermes

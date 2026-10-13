@@ -1,0 +1,36 @@
+# Security-only package metadata, resolved through Hermes' native PM. Native
+# application code stays at the verified upstream commit; no pip mutation.
+- name: Load qualified dependency metadata
+  ansible.builtin.set_fact:
+    hermes_dependency_manifest: "{{ lookup('ansible.builtin.file', role_path + '/files/dependencies/manifest.json') | from_json }}"
+
+- name: Require dependency metadata for the selected upstream source
+  ansible.builtin.assert:
+    that: hermes_dependency_manifest.upstream_commit == hermes_commit
+    fail_msg: Qualify the dependency manifests against the new Hermes source before changing its pin.
+
+- name: Inspect native dependency manifests before installation
+  ansible.builtin.stat:
+    path: "{{ hermes_install_dir }}/{{ item }}"
+    checksum_algorithm: sha256
+  loop: [pyproject.toml, uv.lock]
+  register: hermes_dependency_inputs
+
+- name: Preserve independently edited dependency manifests for explicit adoption
+  ansible.builtin.assert:
+    that:
+      - item.stat.checksum in [hermes_dependency_manifest.files[item.item].upstream_sha256, hermes_dependency_manifest.files[item.item].sha256]
+      - lookup('ansible.builtin.file', role_path + '/files/dependencies/' + item.item, rstrip=false) | hash('sha256') == hermes_dependency_manifest.files[item.item].sha256
+    fail_msg: The native dependency manifests differ from the upstream or qualified inputs. Adopt the change explicitly; do not overwrite it.
+  loop: "{{ hermes_dependency_inputs.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Supply qualified manifests to the native package manager
+  ansible.builtin.copy:
+    src: "dependencies/{{ item }}"
+    dest: "{{ hermes_install_dir }}/{{ item }}"
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0644'
+  loop: [pyproject.toml, uv.lock]

@@ -1,0 +1,3 @@
+- name: Configure authenticated tailnet routes; backends stay on localhost
+  ansible.builtin.import_tasks: tailscale.yaml
+  when: ui_tailscale_enabled | default(false) | bool

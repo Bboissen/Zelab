@@ -1,0 +1,29 @@
+services:
+  obsidian:
+    image: ${OBSIDIAN_IMAGE:?OBSIDIAN_IMAGE is required}
+    container_name: zelab-obsidian
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    environment:
+      PUID: ${OBSIDIAN_UID:?}
+      PGID: ${OBSIDIAN_GID:?}
+      TZ: ${OBSIDIAN_TIMEZONE:-Europe/Paris}
+      UMASK: "007"
+      CUSTOM_USER: ${OBSIDIAN_USERNAME:?}
+      FILE__PASSWORD: /run/secrets/obsidian-password
+      DISABLE_SUDO: "true"
+      SELKIES_ENABLE_SHARING: "false"
+      SELKIES_ENABLE_COLLAB: "false"
+    volumes:
+      - ${OBSIDIAN_STATE_DIR:?}/config:/config
+      - ${NOTES_VAULT_DIR:?}:/vault
+      - ${OBSIDIAN_PASSWORD_FILE:?}:/run/secrets/obsidian-password:ro
+    ports:
+      - 127.0.0.1:${OBSIDIAN_BACKEND_PORT:?}:3000
+    shm_size: 1gb
+    mem_limit: 2g
+    cpus: 1.5
+    pids_limit: 512
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}

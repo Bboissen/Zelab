@@ -1,0 +1,7 @@
+- name: Supervise the native shared Hermes gateway as its existing user
+  hosts: guest
+  gather_facts: false
+  become: true
+  roles:
+    - hermes_service_identity
+    - hermes_gateway

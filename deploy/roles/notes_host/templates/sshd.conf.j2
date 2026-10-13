@@ -1,0 +1,24 @@
+# Dedicated notes-only listener; does not include or change owner SSH policy.
+Port {{ notes_sftp_port }}
+ListenAddress 127.0.0.1
+HostKey /etc/ssh/ssh_host_ed25519_key
+PidFile /run/zelab-notes-sshd.pid
+UsePAM yes
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile {{ notes_config_dir }}/authorized_keys/%u
+AllowUsers {{ notes_owner_user }} {{ notes_shared_user }}
+ChrootDirectory {{ notes_sftp_root }}/%u
+ForceCommand internal-sftp -d /vault -u 0007
+Subsystem sftp internal-sftp
+DisableForwarding yes
+PermitTTY no
+X11Forwarding no
+PermitTunnel no
+LoginGraceTime 30
+MaxAuthTries 3
+ClientAliveInterval 60
+ClientAliveCountMax 3
+LogLevel VERBOSE

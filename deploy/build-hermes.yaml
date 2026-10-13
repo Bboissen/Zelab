@@ -1,0 +1,8 @@
+- name: Build pinned upstream Hermes web assets outside the small VM
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - hermes_build

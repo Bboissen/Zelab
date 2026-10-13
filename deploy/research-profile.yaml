@@ -1,0 +1,8 @@
+- name: Prepare a native Research profile with restricted SSH tools
+  hosts: guest
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - research_profile

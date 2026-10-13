@@ -1,0 +1,9 @@
+notes_vault_dir: /var/lib/zelab-vault
+notes_config_dir: /etc/zelab-notes
+notes_sftp_root: /var/lib/zelab-notes-sftp
+notes_sftp_port: 12923
+notes_owner_group: zelab-vault-owner
+notes_shared_group: zelab-vault-shared
+notes_container_user: zelab-notes-owner
+notes_owner_user: zelab-notes-owner
+notes_shared_user: zelab-notes-shared

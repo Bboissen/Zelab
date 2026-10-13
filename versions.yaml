@@ -1,0 +1,34 @@
+# Immutable inputs inspected 2026-10-09/10. Live qualification is tracked in evidence.
+guest_image_url: https://cloud.debian.org/images/cloud/trixie/20261001-2618/debian-13-genericcloud-amd64-20261001-2618.qcow2
+guest_image_sha512: f46f0671a6e5bdec5291ab8972bae2f10e5408c2f64a74078f11efc2f06a436a9d0313ed50e0472542eeabf780e9f7c792ac0a314c6c20507fcd9fd81b468c3d
+hermes_version: v0.21.5+9529.g3637c51
+hermes_commit: 3637c512fc3211bdccb61b7140d09ac1018508ba
+hermes_archive_url: https://codeload.github.com/NousResearch/hermes-agent/tar.gz/3637c512fc3211bdccb61b7140d09ac1018508ba
+hermes_archive_sha256: 022d0a74ccaba8a959fb8ced373d55f517cf18e2dbe85efd901b1fbbc75dc74d
+hermes_installer_sha256: 034845e34289813ff5fb7fd3e071ec69f6b14aee8ba297a477b31dda6374cb86
+# Hermes' own pm/lock.json pins its Python/uv dependencies and tools.
+# Security dependency manifests are consumed by native PM, with application code unchanged.
+hermes_dependency_revision: "{{ (lookup('ansible.builtin.file', playbook_dir + '/roles/hermes/files/dependencies/manifest.json') | from_json).files['uv.lock'].sha256 }}"
+node_version: 26.7.0
+node_archive_url: https://nodejs.org/dist/v26.7.0/node-v26.7.0-linux-x64.tar.xz
+node_archive_sha256: 982aa24dd8be4c889c6a8ab337ddff3b0896645b20f4239356e80552c16277ee
+obsidian_version: v1.13.7-ls147
+obsidian_image: lscr.io/linuxserver/obsidian:v1.13.7-ls147@sha256:a3324c3380f40a70d98058636a47db4afaca261907751a720afa4132c7f4c14e
+paperclip_version: v2026.1005.0
+# Security-only transitive overrides are declared in deploy/roles/paperclip/files/package.json.
+paperclip_npm_version: 2026.1005.0
+# Build beside the active release, including dependency patches and Node changes.
+# Native state remains in paperclip_home; switching binaries never rolls back a DB.
+paperclip_runtime_dir: "/opt/paperclip/releases/{{ paperclip_npm_version }}-{{ (node_version ~ lookup('ansible.builtin.file', playbook_dir + '/roles/paperclip/files/package.json') ~ lookup('ansible.builtin.file', playbook_dir + '/roles/paperclip/files/package-lock.json')) | hash('sha256') }}"
+paperclip_npm_archive_sha256: 60cf5e88a9ad0e68bf3a10e4ba6ba0df2f21560f81a73e6a25517fee82187d12
+paperclip_server_archive_sha256: 50d5032f9a47611866b58a8013e946e4ae0683a48ddc2fa424e2e46220cb9139
+paperclip_commit: 467125fafb47a8520856504fecc48d6e32055db1
+paperclip_archive_url: https://codeload.github.com/paperclipai/paperclip/tar.gz/467125fafb47a8520856504fecc48d6e32055db1
+paperclip_archive_sha256: 50f6a1eb47a2fbcb4bfd3a2b1dbe2e934f422a413f6c0dc3e10f1c9b694829b5
+codex_version: 0.162.0
+codex_archive_url: https://github.com/openai/codex/releases/download/rust-v0.162.0/codex-package-x86_64-unknown-linux-musl.tar.gz
+codex_archive_sha256: 4f573944c1d2059109d75a2f4d0cc9c03697288224a5e407717a9de98fc010c5
+# Optional Claude Code; signed-manifest and CLI qualification: docs/HARNESS_QUALIFICATION.md.
+claude_version: 2.1.287
+claude_binary_url: https://downloads.claude.ai/claude-code-releases/2.1.287/linux-x64/claude
+claude_binary_sha256: 3920489a5109cff5786a1a392c25277408ff22bc796d5edb9c16a60e5a1718f0

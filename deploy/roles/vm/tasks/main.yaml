@@ -1,0 +1,101 @@
+- name: Validate guest resources and disk path
+  ansible.builtin.assert:
+    that:
+      - vm_cpu | int >= 1
+      - vm_memory_mb | int >= 1024
+      - guest_ssh_port | int > 1024
+      - vm_disk == vm_data + '/disk.qcow2'
+    fail_msg: Select unambiguous guest resources and disk paths.
+
+- name: Prepare private deployment state
+  ansible.builtin.file:
+    path: "{{ private_dir }}"
+    state: directory
+    owner: "{{ operator_user }}"
+    mode: '0700'
+
+- name: Preserve the retained administrator key for an existing fresh guest
+  ansible.builtin.include_role:
+    name: retained_secrets
+  vars:
+    retained_secrets:
+      - {installed: "{{ vm_disk }}", source: "{{ deploy_key }}"}
+
+- name: Generate the fresh guest deployment key once
+  ansible.builtin.command:
+    argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -C, zelab-deploy, -f, "{{ deploy_key }}"]
+    creates: "{{ deploy_key }}"
+  become: false
+
+- name: Prepare a private recovery key once
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - python3
+      - -c
+      - |
+        import os, secrets, sys
+        fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as out:
+            out.write(secrets.token_urlsafe(48) + '\n')
+      - "{{ private_dir }}/backup-passphrase"
+    creates: "{{ private_dir }}/backup-passphrase"
+  become: false
+  no_log: true
+
+- name: Prepare the pinned official guest disk and cloud-init media
+  ansible.builtin.include_tasks: create.yaml
+
+- name: Create native lifecycle helper directory
+  ansible.builtin.file:
+    path: /usr/local/lib/zelab
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install native QEMU shutdown command
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/qmp-poweroff.py"
+    dest: /usr/local/lib/zelab/qmp-poweroff.py
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install native VM unit without retired media or helper
+  ansible.builtin.template:
+    src: zelab-vm.service.j2
+    dest: "/etc/systemd/system/{{ vm_service | default('zelab-vm') }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  register: vm_unit
+
+- name: Prepare temporary installation resources before the first VM boot
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - "{{ zelab_controller_python }}"
+      - "{{ playbook_dir }}/install_resources.py"
+      - begin
+      - --site-json
+      - "{{ zelab_install_site_json }}"
+  register: vm_install_resources
+  changed_when: vm_install_resources.rc == 0 and (vm_install_resources.stdout | from_json).changed
+  when: zelab_full_install | default(false) | bool
+
+- name: Report temporary VM resources without changing permanent configuration
+  ansible.builtin.debug:
+    msg: "Installation VM resources: {{ limits.cpu }} vCPU, {{ limits.memory_mb }} MiB RAM, {{ limits.cpu_quota }} CPU quota"
+  vars:
+    limits: "{{ vm_install_resources.stdout | from_json }}"
+  when: vm_install_resources is not skipped and (vm_install_resources.stdout | from_json).changed
+
+- name: Start the selected VM under native supervision
+  ansible.builtin.systemd_service:
+    name: "{{ vm_service | default('zelab-vm') }}.service"
+    daemon_reload: true
+    enabled: true
+    state: "{{ 'restarted' if vm_unit.changed else 'started' }}"

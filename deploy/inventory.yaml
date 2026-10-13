@@ -1,0 +1,15 @@
+all:
+  children:
+    host:
+      hosts:
+        zelab_host:
+          ansible_connection: local
+          ansible_python_interpreter: /usr/bin/python3
+    guest:
+      hosts:
+        zelab_guest:
+          ansible_host: 127.0.0.1
+          ansible_port: "{{ guest_ssh_port }}"
+          ansible_user: "{{ guest_user }}"
+          ansible_ssh_private_key_file: "{{ deploy_key }}"
+          ansible_ssh_common_args: "-F /dev/null -o StrictHostKeyChecking=yes -o UserKnownHostsFile={{ guest_known_hosts }}"

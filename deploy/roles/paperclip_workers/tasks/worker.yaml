@@ -1,0 +1,232 @@
+- name: Read native instance environments
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ worker_company.id }}/environments"
+    headers: {Cookie: "{{ worker_owner.cookies_string }}"}
+  register: native_environments
+
+- name: Reject ambiguous declared environment names
+  ansible.builtin.assert:
+    that: native_environments.json | selectattr('name', 'equalto', 'Zelab ' + worker.name + ' host') | list | length <= 1
+
+- name: Create the worker's native SSH environment once
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ worker_company.id }}/environments"
+    method: POST
+    body_format: json
+    body:
+      name: "Zelab {{ worker.name }} host"
+      driver: ssh
+      config:
+        host: "{{ worker_ssh_host }}"
+        port: "{{ worker_ssh_port }}"
+        username: "{{ worker.user }}"
+        remoteWorkspacePath: "{{ worker.home }}/workspace"
+        privateKey: "{{ lookup('ansible.builtin.file', private_dir + '/worker-' + worker.role + '.key') }}"
+        knownHosts: "{{ lookup('ansible.builtin.file', private_dir + '/worker_known_hosts') }}"
+        strictHostKeyChecking: true
+      envVars:
+        PATH: "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin:/usr/local/bin:/usr/bin:/bin"
+    headers: {Cookie: "{{ worker_owner.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+    status_code: 201
+  when: native_environments.json | selectattr('name', 'equalto', 'Zelab ' + worker.name + ' host') | list | length == 0
+  register: native_environment_created
+  changed_when: true
+
+- name: Resolve the declared native SSH environment
+  ansible.builtin.set_fact:
+    native_environment: "{{ native_environment_created.json if native_environment_created is not skipped else (native_environments.json | selectattr('name', 'equalto', 'Zelab ' + worker.name + ' host') | first) }}"
+
+- name: Require the declared native execution identity when reusing an environment
+  ansible.builtin.assert:
+    that:
+      - native_environment.driver == 'ssh'
+      - native_environment.config.host == worker_ssh_host
+      - native_environment.config.port | int == worker_ssh_port | int
+      - native_environment.config.username == worker.user
+      - native_environment.config.remoteWorkspacePath == worker.home + '/workspace'
+      - native_environment.config.strictHostKeyChecking | bool
+
+- name: Read native projects
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ worker_company.id }}/projects"
+    headers: {Cookie: "{{ worker_owner.cookies_string }}"}
+  register: native_projects
+
+- name: Reject ambiguous declared project names
+  ansible.builtin.assert:
+    that: native_projects.json | selectattr('name', 'equalto', worker.name) | list | length <= 1
+
+- name: Create the native worker project once
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ worker_company.id }}/projects"
+    method: POST
+    body_format: json
+    body:
+      name: "{{ worker.name }}"
+      status: in_progress
+      executionWorkspacePolicy:
+        enabled: true
+        defaultMode: shared_workspace
+        sharedWorkspaceConcurrency: serialize
+        allowIssueOverride: false
+      workspace: {name: "{{ worker.name }} host workspace", sourceType: non_git_path, cwd: "{{ worker.home }}/workspace", isPrimary: true}
+    headers: {Cookie: "{{ worker_owner.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+    status_code: 201
+  when: native_projects.json | selectattr('name', 'equalto', worker.name) | list | length == 0
+  register: native_project_created
+  changed_when: true
+
+- name: Resolve the declared native project
+  ansible.builtin.set_fact:
+    native_project: "{{ native_project_created.json if native_project_created is not skipped else (native_projects.json | selectattr('name', 'equalto', worker.name) | first) }}"
+
+- name: Require serialized project work without issue overrides
+  ansible.builtin.assert:
+    that:
+      - native_project.executionWorkspacePolicy.enabled == true
+      - native_project.executionWorkspacePolicy.defaultMode == 'shared_workspace'
+      - native_project.executionWorkspacePolicy.sharedWorkspaceConcurrency == 'serialize'
+      - native_project.executionWorkspacePolicy.allowIssueOverride == false
+    fail_msg: Native project execution policy changed; reconcile before submitting work.
+
+- name: Read existing native agents
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ worker_company.id }}/agents"
+    headers: {Cookie: "{{ worker_owner.cookies_string }}"}
+  register: native_agents
+
+- name: Reject ambiguous declared agent names
+  ansible.builtin.assert:
+    that: native_agents.json | selectattr('name', 'equalto', worker.name) | list | length <= 1
+
+- name: Declare initial native agent API permissions
+  ansible.builtin.set_fact:
+    worker_permissions: "{{ {'canCreateAgents': false, 'canCreateSkills': false, 'canAssignTasks': worker.role == 'ops', 'trustPreset': 'standard'} if worker.role == 'ops' else {'canCreateAgents': false, 'canCreateSkills': false, 'canAssignTasks': false, 'trustPreset': 'low_trust_review', 'authorizationPolicy': {'trustPreset': 'low_trust_review', 'trustBoundary': {'mode': 'low_trust_review', 'companyId': worker_company.id, 'projectIds': [native_project.id], 'allowedToolClasses': ['git.read', 'git.write', 'tests.local']}}} }}"
+
+- name: Declare the explicitly selected native harness
+  ansible.builtin.set_fact:
+    worker_adapter_type: "{{ {'codex': 'codex_local', 'claude': 'claude_local', 'none': 'process', 'both': 'process'}[worker_harness] }}"
+    worker_adapter_config: >-
+      {{ {'command': '/usr/bin/false', 'args': [], 'cwd': worker.home + '/workspace'}
+         if worker_harness in ['none', 'both'] else
+         {'engine': 'cli', 'command': '/usr/local/bin/zelab-' + worker_harness,
+          'cwd': worker.home + '/workspace',
+          'env': ({'OPENAI_API_KEY': '', 'CHATGPT_API_KEY': ''} if worker_harness == 'codex' else
+                  {'ANTHROPIC_API_KEY': '', 'CLAUDE_CODE_OAUTH_TOKEN': '',
+                   'CLAUDE_CONFIG_DIR': worker.home + '/.claude',
+                   'DISABLE_AUTOUPDATER': '1', 'DISABLE_UPDATES': '1'})
+                 if worker.role == 'ops' else {}}
+         | combine({'model': worker_model} if worker_model else
+                   ({'model': worker_codex_model}
+                    if worker_harness == 'codex' and worker_codex_model | default('') else {})) }}
+
+- name: Create the native worker agent with protected API diagnostics
+  when: native_agents.json | selectattr('name', 'equalto', worker.name) | list | length == 0
+  block:
+    - name: Create the native worker agent once
+      no_log: true
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ worker_company.id }}/agents"
+        method: POST
+        body_format: json
+        body:
+          name: "{{ worker.name }}"
+          role: "{{ worker.agent_role }}"
+          adapterType: "{{ worker_adapter_type }}"
+          defaultEnvironmentId: "{{ native_environment.id if worker_harness in ['codex', 'claude'] else none }}"
+          adapterConfig: "{{ worker_adapter_config }}"
+          metadata: "{{ {'zelabHarnessPending': true} if worker_harness in ['none', 'both'] else {} }}"
+          runtimeConfig:
+            heartbeat: {enabled: false, wakeOnDemand: "{{ worker_harness in ['codex', 'claude'] }}", maxConcurrentRuns: 1}
+          permissions: "{{ worker_permissions }}"
+          instructionsBundle:
+            entryFile: AGENTS.md
+            files:
+              AGENTS.md: "{{ lookup('ansible.builtin.template', worker.role + '-instructions.md.j2') }}"
+        headers: {Cookie: "{{ worker_owner.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+        status_code: 201
+      register: native_agent_created
+      changed_when: true
+  rescue:
+    - name: Report worker creation failure without credentials or response bodies
+      no_log: false
+      ansible.builtin.fail:
+        msg: >-
+          Paperclip worker creation failed (HTTP {{ ansible_failed_result.status | default(-1) | int }}).
+          {{ 'The native API rejected the agent configuration; check adapter and environment compatibility.'
+             if ansible_failed_result.status | default(-1) | int == 422 else
+             'Check Paperclip service health and native owner access.' }}
+          Request credentials and response bodies are hidden.
+
+- name: Leave skipped workers and unsupported Coding inactive on first creation
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/agents/{{ native_agent_created.json.id }}"
+    method: PATCH
+    body_format: json
+    body: {status: paused}
+    headers: {Cookie: "{{ worker_owner.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+  when: (worker.role == 'code' or worker_harness in ['none', 'both']) and native_agent_created is not skipped
+  changed_when: true
+
+- name: Resolve the declared native agent
+  ansible.builtin.set_fact:
+    native_agent: "{{ native_agent_created.json if native_agent_created is not skipped else (native_agents.json | selectattr('name', 'equalto', worker.name) | first) }}"
+    worker_ids: "{{ worker_ids | default({}) | combine({worker.role: {'environment_id': native_environment.id, 'project_id': native_project.id, 'agent_id': (native_agent_created.json.id if native_agent_created is not skipped else (native_agents.json | selectattr('name', 'equalto', worker.name) | first).id)}}) }}"
+
+- name: Read the actual agent after creation or pause
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/agents/{{ native_agent.id }}"
+    headers: {Cookie: "{{ worker_owner.cookies_string }}"}
+  register: worker_current
+
+- name: Require retained native worker permissions and unsupported Coding pause
+  ansible.builtin.assert:
+    that:
+      - worker_current.json.adapterType in ['codex_local', 'claude_local', 'process']
+      - worker_current.json.adapterType != 'process' or (worker_current.json.adapterConfig.command == '/usr/bin/false' and worker_current.json.status == 'paused' and worker_current.json.runtimeConfig.heartbeat.wakeOnDemand == false)
+      - worker_current.json.defaultEnvironmentId == (none if worker_current.json.adapterType == 'process' else native_environment.id)
+      - worker_current.json.permissions.canCreateAgents == false
+      - worker_current.json.permissions.canCreateSkills == false
+      - worker_current.json.permissions.trustPreset == worker_permissions.trustPreset
+      - worker.role != 'code' or worker_current.json.status == 'paused'
+      - worker.role != 'code' or worker_current.json.permissions.canAssignTasks == false
+      - worker.role != 'code' or worker_current.json.permissions.authorizationPolicy.trustBoundary == worker_permissions.authorizationPolicy.trustBoundary
+    fail_msg: Native worker security settings changed; reconcile them explicitly. Coding must remain paused until sandbox execution is supported.
+
+- name: Activate only an unchanged Zelab placeholder after an explicit harness choice
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/agents/{{ native_agent.id }}"
+    method: PATCH
+    body_format: json
+    body:
+      adapterType: "{{ worker_adapter_type }}"
+      defaultEnvironmentId: "{{ native_environment.id }}"
+      adapterConfig: "{{ worker_adapter_config }}"
+      replaceAdapterConfig: true
+      metadata: "{{ worker_current.json.metadata | combine({'zelabHarnessPending': false}) }}"
+      status: "{{ 'paused' if worker.role == 'code' else 'idle' }}"
+      runtimeConfig:
+        heartbeat: {enabled: false, wakeOnDemand: true, maxConcurrentRuns: 1}
+    headers: {Cookie: "{{ worker_owner.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+  when:
+    - worker_harness in ['codex', 'claude']
+    - worker_current.json.metadata.zelabHarnessPending | default(false)
+    - worker_current.json.adapterType == 'process'
+    - "worker_current.json.adapterConfig == {'command': '/usr/bin/false', 'args': [], 'cwd': worker.home + '/workspace'}"
+    - worker_current.json.status == 'paused'
+  register: worker_harness_activated
+  changed_when: true
+
+- name: Read the actual worker after optional activation
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/agents/{{ native_agent.id }}"
+    headers: {Cookie: "{{ worker_owner.cookies_string }}"}
+  register: worker_current
+
+- name: Verify the explicitly activated worker stays on its declared identity
+  ansible.builtin.assert:
+    that:
+      - worker_current.json.adapterType == worker_adapter_type
+      - worker_current.json.defaultEnvironmentId == native_environment.id
+      - worker.role != 'code' or worker_current.json.status == 'paused'
+  when: worker_harness_activated is not skipped

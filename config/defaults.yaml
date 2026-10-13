@@ -1,0 +1,79 @@
+# Public defaults for every site. Do not edit for one host: put overrides in
+# config/site.yaml (created by plain `make`). No secrets belong here.
+#
+# Derived when absent: operator_user (current OS account; written by configure),
+# deploy_key / guest_known_hosts (inside private_dir), vm_disk (vm_data),
+# dashboard_username / obsidian_username (operator_user),
+# paperclip_owner_email (operator_user@zelab.local) and paperclip_allowed_hosts.
+
+# Guest VM: a new pinned Debian guest; an existing disk is never replaced.
+vm_instance: zelab
+vm_service: zelab-vm
+vm_user: zelab-vm
+vm_disk_gib: 16
+vm_cpu: 1
+vm_memory_mb: 2048
+vm_cpu_quota: 50%
+vm_memory_max: 2304M
+# A fresh VM temporarily uses up to 70% of idle CPU / available RAM during
+# installation, preserving host_memory_reserve_gib and QEMU overhead. 0 disables.
+# Running guests keep their normal resources during routine reapplies.
+vm_install_resource_fraction: 0.7
+vm_isolated: false
+vm_data: /var/lib/zelab-vm/data
+vm_root: /var/lib/zelab-vm/root
+vm_bootstrap_dir: /var/lib/zelab-vm/bootstrap
+guest_user: zelab-deploy
+
+# Host headroom. Installation fails only when the actual need is missing;
+# falling below these preferred reserves is reported as a warning.
+host_disk_reserve_gib: 20
+host_memory_reserve_gib: 8
+
+# Loopback-only host ports (1025-65535).
+guest_ssh_port: 12921
+guest_dashboard_port: 18640
+guest_api_port: 18642
+paperclip_port: 13100
+paperclip_db_port: 54329
+notes_sftp_port: 12923
+obsidian_backend_port: 18645
+
+# Paperclip coordinator and host workers.
+paperclip_user: zelab-paperclip
+paperclip_home: /var/lib/zelab-paperclip
+paperclip_company_name: Zelab
+worker_ops_user: zelab-ops
+worker_ops_home: /var/lib/zelab-ops
+worker_code_user: zelab-code
+worker_code_home: /var/lib/zelab-code
+worker_ssh_host: 127.0.0.1
+worker_ssh_port: 22
+# Optional Paperclip worker harness: codex, claude, both or none (skip).
+# Interactive make asks on each run; unattended setup retains a saved selection
+# or skips when absent. This file supplies defaults, not a saved site choice.
+worker_harness: none
+# Empty uses the chosen harness's native default; native UI edits are retained.
+worker_model: ''
+
+# Hermes. Reserves are parked native profiles; they need no Discord application
+# until one is deliberately assigned.
+hermes_install_dir: /opt/hermes/agent
+# Empty leaves provider/model selection to Hermes' native setup UI.
+hermes_initial_model: ''
+hermes_reserve_count: 5
+
+# Notes vault and Obsidian browser UI.
+notes_enabled: true
+notes_vault_dir: /var/lib/zelab-vault
+notes_guest_root: /var/lib/zelab-notes
+notes_shared_profiles: [research]
+obsidian_enabled: true
+obsidian_state_dir: /var/lib/zelab-obsidian
+obsidian_config_dir: /etc/zelab-obsidian
+
+# Private HTTPS through Tailscale Serve; backends stay on localhost.
+ui_tailscale_enabled: false
+ui_tail_hermes_port: 443
+ui_tail_paperclip_port: 8443
+ui_tail_obsidian_port: 9443

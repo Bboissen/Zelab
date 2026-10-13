@@ -1,0 +1,29 @@
+[Unit]
+Description=Native Paperclip coordinator
+After=network-online.target zelab-paperclip-db.service
+Wants=network-online.target
+Requires=zelab-paperclip-db.service
+
+[Service]
+User={{ paperclip_user }}
+Group={{ paperclip_user }}
+WorkingDirectory={{ paperclip_runtime_dir }}
+Environment=HOME={{ paperclip_home }}
+Environment=PATH=/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/zelab-paperclip.env
+ExecStart=/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/node {{ paperclip_runtime_dir }}/node_modules/paperclipai/dist/index.js run --no-repair
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+KillMode=control-group
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths={{ paperclip_home }}
+PrivateTmp=yes
+UMask=0077
+MemoryMax=4G
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target
