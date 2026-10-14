@@ -1,18 +1,34 @@
-# Zelab v2 architecture (proposal)
+# Zelab v2 architecture
 
-Status: design agreed with the owner on 2026-10-14, not implemented. Items under
-[To verify while building](#to-verify-while-building) are assumptions until qualified. The
-current system is described in [ARCHITECTURE.md](ARCHITECTURE.md) and
-[TRUST_MODEL.md](TRUST_MODEL.md); this page replaces both when v2 ships.
+Status: design agreed with the owner on 2026-10-14 and reworked on 2026-10-15
+after qualification against the pinned Paperclip and Hermes. Not implemented yet.
+Results are under [Qualification](#qualification); items still open are listed
+there and must pass before the live switch. The current system is described in
+[ARCHITECTURE.md](ARCHITECTURE.md) and [TRUST_MODEL.md](TRUST_MODEL.md); this page
+replaces both when v2 ships.
+
+## Principle: use the tools as built
+
+Paperclip and Hermes are used the way they are designed. Their own concepts,
+defaults and flows decide who may do what in them: Paperclip's tickets, task
+keys, hire approvals, environments and AI connections; Hermes' profiles,
+gateway, A2A, dashboard and setup wizards. Zelab does not re-implement or
+override their permissions. Where a tool's default leaves a gap, the gap is
+written down as an accepted risk instead of being patched.
+
+Zelab adds only what neither tool does: the guest, the bot containers, the
+vault and its file permissions, per-project host accounts, Discord channels and
+roles, and the glue that keeps those aligned with Paperclip (zelab-sync).
 
 ## Goal
 
 Several Hermes bots and Paperclip host agents work on **projects**. Every project
 has one folder of human-readable memory in the Obsidian vault. You decide, per
 project, which bots and agents are on it (members get full access, everyone
-else none) and whether it may touch the host. Your own notes are
-simply a project with no members. Bots keep every Hermes feature; safety comes from where things run and
-which credentials they hold, never from disabling tools or from prompt text.
+else none) and whether it may touch the host. Your own notes are simply a
+project with no members. Bots keep every Hermes feature; safety comes from where
+things run and which credentials they hold, never from disabling tools or from
+prompt text.
 
 Typical use: "@research do the market research for Acme" in the Acme Discord
 channel ends with notes in `Projects/acme/` in Obsidian, a ticket on the
@@ -23,23 +39,25 @@ Paperclip board, and, if host work was needed, a host agent having done it.
 | Topic | Decision |
 | --- | --- |
 | Hermes features | Everything enabled except computer use, which needs a desktop: code execution, browser, plugins, MCP, cron, delegation, skills, A2A. The Research drift lock and toolset restrictions are removed. |
-| Isolation | Keep the KVM guest as the wall to the host. One lightweight container per Hermes bot inside it. |
-| Bot base | One pinned Hermes install shared read-only by every bot, with Chromium, all Python extras and ffmpeg. Each bot has its own writable layer and data. Computer use is off. All bots run the same Hermes version. |
-| Guest size | 4 vCPU, 6-8 GiB RAM, 20 GiB thin disk that `make` can grow. The VM starts with a fixed number of pre-forwarded bot slots (default 10, with API and dashboard ports each), so adding a bot needs no VM restart while a slot is free. |
+| Isolation | Keep the KVM guest as the wall to the host. One container per Hermes bot inside it: rootful podman, a separate user namespace per bot (root inside is an unprivileged guest UID) and a separate routed bridge per bot, so the guest firewall sees every bot's traffic by interface. |
+| Bot base | Hermes' own container image, built unmodified from the pinned upstream `Dockerfile` with Docker BuildKit on the host and loaded into the guest's podman. `/opt/hermes` is read-only and shared by every bot; each bot's state, skills, plugins and plugin dependencies live in its own `/opt/data`. Computer use is off. All bots run the same image. |
+| Guest size | 2 vCPU, 6 GiB RAM and a 20 GiB thin disk in normal operation. The install borrows idle host CPU and RAM (`vm_install_resource_fraction`, as in v1) and restarts the guest at the normal size afterwards. `make` grows the disk live. The VM starts with a fixed number of pre-forwarded bot slots (default 10, with API and dashboard ports each), so adding a bot needs no VM restart while a slot is free. |
 | Source of truth for memory | The vault. Hermes native memory stays per bot and small. |
 | Registry | Paperclip: one company, many projects. A Paperclip project is the unit of access. |
-| Membership | Paperclip's own concept: agents are assigned tickets, and a project has one lead. **An agent is a member of project P if it is P's lead or holds an open ticket in P.** For standing access, the owner assigns a "membership" ticket and leaves it in Backlog, which does not wake the agent. Removing an agent means closing or reassigning its tickets in P. Members get full access, non-members none. Everything is done in Paperclip's UI, with no plugin and no Paperclip grant editing. The pinned core UI has no grant editor anyway. |
+| Membership | An agent is a member of project P if it holds an open ticket in P (any status except done or cancelled), or if it is P's lead in Paperclip's own `leadAgentId`. Zelab never sets a lead; none exists after install. For standing access, the owner assigns a ticket and leaves it in Backlog, which does not wake the agent. Removing an agent means closing or reassigning its tickets in P. Members get full access, non-members none. |
 | Missions | Any agent task. Real work becomes a Paperclip ticket; quick exchanges stay in chat. The bot decides with rules from a Zelab skill; the owner can override. |
-| Bots in Paperclip | Every bot is also a Paperclip agent (native Hermes gateway adapter), so tickets flow both ways. |
-| Bot-to-bot | Light path: Hermes's native A2A plugin. Bots call each other directly over HTTP inside the guest, each with its own token per peer, whatever chat platform they use. Optional visible path: @mentions in a shared chat channel (`DISCORD_ALLOW_BOTS`, `TELEGRAM_ALLOW_BOTS` or Slack `allow_bots` set to `mentions`). Heavy path: Paperclip tickets and comment @mentions. handoffs happen only between members of the same project. |
-| Messaging | Each bot uses whichever platform it is set up with: Discord, Telegram, Slack and others, through Hermes's native gateway setup. Zelab automates Discord only: one channel per project, and Discord roles decide which bots can see it. Chats on other platforms are managed by the owner. Paperclip has no chat entry point. |
-| Host agents | Paperclip's Codex and Claude Code agents run on the host and do real sysadmin, DevOps and repository work. Each host-enabled project has its own host account with a rights preset. Paperclip picks a run's SSH environment from the agent (`defaultEnvironmentId`), not from the project, so each host project has its own host agent per harness. |
-| Host gate | Per project: `host_auto` lets member bots assign host agents directly; otherwise bots file tickets and the owner assigns. |
-| Project memory writes | Each agent writes only its own log in the project. Only the project's Paperclip lead and the owner can write `MEMORY.md`, enforced by file ACLs that the sync applies. A lead is set per project; there is no librarian bot. |
+| Bots in Paperclip | Every bot is also a Paperclip agent with the native `hermes_gateway` adapter, so tickets flow both ways. `make` builds the bot first, then registers it through Paperclip's hire flow (`/agent-hires`, then approval), because Paperclip's hire form expects a running Hermes API. |
+| Bot-to-bot | Light path: Hermes' bundled A2A plugin. Bots call each other directly inside the guest with named per-peer tokens. Optional visible path: @mentions in a shared chat channel (`DISCORD_ALLOW_BOTS`, `TELEGRAM_ALLOW_BOTS` or Slack `allow_bots` set to `mentions`). Heavy path: Paperclip tickets and comment @mentions. Handoffs happen only between members of the same project. |
+| Messaging | Each bot uses whichever platform it is set up with: Discord, Telegram, Slack and others, through Hermes's native gateway setup. Zelab automates Discord only: one channel per project, and Discord roles decide which bots can see it. Chats on other platforms are managed by the owner. Paperclip's own chat channels are not used. |
+| Paperclip permissions | Paperclip's defaults, unmodified. Bots hold no general Paperclip key: the Hermes gateway adapter passes none, and each bot's only key is its task key. Host agents run with Paperclip's standard per-run agent key. Zelab does not edit grants, trust presets or assignment policies. |
+| Task keys | One Paperclip `task_bridge` key per bot, as the adapter's bundled `paperclip-task-bridge` skill expects. Scope: the bot's projects, and as assignees the agents that share a project with it plus the host agents of its `host_auto` projects. Paperclip cannot edit a key's scope, so on a membership change the sync creates the replacement and then revokes the old key. |
+| Host agents | Paperclip's Codex and Claude Code agents run on the host through Paperclip's SSH environment driver and do real sysadmin, DevOps and repository work. Each host project has its own host account with a rights preset, and its own Paperclip SSH environment, named after the project. The owner hires host agents in Paperclip's UI and picks that environment in the hire form. |
+| Host gate | Per project: `host_auto` puts the project's host agents in its member bots' task keys; otherwise bots file tickets and the owner assigns. |
+| Project memory writes | Each agent writes only its own log in the project. Only the owner, and the project's lead if one is set, can write `MEMORY.md`, enforced by file ACLs that the sync applies. |
 | Version history | The host commits the vault to a git history every few minutes. Bots cannot reach that history. |
-| Model credentials | Subscriptions only. Each bot signs in with its own Hermes login (single-use refresh tokens cannot be shared across containers). Host agents use Paperclip's native AI connections: Codex device login, Claude setup-token, and a managed Codex home per agent. v1's copied Codex auth file goes away. |
+| Model credentials | Subscriptions only. Each bot signs in with its own Hermes login: Hermes' subscription refresh tokens are single-use, so one login cannot be shared across containers. Host agents use Paperclip's AI connection local sign-in: Paperclip shows a command (`codex login --device-auth` or `claude auth login`) to run on the host, keeps the login, and copies it to the SSH host account for each run. v1's copied Codex auth file goes away. |
 | Owner Obsidian access | Browser only, through the existing Obsidian container. |
-| Admin UI | None, and no Paperclip plugin. Bots, projects, tickets and leads are managed in Paperclip's own UI, notes in Obsidian, bot settings in each bot's Hermes dashboard, and host rights in `config/projects.yaml` + `make`. |
+| Admin UI | None, and no Paperclip plugin. Projects, tickets, agents and host agents are managed in Paperclip's own UI, notes in Obsidian, bot settings in each bot's Hermes dashboard, and bots and host rights in the site config, `config/projects.yaml` and `make`. |
 | Migration | Fresh start: the current Hermes profiles, vault layout and Paperclip company are not carried over. |
 | Delivery | One refactor, switched over once. |
 
@@ -49,12 +67,12 @@ Paperclip board, and, if host work was needed, a host agent having done it.
 flowchart LR
   Owner[Owner] -->|Tailscale| UIs[Paperclip / Obsidian / per-bot Hermes dashboards]
   Owner -->|project channels| Chat
+  Make[make] -->|build, register| B1 & B2
   subgraph VM[KVM guest: untrusted input lands here]
     B1[Bot container: research]
     B2[Bot container: writer]
-    B3[Bot container: ...]
-    Base[(Shared pinned Hermes base, read-only)]
-    B1 & B2 & B3 -.-> Base
+    Base[(Hermes image, read-only)]
+    B1 & B2 -.-> Base
   end
   subgraph Host[Linux host: real work happens here]
     PC[Paperclip + PostgreSQL]
@@ -64,18 +82,18 @@ flowchart LR
     Hist[(Vault git history, root-only)]
     Obs[Obsidian container]
   end
-  Chat[Discord / Telegram / ...] --> B1 & B2 & B3
+  Chat[Discord / Telegram / ...] --> B1 & B2
   B1 <-->|A2A, same project| B2
-  B1 & B2 & B3 -->|scoped task keys| PC
-  PC -->|native Hermes adapter| B1 & B2 & B3
+  B1 & B2 -->|task keys| PC
+  PC -->|native Hermes adapter| B1 & B2
   PC -->|SSH environment| HA
-  B1 & B2 & B3 <-->|per-bot SFTP, member projects only| Vault
+  B1 & B2 <-->|per-bot SFTP chroot, member projects only| Vault
   HA <-->|POSIX ACL per project| Vault
   Obs <--> Vault
   Vault --> Hist
-  Sync -->|watch events| PC
-  Sync -->|containers, mounts| VM
-  Sync -->|accounts, ACLs, keys| Host
+  PC -->|live events| Sync
+  Sync -->|firewall, peers, keys file| VM
+  Sync -->|accounts, ACLs, chroot binds| Host
   Sync -->|channels, roles| Chat
 ```
 
@@ -83,34 +101,39 @@ flowchart LR
 
 | Component | Runs as | Purpose |
 | --- | --- | --- |
-| KVM guest | `zelab-vm` | The bot box. Its nftables rules stay as today: only the Paperclip API and the notes SFTP port reach the host. Bot slots' API and dashboard ports are forwarded to host loopback by plain QEMU options at VM start; free slots are unused until a bot takes them. |
-| Bot container | One unprivileged container per bot. Root inside is mapped to an unprivileged guest UID. | One Hermes home, gateway, API server and dashboard. Mounts: shared base (read-only), its own data, its projects' folders under `/vault/Projects/<slug>`, and a read-only `/zelab` folder with its memberships and the Zelab skill. Its A2A port is reachable only from bots in the same project (guest firewall). |
-| Shared base | Read-only image layer | The pinned upstream installer output with browser, extras and ffmpeg. Upgraded only through a qualified pin change. |
-| Paperclip | `zelab-paperclip` on host loopback | Registry (projects, leads, agents, tickets), ticket board, AI connections for host agents, and dispatch to bots and host agents. `requireBoardApprovalForNewAgents` is on, so agents are created through `/agent-hires` and approved. |
+| KVM guest | `zelab-vm` | The bot box. Bot slots' API and dashboard ports are forwarded to host loopback by plain QEMU options at VM start; free slots are unused until a bot takes them. |
+| Guest firewall | nftables in the guest | Guest processes reach only the Paperclip API and the notes SFTP port on the host. Bot bridges reach public internet, the Paperclip API port and DNS; they cannot reach the guest itself, other bots (except A2A between listed pairs), the host's other ports, the LAN, the tailnet or IPv6. |
+| Bot container | One rootful podman container per bot, user namespace `2000000 + 65536 × slot`, bridge `zb<slot>` | Hermes' own image running `gateway run` with its API server, A2A and dashboard under s6. Mounts: its `/opt/data`, `/vault` (the bot's SFTP view of its projects, propagated live) and a read-only `/zelab` with its memberships, task key and the Zelab skill. |
+| Hermes image | Read-only image layers | Built from the pinned upstream archive with the qualified dependency manifests. Upgraded only through a qualified pin change. |
+| Paperclip | `zelab-paperclip` on host loopback | Registry, ticket board, AI connections for host agents, and dispatch to bots and host agents. `requireBoardApprovalForNewAgents` is on. |
 | Host agents | Per-project host accounts `zelab-p-<slug>` | Codex or Claude Code through Paperclip's SSH environment driver, with the rights of their project's preset. |
-| Vault | Host `/var/lib/zelab-vault` | `Projects/<slug>/` only. Each project has one POSIX group for its assigned agents. |
+| Vault | Host `/var/lib/zelab-vault` | `Projects/<slug>/` only. Each project has a POSIX group for its host account; bots get per-user ACLs. |
+| Notes SFTP | Dedicated loopback `sshd` | One account `zelab-b-<bot>` per bot, chrooted to a directory that contains bind mounts of its member projects only. The guest mounts it once with SSHFS (`allow_other`, `dir_cache=no`); bots never hold SFTP keys. |
 | Vault history | Root timer, git directory outside the vault | Snapshot commits every few minutes. Restore is a git checkout run by the owner. |
-| zelab-sync | Root service on the host | Watches Paperclip's live event stream, with polling as a fallback. Applies the state described below. It never sits between an agent and its data. |
+| zelab-sync | Root service on the host | Listens to Paperclip's live event stream and converges the state below. Never sits between an agent and its data. |
+| Zelab sync agent | An inert Paperclip agent (`process` adapter, `/usr/bin/false`, heartbeat and wake-on-demand off) | Paperclip's live stream accepts agent keys and browser sessions, not board keys. This agent's key, readable only by root, is used for nothing but the stream. |
+| Sync board key | Paperclip board API key, readable only by root | Created by `make` with the owner's session. Used by the sync and `make` for every Paperclip change Zelab makes. |
 | Discord admin bot | Token readable only by root, used only by zelab-sync | Creates project channels and per-bot roles and keeps them aligned with memberships. Hermes bots never hold it. |
 
 ## What zelab-sync applies
 
-Inputs: Paperclip projects, leads, agents and open-ticket assignees, plus `config/projects.yaml`. The
-sync is idempotent: it computes the desired state and converges to it.
+Inputs: Paperclip projects, leads, agents and open-ticket assignees,
+`config/projects.yaml` and the site config. Any live event triggers a
+recomputation of the desired state from Paperclip's current data, debounced by a
+few seconds; event payloads are only a trigger. Paperclip's event bus has no
+replay, so the sync converges fully when it starts, after every reconnect of the
+stream, and whenever `make` runs. It is idempotent.
 
-| Paperclip event | Applied state |
+| Paperclip change | Applied state |
 | --- | --- |
-| Project created | `Projects/<slug>/` with `MEMORY.md`, `Agents/`, `Missions/`, its group, and a Discord channel visible to nobody but the owner |
-| Agent hired with the Hermes adapter | Bot container in a free slot, guest UID, SFTP identity, Paperclip API key for the adapter, Tailscale Serve route for its dashboard, Discord role. The owner then creates the chat application, enters its token in the bot's dashboard, and signs the bot in to its model subscription. |
-| Membership changed (lead set, ticket assigned, last open ticket closed) | SFTP account ACLs and container mounts, without restarting the bot; file ACLs on `MEMORY.md` (lead and owner) and on each agent's own log; host project group membership; Discord role; A2A peer tokens and guest firewall rules between same-project bots; task key `projectIds` and `allowedAssigneeAgentIds` (current members only, plus host agents when `host_auto`); the `/zelab/memberships.json` the bot reads |
-| Agent retired | Container stopped and data archived, keys revoked, roles removed |
+| Project created | `Projects/<slug>/` with `MEMORY.md`, `Agents/`, `Missions/`, its group, and a Discord channel visible to nobody but the owner. The slug is fixed when the folder is created; renaming the project later does not move it. |
+| Membership changed (ticket assigned or reassigned, last open ticket closed, lead set or cleared) | Bind mounts in the bot's SFTP chroot and the vault ACLs; file ACLs on `MEMORY.md` and on each agent's own log; host account group membership; Discord role; A2A peer list and guest firewall pairs between same-project bots; a replacement task key; `/zelab/memberships.json`. Nothing restarts. |
+| Host agent hired or edited | Reported if its environment is not a host project's, or if it is a member of a host project other than its environment's. |
+| Agent terminated in Paperclip | A retired bot's container stops, its data is archived and its slot freed; its task key is revoked and its roles removed. |
 
-Membership changes take effect without restarting the bot: project folders are
-mounted into the running container. Only the owner can bring an agent into a
-project. A bot's task key can only assign tickets to existing members, and host
-agents keep Paperclip's "Can assign tasks" switch off unless the owner turns it
-on. The sync reports any agent with the `ceo` role or that switch on. Host accounts are created only from `config/projects.yaml`, never from
-Paperclip data.
+Host accounts, presets and SSH environments are created only from
+`config/projects.yaml`, never from Paperclip data. The sync never changes
+Paperclip permissions, trust presets or assignment policies.
 
 ## Setup flow
 
@@ -118,9 +141,10 @@ Plain `make` stays the only installer. When it runs interactively it asks:
 
 1. **How many Hermes bots?** The default is the number that already exist, or 1
    on a fresh site. A higher number adds bots; `make` never removes one. To
-   retire a bot, use Paperclip.
-2. For each new bot: **a name and a one-line role**. These become the bot's
-   Paperclip agent and its Hermes profile description.
+   retire a bot, terminate its agent in Paperclip.
+2. For each new bot: **a name, a one-line role and a dashboard password**
+   (hidden input with confirmation). The name and role become the bot's Paperclip
+   agent and its Hermes profile description.
 3. For each new bot, any of these steps can be skipped:
    - **Model sign-in:** the native `hermes setup model` wizard, including the
      subscription OAuth login.
@@ -131,21 +155,26 @@ Plain `make` stays the only installer. When it runs interactively it asks:
    - **SOUL:** paste a persona or open an editor; otherwise Hermes seeds its
      default.
 
+Each new bot is built in a free slot, started on its own (bots are started one
+at a time, because simultaneous starts can push Hermes' platform plugins past
+their load timeout), checked through its API, and then registered in Paperclip
+through `/agent-hires` and approval with the sync's board key.
+
 Once per site, `make` also takes the Discord admin bot token as hidden terminal
-input (skippable: project channels are then not automated), and creates the sync's
-Paperclip board API key itself. Both secrets stay root-only on the host. Host
-agents sign in through Paperclip's own AI connection screens.
+input (skippable: project channels are then not automated), creates the sync's
+board key and the inert sync agent and its key. These secrets stay root-only on
+the host. Host agents sign in through Paperclip's AI connection screens.
 
 Skipped steps appear in the HTML checklist and can be finished later in that
 bot's dashboard. A noninteractive `make` reads `hermes_bots: <n>` from the site
-config and skips every wizard. Bots hired later in Paperclip are built by the
-sync service and configured in their dashboards, with no `make` run.
+config and skips every wizard and password prompt; those bots' dashboards stay
+unreachable until a password is set by an interactive `make`.
 
 ## Host rights: `config/projects.yaml`
 
 ```yaml
 projects:
-  homelab:                 # Paperclip project slug
+  homelab:                 # project slug (its vault folder name)
     host_preset: full-sudo # none | monitor-readonly | docker | repo-dev | full-sudo
     host_auto: false       # bots file host tickets; the owner assigns
     paths: [/srv/homelab]
@@ -154,28 +183,45 @@ projects:
 ```
 
 Presets are a fixed catalogue in Zelab: groups, sudoers fragments and owned
-paths. A project without an entry has no host account, and Paperclip cannot
-dispatch host work for it.
+paths. A project without an entry has no host account and no environment, so
+Paperclip cannot dispatch host work for it. For a project with one, the sync
+creates the account `zelab-p-<slug>`, its SSH key and the Paperclip SSH
+environment `<slug> host`. The owner then hires a Codex or Claude Code agent in
+Paperclip and selects that environment.
 
 ## Memory layers
 
 1. **Bot memory**: Hermes native `MEMORY.md`/`USER.md` in each container, private
    to that bot. Holds who it is and what it has learned, not project facts.
-2. **Project memory**: `Projects/<slug>/MEMORY.md`, curated by the project's
-   Paperclip lead and the owner. It's the first file a bot reads when it works on
-   the project.
-3. **Agent logs**: `Projects/<slug>/Agents/<agent>.md`, append-only per agent.
-   The lead consolidates them into `MEMORY.md`.
+2. **Project memory**: `Projects/<slug>/MEMORY.md`, curated by the owner and the
+   project's lead when there is one. It's the first file a bot reads when it
+   works on the project.
+3. **Agent logs**: `Projects/<slug>/Agents/<agent>.md`, written only by that agent.
 4. **Mission notes**: `Projects/<slug>/Missions/<ticket>-<slug>/`, linked from the
    Paperclip ticket.
 5. **Work history**: Paperclip tickets, comments and documents.
 
+The project folder and `Agents/` are sticky and `MEMORY.md` is owned by root, so
+an agent cannot delete or replace files it cannot write.
+
 Recall uses a Zelab Hermes skill, `zelab-projects`, mounted read-only into every
-bot. It covers the bot's current projects (from `/zelab/memberships.json`), the folder
-conventions, when to escalate to a ticket, and same-project handoffs. Each bot
-gets `OBSIDIAN_VAULT_PATH=/vault`, so the upstream `obsidian` skill works too.
-The skill is guidance; the boundaries are the mounts, file ACLs, keys, Discord
-roles and the guest firewall.
+bot. It covers the bot's current projects (from `/zelab/memberships.json`), the
+folder conventions, when to escalate to a ticket, same-project handoffs, and
+how to call the bundled task-bridge helper with the key in `/zelab`. Each bot
+gets `OBSIDIAN_VAULT_PATH=/vault` and `HERMES_WRITE_SAFE_ROOT=/opt/data:/vault`,
+so the upstream `obsidian` skill works too. The skill is guidance; the
+boundaries are the mounts, file ACLs, keys, Discord roles and the guest firewall.
+
+## A2A
+
+Each bot's A2A server listens on port 9900 inside its container with Hermes'
+named per-peer tokens (`A2A_PEER_TOKENS`, `A2A_TRUSTED_PEERS`). Hermes reads
+them only at start, so when a bot is created it gets one inbound token for each
+slot, and its peers are named after the slots. Who can call whom is decided at
+runtime by the guest firewall (only pairs of bots that share a project) and by
+each caller's `a2a_agents` list in its `config.yaml`, which Hermes reads on
+every call and the sync keeps to the current same-project peers. No bot restarts
+when membership changes.
 
 ## Trust boundaries
 
@@ -184,19 +230,29 @@ skills and SOUL, so none of those can be a security limit.
 
 | A hijacked bot can | It cannot, because |
 | --- | --- |
-| Do anything inside its container, use its subscription login, and read or write its projects | It cannot read another bot's data or other projects: container and SFTP account ACLs prevent it |
-| File tickets in its projects | It cannot assign host agents unless the project is `host_auto`: the Paperclip task key's allowed assignees prevent it |
-| Message bots in its project channels, or call same-project bots over A2A | It cannot see other projects' Discord channels or reach other bots' A2A ports: Discord roles, peer tokens and the guest firewall prevent it |
+| Do anything inside its container, use its subscription login, and read or write its projects | It cannot read another bot's data, other projects, the guest or the host: user namespaces, the SFTP chroot and vault ACLs prevent it |
+| File tickets in its projects and read tickets it created or holds | It cannot create tickets outside its projects or read other tickets: Paperclip's `task_bridge` key scope prevents it |
+| Assign tickets to agents that share a project with it | It cannot assign anyone else, nor host agents of projects that are not `host_auto`: the key's allowed assignees prevent it |
+| Message bots in its project channels, or call same-project bots over A2A | It cannot see other projects' Discord channels or reach other bots: Discord roles and the guest firewall prevent it |
 | Damage files in an assigned project | It cannot erase the history: the git history is root-only on the host |
-| Ask for more access in a ticket | It cannot join a project or pull in another agent: its task key only assigns to existing members, and only the owner assigns outsiders |
 
 Accepted risks:
 - Information flows between bots that share a project.
-- A guest kernel or container-runtime escape exposes every bot's projects (the union), but still not the host.
-- A `host_auto` project gives its member bots a path to that project's host preset.
+- A guest kernel or container-runtime escape exposes every bot's projects (the
+  union) and every bot login, but still not the host.
+- A bot in several projects can assign a ticket in one of them to an agent from
+  another, which makes that agent a member. Its task key spans all its projects
+  because Paperclip gives the bridge one key per bot.
+- A bot in a `host_auto` project can give that project's host agent tickets in
+  any of the bot's projects. The host agent still runs as its own project's
+  account.
+- Host agents run with Paperclip's standard agent key. Following a ticket, one
+  can read every ticket in the company and create and assign tickets in any
+  project, including to another project's host agent. Paperclip's own limit for
+  this, the low-trust preset, only runs in Paperclip sandboxes, not over SSH.
+  Treat every host agent as able to reach every other host agent's preset.
 - A host agent with the `full-sudo` preset is root on the host. It can read every
-  project, Paperclip's database and Zelab's secrets, so project boundaries do not
-  apply to it.
+  project, Paperclip's database and Zelab's secrets.
 - A hijacked bot can steal its own subscription login. Revoke that session at
   the provider.
 - Chats on platforms other than Discord are not managed by Zelab. Who sees them
@@ -204,58 +260,69 @@ Accepted risks:
 
 ## Resource budget
 
-Measured on 2026-10-14 in the current guest: one idle Hermes gateway uses
-about 220 MB RSS, the dashboard about 210 MB, and the guest disk holds 3.5 GB.
+Measured on 2026-10-14 in a disposable guest with the pinned image:
 
-| | Estimate |
+| | Measured |
 | --- | --- |
-| 5 idle bots with dashboards | about 2-2.5 GB RAM |
-| Browser sessions while active | +0.3-0.8 GB each |
-| Guest disk used | about 6-7 GB of a 20 GiB thin ceiling |
+| 5 idle bots, guest RAM used | 2.5 GB at 2 vCPU, 2.7 GB at 4 vCPU (about 435 MB per bot) |
+| 5 idle bots, CPU | 2.9 % of 2 vCPU |
+| Guest disk with the image and 5 bots | 4.8 GB used, 4.95 GiB allocated in the thin qcow2 |
+| Hermes image | 3.27 GB; built on the host in about 11 minutes, loaded into the guest in about 4 |
+| Start of 5 bots at once on 2 vCPU | APIs up after 147 s, warm after 189 s, platform-plugin load timeouts (hence one at a time) |
+
+Browser sessions while active are expected to add 0.3-0.8 GB each; not measured yet.
 
 ## Operations
 
 - `make backup` archives Paperclip, the vault and its git history, every bot's
-  data directory, `config/projects.yaml` and the private deployment state.
-  `make restore` brings all of it back and rebuilds containers, forwards,
+  data directory and slot, `config/projects.yaml` and the private deployment
+  state. `make restore` brings all of it back and rebuilds containers, forwards,
   accounts and ACLs from Paperclip and the config.
-- `make fclean` and `make re` also remove bot containers, per-project host
-  accounts and the sync, after the usual preview and confirmation.
-- Plain `make` stays idempotent: a second run changes nothing. It also
-  converges whatever the sync manages, so a missed event is repaired.
+- `make fclean` and `make re` also remove bot containers, the Hermes image,
+  per-project host accounts and the sync, after the usual preview and
+  confirmation.
+- Plain `make` stays idempotent: a second run changes nothing. It also runs a
+  full sync convergence, so anything missed is repaired.
 
 ## Removed from v1
 
 - Research profile drift lock, toolset allowlist, parked reserve pool and `BOT_POOL.md`.
 - Owner and shared notes users, `Private/` and `Shared/`.
-- The Operations Hermes profile's Private access and its `zelab-ops` host worker. Host work moves to per-project accounts.
-- The inert submission agent and the single "Hermes Operations" remote agent. Each bot is now its own Paperclip agent with its own keys.
+- The Operations Hermes profile and its `zelab-ops` host worker. Host work moves to per-project accounts.
+- The inert submission agent, `submit-task.mjs` and the single "Hermes Operations" remote agent. Each bot is its own Paperclip agent and uses the adapter's bundled task bridge.
 - The `AGENTS.md` ban on brokers and dashboards is narrowed to allow zelab-sync, a state applier that is not a broker in the data path.
 - v1's copied Codex auth file; host agents use Paperclip's AI connections.
 
-## Verified against Paperclip 2026.1005.0 (source read, not run)
+## Qualification
 
-- There is no project-membership concept for agents. The core UI has no editor for scoped grants and defers it to extensions; agents are not editable members (`routes/access.js:949,997`). Projects carry a single `leadAgentId` (in the UI's project form schema), and goals an `ownerAgentId`. This is why membership is derived from the lead and open tickets.
-- Paperclip manages subscription logins for host agents natively: Codex device login, Claude setup-token sessions, and isolated managed Codex homes seeded per agent (`services/device-login-service`, `services/codex-auth-reconciliation`, `services/ai-connection-runtime`).
-- A run's environment comes from the agent, then the instance default (`services/execution-workspace-policy.js:227-252`). Environments are created by a board instance admin.
-- Several `hermes_gateway` agents can coexist. Agent creation does not probe `apiBaseUrl`, and `PATCH /agents/:id` can replace `adapterConfig` later.
-- Every activity entry is published as an `activity.logged` live event, including `project.created`, `agent.created` and issue assignment changes. The bus is in memory with no replay, and some grant writes are not logged, so the sync listens and also polls.
-- `requireBoardApprovalForNewAgents` makes `POST /agents` return 409 for everyone. Zelab must create agents through `/agent-hires` and approve them. Today's `paperclip_workers` and `paperclip_hermes` roles use `POST /agents`.
-- A `ceo` agent can toggle other agents' "Can assign tasks" and import companies (`routes/agents.js:3981`, `companies.js:1001`), hence the sync's report.
+Run on 2026-10-14/15 without touching the live site: a disposable guest from the
+pinned Debian image (4, then 2 vCPU, 6 GiB, 20 GiB thin) and a disposable
+Paperclip built from the pinned lock. "Source" means read in the pinned code.
 
-## To verify while building
+| # | Item | Result |
+| --- | --- | --- |
+| 1 | Paperclip's UI sets a project's lead; Backlog tickets do not wake the assignee | Lead: **FAIL**, there is no lead field in the UI (API and CLI only), so Zelab sets none. Backlog: **PASS**, no run in 25 s, a run as soon as the ticket moved to todo. |
+| 2 | The Hermes adapter does not probe at create time | **PASS**: create and hire with an unreachable URL, no connection attempt. The adapter ships in the pinned npm runtime. The UI hire form does probe, hence registration by `make`. |
+| 3 | Container runtime, shared read-only base, writable layer per bot, live project mounts, RAM and disk with 5 bots | **PASS** (rootful podman, see Decisions). Projects bound into a bot's SFTP chroot appear and disappear in the running container; SSHFS remounts propagate. Numbers under Resource budget. |
+| 4 | Per-bot dashboard behind its own Tailscale Serve port with its own password | Dashboards with their own login run in every container and answer on their slots. Tailscale Serve route: **NOT RUN**. |
+| 5 | Separate subscription logins per bot stay valid; two host agents on one AI connection stay signed in | **NOT RUN**, needs the owner's logins. |
+| 6 | Discord channel visibility through managed roles; `*_ALLOW_BOTS=mentions` | **NOT RUN**, needs the owner's Discord applications. |
+| 7 | `make` grows a guest disk and filesystem | **PASS**: QMP `block_resize` on the running guest, `growpart` and `resize2fs` online, data intact. |
+| 8 | The image stays immutable and self-improvement lands in each bot's data | **PASS** for immutability: `/opt/hermes` not writable, image ID unchanged, plugin dependencies in `/opt/data/installs`. Isolation between bots: redo with a dependency the image does not already ship. |
+| 9 | A2A between bot containers with per-peer tokens and the firewall; token cost against a ticket | Source and design only; **NOT RUN**. |
+| 10 | The sync's credentials | **PASS**: the board key hires, approves and edits; the stream refuses it (403) and accepts an inert agent's key, delivering project, ticket, assignment, status and lead events. |
+| 11 | Pre-forwarded slots reachable without a VM restart | **PASS** from the host (API 200, dashboard login redirect) for bots started after boot. Paperclip test-environment against a slot: **NOT RUN**. |
 
-1. Paperclip's UI sets a project's lead, and Backlog tickets do not wake the assignee.
-2. The Hermes adapter package does not probe at create time (the package was not in the downloaded tarball).
-3. Container runtime choice (rootless podman or systemd-nspawn) with a shared read-only base and a per-bot writable layer, plus mounting project folders into a running container. Measure RAM and disk with 5 bots.
-4. A per-bot Hermes dashboard behind its own Tailscale Serve port with its own password.
-5. A per-container Hermes subscription login stays valid while other bots use the same account. Two host agents on one subscription through Paperclip's AI connections stay signed in.
-6. Discord channel visibility through managed roles, plus `*_ALLOW_BOTS=mentions` between bots.
-7. `make` grows an existing guest disk and filesystem.
-8. The shared base stays immutable and self-improvement lands in each bot's data directory.
-9. A2A between two bot containers with per-peer tokens and guest firewall rules; its token cost compared with a ticket.
-10. The sync's board credential: a Paperclip board API key held only by root on the host.
-11. Pre-forwarded bot slots: a bot started in a free slot is reachable from Paperclip and Tailscale without a VM restart.
+Also found: a standard agent key can create and assign tickets in any project
+(tested, accepted risk above); task-key scopes cannot be edited (source); device
+login and setup-token sign-in are sandbox-only (source); a project's environment
+can be chosen in the hire form (source); `podman build` cannot build the
+upstream `Dockerfile` (`COPY --chmod=a+rX,go-w`), Docker BuildKit can.
+
+Still to verify while building, before the switch: items 4, 5, 6, 8 (isolation),
+9 and 11 (Paperclip side); one-at-a-time start on 2 vCPU without plugin load
+timeouts; a browser session's RAM; the task-bridge helper reading its key from
+`/zelab` in a running bot.
 
 ## Success criteria
 
@@ -266,7 +333,7 @@ NOT RUN, and v2 is not done while any G, X or O criterion is NOT RUN.
 
 ### G: the main goal, end to end
 
-- **G1 Research to Obsidian.** In project `acme`'s chat channel, "@research do
+- **G1 Research to Obsidian.** In project `acme`'s Discord channel, "@research do
   market research on <topic>" produces a Paperclip ticket in `acme` and notes
   under `Projects/acme/Missions/<ticket>-<slug>/` with a source URL for every
   claim. A dated entry appears in the bot's `Agents/research.md`, and the notes
@@ -280,42 +347,47 @@ NOT RUN, and v2 is not done while any G, X or O criterion is NOT RUN.
 - **G4 Bot to bot.** Two members of the same project hand work over by A2A,
   by chat @mention and by ticket.
 
-### M: modular and dynamic, without `make`
+### M: modular and dynamic
 
 - **M1** A project created in Paperclip gets its vault folder and Discord channel
-  within 2 minutes.
-- **M2** A Hermes bot hired in Paperclip is running within 5 minutes, with its
-  dashboard on its own Tailscale URL and its API reachable by Paperclip. While a
-  bot slot is free, neither the VM nor any other bot restarts.
-- **M3** In Paperclip's UI, assigning an agent a ticket in a project, setting it
-  as lead, or closing its last open ticket there updates mounts, file ACLs,
-  Discord visibility, A2A reach and task-key scope within 2 minutes, without
-  restarting the bot.
-- **M4** A new host agent hired in Paperclip for an existing host project runs as
-  that project's account.
+  within 2 minutes, without `make`.
+- **M2** Raising `hermes_bots` by one and running `make` builds the bot in a free
+  slot and registers it in Paperclip through hire and approval. Its dashboard is
+  on its own Tailscale URL and its API is reachable by Paperclip. Neither the VM
+  nor any other bot restarts.
+- **M3** In Paperclip's UI, assigning an agent a ticket in a project, or closing
+  its last open ticket there, updates mounts, file ACLs, Discord visibility, A2A
+  reach and task-key scope within 2 minutes, without `make` and without
+  restarting the bot. Setting or clearing a lead through Paperclip's API does
+  the same for `MEMORY.md`.
+- **M4** A host agent hired in Paperclip's UI with a host project's environment
+  runs as that project's account.
 - **M5** A bot set up on Telegram (or any non-Discord platform) works like a
   Discord bot, except for Zelab-managed channels.
 - **M6** Plain `make` asks how many bots and runs the skippable per-bot wizards.
   A noninteractive `make` with `hermes_bots: 3` builds 3 bots without prompting.
   Raising the number adds bots and never removes any.
+- **M7** Terminating a bot's agent in Paperclip stops its container, archives its
+  data, frees its slot and revokes its task key within 2 minutes.
 
 ### X: boundaries hold against a hijacked bot (negative tests)
 
 Run as root inside a bot container, after rewriting that bot's own Hermes config:
 
-- **X1** It cannot read a project it is not a member of, another bot's data, the host
-  filesystem, the vault history or any Zelab or Paperclip secret.
+- **X1** It cannot read a project it is not a member of, another bot's data, the
+  guest or host filesystem, the vault history or any Zelab or Paperclip secret.
 - **X2** It cannot reach another bot's A2A port unless both are members of the
-  same project. It cannot reach host services other than the Paperclip API and
-  the notes SFTP port, nor the LAN or the tailnet.
-- **X3** Its task key cannot create tickets in projects it is not a member of, nor assign a
-  host agent in a project that is not `host_auto`.
-- **X4** With its task key it cannot assign a ticket to a non-member, so it
-  cannot pull another agent into a project.
-- **X5** It cannot see the channels of projects it is not a member of on Discord, even after
-  adding them to its own allowed channels.
-- **X6** If it is not the project lead, it cannot write the project's `MEMORY.md`
-  or another agent's log.
+  same project, nor any other port of another bot. It cannot reach the guest,
+  host services other than the Paperclip API, the LAN or the tailnet.
+- **X3** Its task key cannot create tickets outside its projects, read tickets it
+  neither created nor holds, or assign a host agent of a project that is not
+  `host_auto`.
+- **X4** Its task key cannot assign a ticket to an agent that shares none of its
+  projects.
+- **X5** It cannot see the channels of projects it is not a member of on Discord,
+  even after adding them to its own allowed channels.
+- **X6** Unless it is the project lead, it cannot write, delete or replace the
+  project's `MEMORY.md` or another agent's log.
 - **X7** After it wipes an assigned project, the owner restores the folder from
   the vault history.
 
@@ -329,9 +401,10 @@ Run as root inside a bot container, after rewriting that bot's own Hermes config
 ### R: resources
 
 - **R1** With 5 idle bots the guest uses no more than 3 GB of RAM and 8 GB of
-  disk. The guest is sized at 4 vCPU, 6-8 GiB RAM and a 20 GiB thin disk.
+  disk. In normal operation the guest is sized at 2 vCPU, 6 GiB RAM and a 20 GiB
+  thin disk; a fresh install returns to that size when it finishes.
 - **R2** Raising `vm_disk_gib` and running `make` grows the guest disk and its
-  filesystem without data loss.
+  filesystem without data loss or a guest restart.
 
 ### O: operations
 
