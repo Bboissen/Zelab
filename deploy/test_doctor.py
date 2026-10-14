@@ -1,9 +1,11 @@
 """Verify advisory OS findings and blocking deployment prerequisites."""
 
-from contextlib import ExitStack, nullcontext, redirect_stdout
+from contextlib import ExitStack, nullcontext, redirect_stderr, redirect_stdout
 from datetime import date, timedelta
 import io
+import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import tempfile
@@ -196,6 +198,36 @@ class HostReadinessTest(unittest.TestCase):
             self.assertEqual(output.getvalue(), str(guide) + '\n')
             snapshot.assert_called_once()
 
+    def test_remote_guide_path_keeps_blockers_off_standard_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            guide = Path(directory) / 'guide.html'
+            with patch.object(doctor, 'readiness_checks', return_value=[doctor.Check('KVM', False, 'missing')]), \
+                 patch.object(doctor, 'guide_path', return_value=guide), \
+                 patch.object(doctor, 'status_snapshot'), \
+                 redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(doctor.main(['--guide-path-only', '--brief']), 0)
+        self.assertEqual(output.getvalue(), str(guide) + '\n')
+        self.assertIn('KVM', errors.getvalue())
+
+    def test_site_inputs_are_validated_once_per_run(self):
+        with patch.object(doctor, 'load_site', return_value=(None, 'fixture problem')) as load, \
+             patch.object(doctor, 'host_checks', return_value=[]), \
+             patch.object(doctor, 'admin_checks', return_value=([], False)), \
+             redirect_stdout(io.StringIO()):
+            doctor.main(['--site-config', 'fixture-site.yaml'])
+        load.assert_called_once()
+
+    def test_busy_ports_ask_each_owning_unit_once(self):
+        site = {"vm_service": "fixture-vm", "guest_ssh_port": 1, "guest_dashboard_port": 2, "guest_api_port": 3,
+                "paperclip_port": 4, "paperclip_db_port": 5, "notes_sftp_port": 6, "obsidian_backend_port": 7}
+        with patch.object(doctor.socket.socket, 'bind', side_effect=OSError), \
+             patch.object(doctor, 'command_output', return_value='active\n') as probe:
+            checks = doctor.port_checks(site, elevated=False)
+        # Without administration the container owner cannot be proven.
+        self.assertIn('In use by another program: obsidian_backend_port 7.', checks[0].detail)
+        self.assertEqual(sorted(call.args[0][-1] for call in probe.call_args_list),
+                         ['fixture-vm.service', 'zelab-notes-sshd.service', 'zelab-paperclip.service'])
+
     def test_resource_checks_fail_on_need_and_warn_on_headroom(self):
         site = {"vm_disk_gib": 16, "vm_data": "/", "host_disk_reserve_gib": 20,
                 "vm_memory_mb": 2048, "host_memory_reserve_gib": 8}
@@ -227,6 +259,23 @@ class HostReadinessTest(unittest.TestCase):
                 doctor.free_gib(private / "data")
             finally:
                 private.chmod(0o700)
+
+    def test_guest_probe_counts_pooled_device_code_logins(self):
+        site = {"vm_service": "zelab-vm", "deploy_key": "/k", "guest_known_hosts": "/h",
+                "guest_ssh_port": 12921, "guest_user": "zelab-deploy"}
+        with patch.object(doctor, "command_output", side_effect=["active\n", "{}"]) as probe:
+            doctor.guest_facts(site)
+        code = shlex.split(probe.call_args_list[1].args[0][-1])[-1]
+        cases = [({"version": 1, "providers": {}}, False),
+                 ({"version": 1, "providers": {}, "credential_pool": {"openai-codex": [{"id": "x"}]}}, True),
+                 ({"version": 1, "providers": {"nous": {"access_token": "x"}}}, True),
+                 ({"version": 1, "providers": {}, "credential_pool": []}, False)]
+        for store, expected in cases:
+            with self.subTest(store=store), tempfile.TemporaryDirectory() as home:
+                Path(home, "auth.json").write_text(json.dumps(store))
+                result = subprocess.run([sys.executable, "-c", code.replace("/var/lib/zelab/hermes/home", home)],
+                                        capture_output=True, text=True, check=True)
+                self.assertEqual(json.loads(result.stdout)["hermes_auth"], expected)
 
     def test_guest_probe_is_shell_quoted(self):
         site = {"vm_service": "zelab-vm", "deploy_key": "/k", "guest_known_hosts": "/h",

@@ -7,6 +7,12 @@ has not, so nobody mistakes a passing installer for a verified system.
 
 - Fresh installation from pinned downloads through plain `make`, a zero-change
   second apply, and resumption after an interrupted install.
+- Overlapped fresh install (2026-10-14, after `fclean`): 734 s of deployment
+  stages against 965–1268 s (median 1056 s) for the five previous fresh runs,
+  all services ready. Afterwards `/var/cache/zelab` held only the 3 MB dashboard
+  archive, npm caches were gone, `disk.qcow2` was 3.6 GiB for 3.5 GiB used in
+  the guest, and five install logs remained. A zero-change second apply with
+  the new layout is NOT RUN.
 - Owner sign-in to Hermes, Paperclip and Obsidian over Tailscale Serve;
   anonymous requests are refused on every route; former LAN listeners are gone.
 - A Discord request from the owner created a Paperclip task, the `zelab-ops`
@@ -31,8 +37,22 @@ has not, so nobody mistakes a passing installer for a verified system.
   tests with a non-owner Discord user.
 - MacBook and iPhone device checks beyond browser login; IPv6 denial.
 - Mixed-workload resource measurement and host reboot ordering.
-- The Coding worker; it stays paused until the upstream low-trust sandbox is
-  supported.
+- The single-worker layout (2026-10-14): one fully configured Operations worker,
+  its Backlog proof task, skip without a worker or task bridge, and the removal
+  of Coding. Covered by unit and Ansible fixture tests against a fake Paperclip
+  API; NOT RUN on a live fresh install, and the proof task has not run.
+- Second round (2026-10-14), fixture-tested only and NOT RUN live: parallel
+  reserve admission checks, active-only gateway checks, one gateway unit lookup
+  per run, a whole-vCPU guest restart until Hermes answers, shared download,
+  task-key, owner sign-in, dotenv seed and headroom steps, and restore on sites
+  without a coding (or any) worker home. A live `make` reapply and a live
+  restore remain to be run.
+- Removal of superseded artifacts by the end-of-run prune: a fresh install
+  (2026-10-14) had nothing superseded, so only the fixture tests exercise it.
+  Removal of an earlier Obsidian image is NOT RUN; the listing, and the
+  retention of the pinned image, are verified against the live host.
+- An unprivileged coding worker; none is created until the upstream low-trust
+  sandbox is supported.
 - Reapplying the hardened bridge (inert submission principal, event-derived
   idempotency) on a site installed before that change; the migration path is
   implemented and unit-tested, not yet exercised live.
@@ -80,6 +100,25 @@ the redundant password-manager/Enter prompt. PASS: 12 focused credential tests,
 including real RTK terminal ordering, hidden input and advancing from Hermes to
 Paperclip without a third prompt. Host/guest service changes: none. Live fresh
 installation with this prompt correction: NOT RUN.
+
+## Worker workspace sync failure: 2026-10-14
+
+- FAIL: an Operations run on the reference site stopped before Codex started:
+  `tar: /var/lib/zelab-ops/workspace: Cannot open: Permission denied`
+  (`adapter_failed`).
+- Cause: the agent's `cwd` and the project workspace pointed at the worker's own
+  folder. Paperclip's SSH driver treats `cwd` as a coordinator-side source: it
+  clears the remote `remoteWorkspacePath`, copies the source into it, and copies
+  it back after the run. `zelab-paperclip` cannot read the `0700` worker folder,
+  and with both paths identical a readable copy would have deleted it.
+- Repository fix: the source is `paperclip_home/worker-workspaces/ops`, owned by
+  `zelab-paperclip`; the SSH target stays `/var/lib/zelab-ops/workspace`.
+  Reapply moves an agent `cwd` or project workspace still set to the earlier
+  worker path, and leaves other owner edits alone.
+- PASS: `deploy/test_worker_harness.py` (10 tests) covers fresh workers and the
+  move of an earlier worker path, then a zero-change reapply.
+- Host/guest changes by this fix: none yet.
+- NOT RUN: reapply on the reference site and an authenticated worker task after it.
 
 ## Fresh-site worker creation failure: 2026-10-13
 
@@ -222,5 +261,4 @@ sign-in and task execution remain separate acceptance checks below.
 - Separate runtime identities per Hermes profile before enabling audiences
   other than the owner.
 - Upstream sandbox support for Coding, then its audience denial tests.
-- Optional: overlap independent host and guest preparation during install.
 - Optional: interactive coding through T3 Code with private pairing.

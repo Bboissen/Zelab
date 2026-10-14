@@ -1,14 +1,18 @@
+- name: Install the profile check once per run
+  ansible.builtin.include_tasks: install.yaml
+  when: hermes_profile_check_installed is not defined
+
 - name: Inspect native profile admission without modifying runtime state
-  ansible.builtin.script:
-    cmd: >-
-      check_profile.py {{ hermes_install_dir | quote }} {{ research_initial_allowed_user | quote }}
-      {{ checked_tool_user | quote }} {{ checked_skip_parked | bool | ternary('skip-parked', 'check') }}
-    executable: /usr/bin/python3
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - /usr/local/lib/zelab/check_profile.py
+      - "{{ hermes_install_dir }}"
+      - "{{ research_initial_allowed_user }}"
+      - "{{ checked_tool_user }}"
+      - "{{ checked_skip_parked | bool | ternary('skip-parked', 'check') }}"
   become_user: zelab-hermes
-  environment:
-    HOME: /home/zelab-hermes
-    HERMES_HOME: "{{ checked_profile_home }}"
-    TMPDIR: /var/lib/zelab/hermes/tmp
+  environment: "{{ hermes_cli_environment | combine({'HERMES_HOME': checked_profile_home}) }}"
   register: checked_profile
   changed_when: false
   failed_when: false
@@ -17,10 +21,4 @@
 - name: Require retained owner admission before activating a shared runtime
   ansible.builtin.assert:
     that: checked_profile.rc == 0
-    fail_msg: >-
-      Native admission or tool configuration changed in {{ checked_profile_home }}.
-      Admission must match discord_owner_id in config/site.yaml ({{ 'set' if research_initial_allowed_user else 'not set yet, so nobody is admitted' }}).
-      Restore the declared owner-only Discord user, disable public/role grants,
-      revoke other paired users and retain the declared SSH backend. Review native
-      config.yaml, gateway.json and .env; deployment does not overwrite these settings.
-      Family activation remains unqualified while Hermes shares a runtime UID.
+    fail_msg: "{{ hermes_admission_message | replace('PROFILE', checked_profile_home) }}"

@@ -18,6 +18,8 @@ import subprocess
 import sys
 import warnings
 
+import shell
+
 
 class PasswordSetupError(ValueError):
     """A safe diagnostic containing no credential or parser output."""
@@ -82,8 +84,8 @@ def prompt_password(label, fresh):
 
 
 def installed(path):
-    result = subprocess.run(['rtk', 'proxy', 'sudo', '-n', '/usr/local/bin/rtk', 'proxy',
-                             'test', '-f', str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    result = subprocess.run(shell.rtk(*shell.as_root('test', '-f', path)),
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if result.returncode not in (0, 1):
         raise PasswordSetupError('Cannot inspect installed credentials; verify administrator access.')
     return result.returncode == 0

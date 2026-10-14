@@ -1,0 +1,8 @@
+- name: Create the pinned Debian guest under native supervision
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - vm

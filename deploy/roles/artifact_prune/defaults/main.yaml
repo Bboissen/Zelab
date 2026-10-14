@@ -1,0 +1,6 @@
+# Newest private install logs kept in private_dir/logs.
+prune_install_logs_kept: 5
+prune_cache_dir: /var/cache/zelab
+prune_tools_dir: /opt/zelab-tools
+prune_units_dir: /etc/systemd/system
+prune_command_links: [/usr/local/bin/zelab-codex, /usr/local/bin/zelab-claude, /usr/local/bin/node]

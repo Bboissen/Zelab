@@ -1,24 +1,17 @@
-- name: Prepare the public native CLI download cache
-  ansible.builtin.file:
-    path: /var/cache/zelab
-    state: directory
-    owner: root
-    group: root
-    mode: '0755'
+- name: Inspect the installed native Codex
+  ansible.builtin.stat:
+    path: "/opt/zelab-tools/codex-{{ codex_version }}-package/bin/codex"
+    get_checksum: false
+  register: codex_installed_binary
 
 - name: Download checksum-verified upstream native Codex
-  ansible.builtin.get_url:
-    url: "{{ codex_archive_url }}"
-    dest: "/var/cache/zelab/codex-package-{{ codex_version }}.tar.gz"
-    checksum: "sha256:{{ codex_archive_sha256 }}"
-    owner: root
-    group: root
-    mode: '0644'
-  # Mirrors rate-limit or drop connections now and then (HTTP 429/5xx); retry before failing.
-  register: download
-  until: download is succeeded
-  retries: 5
-  delay: 30
+  ansible.builtin.include_role:
+    name: pinned_download
+  vars:
+    download_url: "{{ codex_archive_url }}"
+    download_dest: "/var/cache/zelab/codex-package-{{ codex_version }}.tar.gz"
+    download_checksum: "sha256:{{ codex_archive_sha256 }}"
+  when: not codex_installed_binary.stat.exists
 
 - name: Create independent native CLI location
   ansible.builtin.file:
@@ -36,6 +29,12 @@
     owner: root
     group: root
     creates: "/opt/zelab-tools/codex-{{ codex_version }}-package/bin/codex"
+  when: not codex_installed_binary.stat.exists
+
+- name: Remove the consumed Codex archive
+  ansible.builtin.file:
+    path: "/var/cache/zelab/codex-package-{{ codex_version }}.tar.gz"
+    state: absent
 
 - name: Verify the native code execution helper is present
   ansible.builtin.stat:

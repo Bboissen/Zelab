@@ -32,7 +32,7 @@ flowchart LR
 | Hermes | Unmodified upstream checkout in the guest, pinned by commit; one shared gateway runs every profile under the `zelab-hermes` account |
 | Hermes dashboard | Guest service on port 8640, basic-auth; forwarded to host loopback and published through Tailscale Serve |
 | Paperclip | Host service under `zelab-paperclip`, authenticated private mode, loopback only; embedded PostgreSQL reachable only by root, the operator and the service account (nftables) |
-| Host workers | `zelab-ops` (unattended sudo) and `zelab-code` (no privileges, paused), reached by Paperclip's SSH environment driver; setup offers pinned Codex, Claude Code, both or skip. Both and skip create paused inert agents until a harness is chosen; existing native settings are retained. |
+| Host worker | One Paperclip agent, Operations, running as `zelab-ops` (unattended sudo) through Paperclip's SSH environment driver. Setup offers pinned Codex, Claude Code or skip: a harness creates the agent fully configured except its model, plus a Backlog task that proves host access and sudo; skip creates no worker, account or Discord task bridge. Existing native settings are retained. |
 | Notes | Host vault `/var/lib/zelab-vault/{Private,Shared}`; a dedicated notes-only SFTP listener on loopback; SSHFS mounts in the guest per audience |
 | Obsidian | linuxserver.io container pinned by digest, loopback-published, password from a file, vault bind-mounted |
 | Provisioning | Ansible roles under `deploy/`, systemd units, one Compose file; Python entry points in `deploy/` and `implementation/` |
@@ -46,6 +46,8 @@ flowchart LR
 3. The task lands in the Operations project assigned to the `zelab-ops` worker.
    Once a harness is selected and authenticated, Paperclip opens the SSH
    environment and runs Codex or Claude Code there with real host access.
+   Each run copies Paperclip's own folder to the worker's `workspace` and
+   copies it back afterwards; the two folders are never the same path.
 4. Operations reads the result through the same scoped key and replies in the
    originating conversation with host identity, timestamp and task ID.
 5. Paperclip can also assign work to Hermes through its native gateway adapter,
@@ -58,7 +60,8 @@ flowchart LR
 | Guest disk and cloud-init | `vm_data` (default `/var/lib/zelab-vm/data`) |
 | Hermes profiles, memory, logins, Discord token | `/var/lib/zelab/hermes/home` inside the guest |
 | Paperclip database, uploads, secrets key | `paperclip_home` (default `/var/lib/zelab-paperclip`) |
-| Worker homes | `/var/lib/zelab-ops`, `/var/lib/zelab-code` |
+| Coordinator-side worker workspace | `paperclip_home/worker-workspaces/ops` |
+| Worker home | `/var/lib/zelab-ops` (`/var/lib/zelab-code` only on sites from the earlier two-worker layout) |
 | Notes vault, Obsidian configuration | `/var/lib/zelab-vault`, `/var/lib/zelab-obsidian` |
 | Deployment keys, Hermes password hash, resource IDs and optional legacy recovery copies | `private_dir` (default `~/.local/state/zelab-deployment`) |
 | UI password working copies | Private temporary `/dev/shm/zelab-passwords-*` directory during `make`; removed on exit |
@@ -84,7 +87,20 @@ Defaults: 1 vCPU, 2 GiB guest RAM, 50 % CPU quota, 2304 MiB memory cap, no
 guest swap, 16 GiB disk; 8 GiB host RAM and 20 GiB disk reserves. A fresh
 install may temporarily borrow up to 70 % of idle CPU and RAM for the first
 boot and restores the normal limits afterwards (`vm_install_resource_fraction`).
+That restore restarts the guest; until Hermes answers it may use whole vCPUs,
+then the normal CPU quota is applied live (Hermes takes about a minute to start
+under a 50 % quota).
 Hermes web assets are built on the host, not inside the small guest.
+
+Install order overlaps host and guest work: once the guest is sized and booting,
+the Obsidian image pull, Hermes web build and Paperclip `npm ci` run as background
+Ansible jobs, and Paperclip installs while the guest prepares Hermes dependencies.
+Reserve profiles are created together and their admission checks run in
+parallel; the gateway stage rechecks only active profiles, since parked ones
+were checked with their restricted tools. Each role waits for its own job.
+A successful run ends with `prune.yaml`, which deletes downloads, build trees,
+releases and images the current pins no longer use; the guest disk uses
+`discard=unmap`, so space freed in the guest returns to the host.
 
 ## Upstream references
 

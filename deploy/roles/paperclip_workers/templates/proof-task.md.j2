@@ -1,0 +1,14 @@
+Owner-authorized installation check. It waits in Backlog: choose this agent's
+model, then move the task to Todo to start it.
+
+Run each command non-interactively on the host as {{ worker_ops_user }} and post
+its actual output (or the exact error) in one comment:
+
+1. Host access, a non-interactive equivalent of htop:
+   `hostname; date -u; uptime; top -b -n 1 | head -n 15; free -h; df -h /`
+2. Unattended sudo. `-n` fails instead of prompting for a password:
+   `sudo -n true && echo "sudo: ok"; sudo -n id -u; sudo -n -l`
+
+Expected: step 2 prints `sudo: ok`, `0`, and a grant of `(ALL : ALL) NOPASSWD: ALL`
+from /etc/sudoers.d/zelab-worker-operations. Change nothing on the host. Mark the
+task done when both steps succeed, or blocked with the failing step.

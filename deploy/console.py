@@ -5,11 +5,13 @@ when the terminal cannot encode them.
 """
 
 import os
+import re
 import shutil
 import sys
 
 
 STYLES = {"bold": 1, "dim": 2, "red": 31, "green": 32, "yellow": 33, "cyan": 36}
+ESCAPES = re.compile(r"\x1b\[[0-9;]*m")
 # Doctor labels: Done, Blocked, Advice, To do.
 MARKS = {"PASS": ("✓", "ok", "green"), "FAIL": ("✗", "X", "red"),
          "WARN": ("!", "!", "yellow"), "PENDING": ("○", "-", "cyan")}
@@ -48,6 +50,11 @@ def paint(text, *styles, stream=None):
     if not styles or not colored(stream):
         return text
     return f"\033[{';'.join(str(STYLES[style]) for style in styles)}m{text}\033[0m"
+
+
+def plain(text):
+    """Text without the color escapes paint() adds."""
+    return ESCAPES.sub("", text)
 
 
 def mark(label, stream=None):

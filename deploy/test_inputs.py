@@ -73,6 +73,19 @@ class PrivateInputsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'another guest'):
             read_inputs(self.site, self.env)
 
+    def test_legacy_coding_worker_inputs_are_optional_and_still_validated(self):
+        site = yaml.safe_load(self.site.read_text())
+        for name in ('worker_code_user', 'worker_code_home'):
+            site.pop(name)
+        self.site.write_text(yaml.safe_dump(site))
+        loaded = read_inputs(self.site, self.env, defaults_path=None)
+        self.assertEqual((loaded['worker_code_user'], loaded['worker_code_home']),
+                         ('zelab-code', '/var/lib/zelab-code'))
+        site['worker_code_user'] = site['worker_ops_user']
+        self.site.write_text(yaml.safe_dump(site))
+        with self.assertRaisesRegex(ValueError, 'distinct'):
+            read_inputs(self.site, self.env, defaults_path=None)
+
     def test_duplicate_or_unknown_inputs_are_rejected(self):
         # .env accepts only path names, so it cannot hold a credential.
         for text in ["ZELAB_PRIVATE_DIR=/tmp/one\nZELAB_PRIVATE_DIR=/tmp/two\n", "UNKNOWN_TOKEN=do-not-print\n"]:

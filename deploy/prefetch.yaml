@@ -1,0 +1,24 @@
+# Start the long host downloads and builds before the guest exists, so they run
+# while it is created, boots and installs Hermes. Each role waits for its own job.
+- name: Start pinned host downloads and builds in the background
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  tasks:
+    - name: Start the Obsidian image pull
+      ansible.builtin.include_role:
+        name: obsidian_host
+        tasks_from: pull.yaml
+      when: obsidian_enabled | default(false) | bool
+
+    - name: Start the Hermes dashboard asset build
+      ansible.builtin.include_role:
+        name: hermes_build
+        tasks_from: start.yaml
+
+    - name: Start the Paperclip runtime installation
+      ansible.builtin.include_role:
+        name: paperclip
+        tasks_from: install.yaml

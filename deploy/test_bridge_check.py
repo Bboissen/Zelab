@@ -1,13 +1,13 @@
 """Exercise doctor against an authenticated native API fixture without legacy passwords."""
 
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import json
 from pathlib import Path
 import tempfile
-import threading
 import unittest
 
 import bridge_check
+from fixtures import serve
 
 
 class BridgeCheckTest(unittest.TestCase):
@@ -73,11 +73,8 @@ class BridgeCheckTest(unittest.TestCase):
                 else:
                     self.respond({'error': 'fixture-response-secret'}, 401)
 
-        self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
-        self.addCleanup(self.stop_server)
-        port = self.server.server_port
+        self.port = serve(self, Handler)
+        port = self.port
         self.agents['gateway']['adapterConfig']['paperclipApiUrl'] = f'http://10.0.2.2:{port}'
         self.site = {'private_dir': str(self.private), 'paperclip_port': port,
                      'guest_api_port': 18642, 'paperclip_owner_email': 'owner@example.test'}
@@ -92,11 +89,6 @@ class BridgeCheckTest(unittest.TestCase):
                             ('paperclip-hermes-gateway.key', 'gateway-key')]:
             (self.private / name).write_text(value)
         self.password(self.runtime)
-
-    def stop_server(self):
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join()
 
     def password(self, directory, value='fixture-owner-password'):
         path = directory / 'paperclip-owner.password'

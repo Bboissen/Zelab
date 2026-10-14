@@ -1,7 +1,7 @@
 - name: Read native agents before selecting the submission identity
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ bridge_workers.company_id }}/agents"
-    headers: {Cookie: "{{ bridge_owner.cookies_string }}"}
+    headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
   delegate_to: zelab_host
   register: bridge_agents
 
@@ -13,7 +13,7 @@
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ bridge_workers.company_id }}/agents"
     method: POST
-    headers: {Cookie: "{{ bridge_owner.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+    headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
     body_format: json
     body:
       name: Zelab Operations submission
@@ -50,7 +50,7 @@
 - name: Read legacy Operations keys before migration
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ paperclip_port }}/api/agents/{{ bridge_workers.workers.ops.agent_id }}/keys"
-    headers: {Cookie: "{{ bridge_owner.cookies_string }}"}
+    headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
   delegate_to: zelab_host
   register: bridge_legacy_keys
 
@@ -72,9 +72,7 @@
     name: "{{ hermes_gateway_unit }}"
     state: stopped
   become_user: zelab-hermes
-  environment:
-    XDG_RUNTIME_DIR: /run/user/61102
-    DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/61102/bus
+  environment: "{{ hermes_session_environment }}"
   register: bridge_migration_pause
   when: bridge_legacy_active | length > 0
 

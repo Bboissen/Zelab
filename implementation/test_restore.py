@@ -18,6 +18,7 @@ import yaml
 
 from restore import inspect_archive, main
 from runtime import maintenance_lock
+from archive_fixture import encrypt
 
 
 class ArchiveSafetyTest(unittest.TestCase):
@@ -108,10 +109,7 @@ class RestoreCommandTest(unittest.TestCase):
         self.command('tar', '--acls', '--xattrs', '--numeric-owner', '-C', self.source,
                      '-cf', tar, 'note.md', 'note-link', 'note-hardlink')
         self.archive = self.base / 'source.tar.gpg'
-        self.command('gpg', '--batch', '--pinentry-mode', 'loopback', '--no-symkey-cache',
-                     '--passphrase-file', self.key, '--symmetric', '--cipher-algo', 'AES256',
-                     '--compress-algo', 'none', '--output', self.archive, tar)
-        self.archive.chmod(0o600)
+        encrypt(self, tar, self.archive, self.key)
         site = yaml.safe_load((Path(__file__).resolve().parents[1] / 'config/site.example.yaml').read_text())
         for name in ('vm_data', 'vm_root', 'vm_bootstrap_dir', 'paperclip_home',
                      'worker_ops_home', 'worker_code_home', 'notes_vault_dir',

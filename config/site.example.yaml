@@ -8,8 +8,8 @@
 worker_ssh_host: 127.0.0.1
 worker_ssh_port: 22
 
-# Optional Paperclip harness. Plain make offers Codex, Claude Code, both or skip.
-worker_harness: none      # codex, claude, both or none
+# Optional Paperclip worker. Plain make offers Codex, Claude Code or skip.
+worker_harness: none      # codex, claude or none
 # worker_model: ''        # native default; choose models in Paperclip later
 
 # Private HTTPS through Tailscale Serve; requires MagicDNS and HTTPS in the tailnet.

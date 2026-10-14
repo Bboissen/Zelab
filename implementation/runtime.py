@@ -7,14 +7,19 @@ from pathlib import Path
 import pwd
 import signal
 import stat
-import subprocess
+import sys
+
+DEPLOY = str(Path(__file__).resolve().parents[1] / 'deploy')
+if DEPLOY not in sys.path:
+    sys.path.insert(0, DEPLOY)
+import shell  # noqa: E402
 
 
 MAINTENANCE_LOCK = Path('/run/zelab-backup.lock')
 
 
 def run(*args):
-    result = subprocess.run(['rtk', 'proxy', *map(str, args)], capture_output=True)
+    result = shell.quiet(args)
     if result.returncode:
         raise RuntimeError(f'{args[0]} failed; private command output was suppressed')
     return result.stdout
@@ -32,7 +37,12 @@ def container_running(name):
 
 
 def require_idle_workers(site):
-    uids = {pwd.getpwnam(site[name]).pw_uid for name in ['worker_ops_user', 'worker_code_user']}
+    uids = set()
+    for name in ['worker_ops_user', 'worker_code_user']:
+        try:
+            uids.add(pwd.getpwnam(site[name]).pw_uid)
+        except KeyError:
+            pass  # Skipped worker, or no legacy Coding account.
     for path in Path('/proc').glob('[0-9]*'):
         try:
             if path.stat().st_uid in uids:

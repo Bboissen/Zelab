@@ -1,0 +1,24 @@
+# One checksum-pinned upstream download: download_url, download_dest and
+# download_checksum ("sha256:..."/"sha512:..."). get_url verifies the checksum.
+- name: Prepare the shared public download cache
+  ansible.builtin.file:
+    path: /var/cache/zelab
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: download_dest.startswith('/var/cache/zelab/')
+
+- name: Download and verify {{ download_dest | basename }}
+  ansible.builtin.get_url:
+    url: "{{ download_url }}"
+    dest: "{{ download_dest }}"
+    checksum: "{{ download_checksum }}"
+    owner: "{{ download_owner }}"
+    group: "{{ download_group }}"
+    mode: "{{ download_mode }}"
+  # Mirrors rate-limit or drop connections now and then (HTTP 429/5xx); retry before failing.
+  register: download
+  until: download is succeeded
+  retries: 5
+  delay: 30

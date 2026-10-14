@@ -1,13 +1,13 @@
 """Exercise deployment boundaries without contacting or changing installed services."""
 
 import copy
-import os
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
 import yaml
+
+from fixtures import role_tasks, run_play
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,9 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ProvisioningTest(unittest.TestCase):
     def test_database_binaries_need_no_runtime_chmod_in_the_readonly_service(self):
-        tasks = yaml.safe_load((ROOT / 'deploy/roles/paperclip/tasks/main.yaml').read_text())
-        task = next(task for task in tasks if task.get('name') ==
-                    'Prepare native database executables for the read-only service runtime')
+        task, = role_tasks('deploy/roles/paperclip/tasks/main.yaml', 'Prepare native database executables for the read-only service runtime')
         task['ansible.builtin.file'].pop('owner')
         task['ansible.builtin.file'].pop('group')
         with tempfile.TemporaryDirectory() as directory:
@@ -36,9 +34,7 @@ class ProvisioningTest(unittest.TestCase):
             self.assertIn('changed=0', result.stdout)
 
     def test_public_dashboard_archive_is_readable_after_restrictive_packaging_umask(self):
-        tasks = yaml.safe_load((ROOT / 'deploy/roles/hermes_build/tasks/main.yaml').read_text())
-        task = next(task for task in tasks if task.get('name') ==
-                    'Make the public dashboard archive readable by the controller')
+        task, = role_tasks('deploy/roles/hermes_build/tasks/main.yaml', 'Make the public dashboard archive readable by the controller')
         with tempfile.TemporaryDirectory() as directory:
             archive = Path(directory) / 'dashboard.tar'
             archive.write_bytes(b'public build output')
@@ -53,21 +49,9 @@ class ProvisioningTest(unittest.TestCase):
             result = self.run_play(directory, tasks=[task])
             self.assertIn('changed=0', result.stdout)
 
-    def run_play(self, directory, *, tasks=None, roles=None, variables=None, succeeds=True):
-        playbook = Path(directory) / 'check.yaml'
-        playbook.write_text(yaml.safe_dump([{
-            'hosts': 'zelab_host', 'connection': 'local', 'gather_facts': False,
-            'become': False, 'vars': variables or {},
-            'tasks': tasks or [], 'roles': roles or [],
-        }]))
-        environment = dict(os.environ, ANSIBLE_ROLES_PATH=str(ROOT / 'deploy/roles'))
-        result = subprocess.run(
-            ['rtk', 'proxy', str(ROOT / '.venv/bin/ansible-playbook'),
-             '-i', 'zelab_host,', str(playbook)],
-            capture_output=True, text=True, env=environment,
-        )
-        self.assertEqual(result.returncode, 0 if succeeds else 2,
-                         result.stdout + result.stderr)
+    def run_play(self, directory, *, tasks=(), roles=(), variables=None, succeeds=True):
+        result = run_play(directory, tasks=tasks, roles=roles, variables=variables, host='zelab_host')
+        self.assertEqual(result.returncode, 0 if succeeds else 2, result.stdout + result.stderr)
         return result
 
     def test_retained_credentials_are_required_only_after_installation(self):
@@ -98,18 +82,19 @@ class ProvisioningTest(unittest.TestCase):
             })
         self.assertIn('changed=0', result.stdout)
 
-    def test_skipping_harnesses_never_enters_a_cli_install_role(self):
-        tasks = yaml.safe_load((ROOT / 'deploy/roles/host_workers/tasks/main.yaml').read_text())
-        task = next(task for task in tasks if task.get('name') ==
-                    'Install only the selected native worker harnesses')
+    def test_skip_provisions_no_worker_account_cli_or_task_bridge(self):
+        # Real role entries from the site playbooks; skip must not enter any of them.
+        roles = [yaml.safe_load((ROOT / 'deploy' / name).read_text())[0]['roles'][0]
+                 for name in ('host-workers.yaml', 'hermes-bridge.yaml')]
         with tempfile.TemporaryDirectory() as directory:
-            result = self.run_play(directory, tasks=[task], variables={'worker_harness': 'none'})
+            result = self.run_play(directory, roles=roles, variables={'worker_harness': 'none'})
+        self.assertIn('ok=0', result.stdout)
         self.assertIn('changed=0', result.stdout)
+        grant, = role_tasks('deploy/roles/notes_host/tasks/main.yaml', 'Grant designated host workers their explicit notes scope')
+        self.assertEqual(grant['when'], "worker_harness in ['codex', 'claude']")
 
     def test_serve_routes_never_replace_other_handlers_or_public_routes(self):
-        tasks = yaml.safe_load((ROOT / 'deploy/roles/private_ui/tasks/check.yaml').read_text())
-        task = next(task for task in tasks if task.get('name') ==
-                    'Preserve existing routes and reject public Funnel on owned endpoints')
+        task, = role_tasks('deploy/roles/private_ui/tasks/check.yaml', 'Preserve existing routes and reject public Funnel on owned endpoints')
         endpoint = 'host.example.ts.net:443'
         backend = 'http://127.0.0.1:18640'
         safe = {'TCP': {'443': {'HTTPS': True}},

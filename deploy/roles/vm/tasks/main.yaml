@@ -28,19 +28,11 @@
   become: false
 
 - name: Prepare a private recovery key once
-  ansible.builtin.command:
-    argv:
-      - rtk
-      - proxy
-      - python3
-      - -c
-      - |
-        import os, secrets, sys
-        fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'w') as out:
-            out.write(secrets.token_urlsafe(48) + '\n')
-      - "{{ private_dir }}/backup-passphrase"
-    creates: "{{ private_dir }}/backup-passphrase"
+  ansible.builtin.copy:
+    dest: "{{ private_dir }}/backup-passphrase"
+    content: "{{ lookup('ansible.builtin.password', '/dev/null', length=64, chars=['ascii_letters', 'digits', '-_']) }}\n"
+    mode: '0600'
+    force: false
   become: false
   no_log: true
 

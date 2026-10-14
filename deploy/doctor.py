@@ -7,6 +7,7 @@ only FAIL lines are printed; the installer shows the connection checklist.
 """
 
 import argparse
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 import importlib.util
@@ -24,6 +25,9 @@ import sys
 
 from checklist import ITEMS, PHASES, render_html
 from console import heading, mark, paint
+import shell
+# Never print probe output: it can contain private host/account data.
+from shell import output as command_output
 
 
 # Standard maintenance windows, checked against upstream on 2026-10-10:
@@ -37,7 +41,7 @@ SUPPORTED_OS = {
     ("ubuntu", "26.04"): date(2031, 5, 31),
 }
 BASELINE = "Debian 13 or Ubuntu 24.04/26.04 LTS (x86_64)"
-ROOT_RTK = Path("/usr/local/bin/rtk")
+ROOT_RTK = Path(shell.ROOT_RTK)
 ROOT = Path(__file__).resolve().parents[1]
 GIB = 2**30
 # Pinned Debian image, Hermes/Paperclip dependencies and the Obsidian image.
@@ -106,16 +110,6 @@ def trusted_root_rtk(path=ROOT_RTK):
         return False
     return (stat.S_ISREG(metadata.st_mode) and metadata.st_uid == 0
             and not metadata.st_mode & 0o022 and bool(metadata.st_mode & 0o111))
-
-
-def command_output(argv, timeout=15):
-    """Never print tool output: probes can contain private host/account data."""
-    try:
-        result = subprocess.run(["rtk", "proxy", *argv], stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL, timeout=timeout, text=True)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return result.stdout if result.returncode == 0 else None
 
 
 def command_succeeds(argv):
@@ -206,9 +200,8 @@ def host_checks():
 def admin_checks():
     phase = phase_of("admin")
     trusted = trusted_root_rtk()
-    root_prefix = ["sudo", "-n", str(ROOT_RTK), "proxy"]
-    elevated = trusted and command_succeeds([*root_prefix, "/usr/bin/python3", "-c",
-                                            "import os,sys; sys.exit(os.geteuid() != 0)"])
+    elevated = trusted and command_succeeds(shell.as_root("/usr/bin/python3", "-c",
+                                                          "import os,sys; sys.exit(os.geteuid() != 0)"))
     checks = [Check("Unattended administration", elevated,
                     "rtk proxy make asks for your sudo password once",
                     pending=True, phase=phase)]
@@ -218,7 +211,7 @@ def admin_checks():
             ("Docker Compose", ["docker", "compose", "version"], "Install the Docker Compose v2 plugin"),
             ("OpenSSH configuration", ["/usr/sbin/sshd", "-t"], "Fix the host SSH server configuration"),
         ):
-            checks.append(Check(name, command_succeeds([*root_prefix, *argv]), detail, phase=phase))
+            checks.append(Check(name, command_succeeds(shell.as_root(*argv)), detail, phase=phase))
     return checks, elevated
 
 
@@ -228,6 +221,18 @@ def port_checks(site, elevated):
               "guest_api_port": site["vm_service"] + ".service", "paperclip_port": "zelab-paperclip.service",
               "paperclip_db_port": "zelab-paperclip.service", "notes_sftp_port": "zelab-notes-sshd.service",
               "obsidian_backend_port": "docker:zelab-obsidian"}
+    running = {}
+
+    def ours(owner):
+        # Several ports share one unit; ask each owner once.
+        if owner not in running:
+            if owner.startswith("docker:"):
+                running[owner] = elevated and (command_output(shell.as_root(
+                    "docker", "inspect", "--format", "{{.State.Running}}", owner[7:])) or "").strip() == "true"
+            else:
+                running[owner] = (command_output(["systemctl", "is-active", owner]) or "").strip() == "active"
+        return running[owner]
+
     busy = []
     for name, owner in owners.items():
         with socket.socket() as probe:
@@ -237,12 +242,7 @@ def port_checks(site, elevated):
                 continue
             except OSError:
                 pass
-        if owner.startswith("docker:"):
-            ours = elevated and (command_output(["sudo", "-n", str(ROOT_RTK), "proxy", "docker", "inspect",
-                                                 "--format", "{{.State.Running}}", owner[7:]]) or "").strip() == "true"
-        else:
-            ours = (command_output(["systemctl", "is-active", owner]) or "").strip() == "active"
-        if not ours:
+        if not ours(owner):
             busy.append(f"{name} {site[name]}")
     return [Check("Component ports", not busy,
                   "In use by another program: " + ", ".join(busy) + ". Set a free port for each in config/site.yaml.",
@@ -254,19 +254,11 @@ def tailscale_checks(site):
     if not site.get("ui_tailscale_enabled"):
         return [Check("Tailscale", False, "UIs are localhost-only. Enroll this host, then set ui_tailscale_enabled: "
                       "true and ui_tailscale_hostname in config/site.yaml", pending=True, phase=phase)]
-    try:
-        status = json.loads(command_output(["tailscale", "status", "--json"]) or "")
-        running = status.get("BackendState") == "Running"
-        name = status["Self"]["DNSName"].rstrip(".")
-    except (ValueError, KeyError, TypeError, AttributeError):
-        running, name = False, None
+    running, name = shell.tailnet_name(shell.load_json(command_output(["tailscale", "status", "--json"])))
     checks = [Check("Tailscale", running and name == site["ui_tailscale_hostname"],
                     "Start Tailscale on this host and make ui_tailscale_hostname match its MagicDNS name",
                     phase=phase)]
-    try:
-        serve = json.loads(command_output(["tailscale", "serve", "status", "--json"]) or "{}") or {}
-    except ValueError:
-        serve = {}
+    serve = shell.load_json(command_output(["tailscale", "serve", "status", "--json"]))
     routes = {"ui_tail_hermes_port": site["guest_dashboard_port"], "ui_tail_paperclip_port": site["paperclip_port"]}
     if site.get("obsidian_enabled"):
         routes["ui_tail_obsidian_port"] = site["obsidian_backend_port"]
@@ -293,7 +285,9 @@ def guest_facts(site):
             "def auth():\n"
             " try: d=json.loads(a.read_text())\n"
             " except Exception: return False\n"
-            " return bool(d.get('providers')) if isinstance(d,dict) and 'providers' in d else bool(d)\n"
+            " if not isinstance(d,dict) or not ('providers' in d or 'credential_pool' in d): return bool(d)\n"
+            " p=d.get('credential_pool')\n"
+            " return bool(d.get('providers')) or (isinstance(p,dict) and any(p.values()))\n"
             "t=e.is_file() and any(l.startswith('DISCORD_BOT_TOKEN=') and l.split('=',1)[1].strip() "
             "for l in e.read_text().splitlines())\n"
             "print(json.dumps({'hermes_auth': auth(), 'discord_token': t}))")
@@ -305,6 +299,15 @@ def guest_facts(site):
         return json.loads(output)
     except (TypeError, ValueError):
         return None
+
+
+def hermes_picker(site):
+    """The operator's command for the native model picker; provider login needs a person."""
+    return ["rtk", "proxy", "ssh", "-t", "-F", "/dev/null", "-i", site["deploy_key"],
+            "-o", "UserKnownHostsFile=" + site["guest_known_hosts"], "-p", str(site["guest_ssh_port"]),
+            site["guest_user"] + "@127.0.0.1", "sudo", "-u", "zelab-hermes", "env",
+            "HERMES_HOME=/var/lib/zelab/hermes/home", "TMPDIR=/var/lib/zelab/hermes/tmp",
+            site["hermes_install_dir"] + "/.hermes/bin/hermes", "model", "--no-browser"]
 
 
 def connection_checks(site, elevated):
@@ -325,18 +328,18 @@ def connection_checks(site, elevated):
         checks = [Check('Claude Code subscription login', login,
                         f'Run `rtk proxy sudo -u {site["worker_ops_user"]} -H /usr/local/bin/zelab-claude auth login --claudeai`; use Paperclip Test Environment before a worker task',
                         pending=True, phase=phase_of('harness'))]
-    elif harness == 'both':
-        checks = [Check('Worker adapters to choose', False,
-                        'Both CLIs are installed. Choose Codex or Claude Code per worker in Paperclip, complete its native login and Test Environment, then resume Operations. Coding stays paused.',
-                        pending=True, phase=phase_of('harness'))]
     else:
         checks = [Check('Worker harness skipped', True,
-                        'New workers stay paused. Choose worker_harness: codex or claude in config/site.yaml when ready.',
+                        'No Paperclip worker or Discord host tasks. Rerun make in a terminal and choose Codex or Claude Code when ready.',
                         phase=phase_of('harness'))]
+    if harness in ('codex', 'claude'):
+        checks.append(Check('Operations proof task', False,
+                            'In Paperclip, choose the Operations model, then move "Prove Operations host access and sudo" from Backlog to Todo',
+                            pending=True, phase=phase_of('harness')))
     guest = guest_facts(site) if elevated or Path(site["deploy_key"]).exists() else None
     waiting = "Available after installation; open the Hermes URL printed by make"
     checks.append(Check("Hermes subscription sign-in", bool(guest and guest["hermes_auth"]),
-                        "In Hermes, choose a provider and model on the default profile and complete its native login"
+                        f"Run `{shlex.join(hermes_picker(site))}`, choose a provider and default model, and approve its login"
                         if guest else waiting, pending=True, phase=phase_of("hermes")))
     discord = phase_of("discord")
     checks.append(Check("Discord owner ID", bool(site["research_initial_allowed_user"]),
@@ -366,13 +369,14 @@ def load_site(site_path, env_path):
         return None, "Site configuration could not be read; check its YAML syntax and permissions"
 
 
-def readiness_checks(site_path=None, env_path=None):
+def readiness_checks(site_path=None, env_path=None, loaded=None):
+    """All checks; loaded is a (site, problem) pair the caller already has from load_site."""
     checks = host_checks()
     admin, elevated = admin_checks()
     checks.extend(admin)
     if site_path is None:
         return checks
-    site, problem = load_site(site_path, env_path)
+    site, problem = loaded or load_site(site_path, env_path)
     if site is None:
         checks.append(Check("Site configuration", False, problem, pending=not site_path.exists()))
         return checks
@@ -472,7 +476,7 @@ def status_snapshot(checks, destination, site=None):
     destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     with os.fdopen(os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as output:
-        output.write(render_html(by_item, stamp, lines, standalone=True, applications=application_links(site)))
+        output.write(render_html(by_item, stamp, lines, applications=application_links(site)))
 
 
 def guide_path(site):
@@ -541,16 +545,22 @@ def main(argv=None):
     parser.add_argument("--guide-mode", choices=("auto", "local", "remote"), default="auto",
                         help="Guide delivery mode; SSH sessions always avoid opening a server browser")
     parser.add_argument("--guide-path-only", action="store_true",
-                        help="Generate the private guide and print only its absolute path for remote retrieval")
+                        help="Generate the private guide and print only its absolute path for remote retrieval; "
+                             "with --brief, blocking failures go to standard error")
     args = parser.parse_args(argv)
     if args.platform_only:
         return 0 if report_checks(platform_checks()) else 1
-    checks = readiness_checks(args.site_config, args.env_file)
+    loaded = load_site(args.site_config, args.env_file)
+    checks = readiness_checks(args.site_config, args.env_file, loaded)
+    site = loaded[0]
     quiet = args.quiet or args.guide_path_only
+    if args.guide_path_only and args.brief:
+        # Standard output carries only the path; a remote caller shows blockers from stderr.
+        with redirect_stdout(sys.stderr):
+            print_grouped(checks, brief=True)
     ready = True if quiet else print_grouped(checks, brief=args.brief)
     blockers = [check.name for check in checks if check.label == "FAIL"]
     waiting = [check.name for check in checks if check.label == "PENDING"]
-    site, _ = load_site(args.site_config, args.env_file) if args.site_config.exists() else (None, None)
     if quiet:
         pass  # the failed step already explained itself
     elif blockers:

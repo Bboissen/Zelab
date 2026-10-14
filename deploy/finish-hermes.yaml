@@ -1,0 +1,11 @@
+- name: Finish pinned Hermes once its background dependency stage completes
+  hosts: guest
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  tasks:
+    - name: Finish the native Hermes installation
+      ansible.builtin.include_role:
+        name: hermes
+        tasks_from: finish.yaml

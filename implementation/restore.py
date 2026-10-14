@@ -8,11 +8,16 @@ import os
 from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
+import sys
 import tarfile
 
-from backup import selected_paths
-from runtime import run, private_file, recovery_key, maintenance_lock, recover_on_interrupt
-from run import absolute_path, read_inputs
+ROOT = Path(__file__).resolve().parents[1]
+for folder in ('deploy', 'implementation'):
+    if str(ROOT / folder) not in sys.path:
+        sys.path.insert(0, str(ROOT / folder))
+from backup import selected_paths  # noqa: E402
+from runtime import run, private_file, recovery_key, maintenance_lock, recover_on_interrupt  # noqa: E402
+from run import absolute_path, read_inputs  # noqa: E402
 
 
 def archive_path(name):
@@ -88,7 +93,7 @@ def extract_verified(site, archive, destination, key):
     absolute_path(str(destination), 'restore destination')
     if destination.exists() or destination.resolve() != destination or len(destination.parts) < 4:
         raise ValueError('Restore needs a new private directory without symlink aliases')
-    for path in selected_paths(site, Path(__file__).resolve().parents[1], require_existing=False):
+    for path in selected_paths(site, ROOT, require_existing=False):
         if destination == path or destination in path.parents or path in destination.parents:
             raise ValueError('Restore cannot overlap live persistent state')
     private_file(archive, 'Encrypted archive')

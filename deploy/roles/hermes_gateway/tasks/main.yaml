@@ -9,16 +9,36 @@
     recurse: false
   register: gateway_profiles
 
+- name: Find parked named profiles, which the gateway does not serve
+  ansible.builtin.stat:
+    path: "{{ item.path }}/gateway.parked"
+    get_checksum: false
+  loop: "{{ gateway_profiles.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  register: gateway_parked
+
+- name: Start an empty profile list
+  ansible.builtin.set_fact:
+    gateway_active_profiles: []
+
+- name: List the active named profiles
+  ansible.builtin.set_fact:
+    gateway_active_profiles: "{{ gateway_active_profiles + [{'home': item.item.path}] }}"
+  loop: "{{ gateway_parked.results }}"
+  loop_control:
+    label: "{{ item.item.path | basename }}"
+  when: not (item.stat.exists and item.stat.isreg)
+
+# Parked profiles were checked with their restricted tools when prepared; the
+# check would only start the runtime to skip them.
 - name: Require owner-only admission in every active named profile
   ansible.builtin.include_role:
     name: hermes_config_check
+    tasks_from: batch.yaml
   vars:
-    checked_profile_home: "{{ gateway_profile.path }}"
     checked_skip_parked: true
-  loop: "{{ gateway_profiles.files }}"
-  loop_control:
-    loop_var: gateway_profile
-    label: "{{ gateway_profile.path | basename }}"
+    checked_profiles: "{{ gateway_active_profiles | default([]) }}"
 
 - name: Enable native user services without a login session
   ansible.builtin.command:
@@ -41,12 +61,7 @@
       - --start-on-login
     creates: "/home/zelab-hermes/.config/systemd/user/{{ hermes_gateway_unit }}"
   become_user: zelab-hermes
-  environment:
-    HOME: /home/zelab-hermes
-    HERMES_HOME: /var/lib/zelab/hermes/home
-    XDG_RUNTIME_DIR: /run/user/61102
-    DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/61102/bus
-    TMPDIR: /var/lib/zelab/hermes/tmp
+  environment: "{{ hermes_cli_environment | combine(hermes_session_environment) }}"
 
 - name: Prepare conventional native gateway environment drop-in
   ansible.builtin.file:
@@ -73,7 +88,4 @@
     enabled: true
     state: "{{ 'restarted' if native_gateway_environment.changed or (hermes_dependencies is defined and hermes_dependencies.changed) else 'started' }}"
   become_user: zelab-hermes
-  environment:
-    HOME: /home/zelab-hermes
-    XDG_RUNTIME_DIR: /run/user/61102
-    DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/61102/bus
+  environment: "{{ hermes_cli_environment | combine(hermes_session_environment) }}"

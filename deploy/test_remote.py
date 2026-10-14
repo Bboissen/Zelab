@@ -31,7 +31,7 @@ class RemoteTest(unittest.TestCase):
                     self.assertIn("ENV_FILE=$(touch unwanted)", result.stdout)
                     self.assertFalse((directory / "unwanted").exists())
 
-    def run_fixture(self, install_status=0, copy_status=0):
+    def run_fixture(self, install_status=0, copy_status=0, action="install"):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
@@ -42,7 +42,10 @@ class RemoteTest(unittest.TestCase):
         guide.write_text("<!doctype html><title>Private guide</title>")
         (server / "Makefile").write_text(
             "install recover guide:\n\t@rtk proxy python3 -c 'print(\"fixture install\"); exit(" + str(install_status) + ")'\n")
-        (server / "deploy/doctor.py").write_text(f"print({str(guide)!r})\n")
+        (server / "deploy/doctor.py").write_text(
+            "import sys\n"
+            f"open({str(root / 'doctor-runs')!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+            f"print({str(guide)!r})\n")
         destination = root / "laptop Downloads/guide.html"
         destination.parent.mkdir()
         destination.write_text("previous guide")
@@ -63,7 +66,8 @@ class RemoteTest(unittest.TestCase):
              patch.object(remote, "open_guide", return_value=False), \
              patch.object(remote.sys.stdin, "isatty", return_value=False), redirect_stdout(io.StringIO()) as output:
             status = remote.main(["--host", "fixture-server", "--directory", str(server), "--port", "2222",
-                                  "--guide-destination", str(destination)])
+                                  "--guide-destination", str(destination), "--action", action])
+        self.doctor_runs = (root / "doctor-runs").read_text().splitlines() if (root / "doctor-runs").exists() else []
         return status, destination, guide, calls, output.getvalue()
 
     def test_remote_install_delivers_a_private_local_guide(self):
@@ -76,6 +80,15 @@ class RemoteTest(unittest.TestCase):
         self.assertIn("-T", calls[0])
         self.assertIn("GUIDE_MODE=remote", calls[0][-1])
         self.assertIn(destination.as_uri(), output)
+
+    def test_remote_guide_runs_doctor_once_and_copies_its_guide(self):
+        status, destination, guide, calls, _ = self.run_fixture(action="guide")
+        self.assertEqual(status, 0)
+        self.assertEqual(destination.read_text(), guide.read_text())
+        self.assertEqual([call[2] for call in calls], ["ssh", "scp"])
+        self.assertEqual(len(self.doctor_runs), 1)
+        self.assertIn("--guide-path-only", self.doctor_runs[0])
+        self.assertIn("--brief", self.doctor_runs[0])
 
     def test_remote_install_failure_still_copies_guide_and_stays_failed(self):
         status, destination, guide, _, _ = self.run_fixture(install_status=2)

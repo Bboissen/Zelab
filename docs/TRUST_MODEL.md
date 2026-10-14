@@ -11,17 +11,17 @@ injected text. This page says what enforces each boundary and what does not.
 | Deployment operator (you) | Provisioning, unattended sudo, all password files | `/etc/sudoers.d/zelab-agent-<user>`, `private_dir` mode 0700 |
 | Operations Hermes profile | Owner-only Discord conversations; submit tasks to the Operations project; read its own submissions; Private and Shared notes | Discord allowlist in the profile's `.env`; project-scoped `task_bridge` key on an inert submission agent; SSHFS mount as the Hermes UID |
 | `zelab-ops` worker | Diagnostics and authorized host changes with unattended sudo | `/etc/sudoers.d/zelab-worker-operations`; SSH key restricted to the host's own address with `restrict` |
-| `zelab-code` worker | Assigned repositories only; paused | No sudo or Docker group; low-trust Paperclip policy; agent status `paused` |
 | Paperclip "Hermes Operations" remote agent | Receive tasks from Paperclip; comment and update status within the Operations project | Separate `task_bridge` key; secret stored encrypted in Paperclip |
 | Research and reserve profiles | Public research and Shared notes; no host, LAN or coordinator access | Separate guest UIDs 61110-61199 with `from=127.0.0.1` SSH keys; nftables rejects their traffic to the Paperclip port and all private ranges; toolsets restricted in the seeded config; profiles start parked |
 | Friends and family | Nothing until you admit them | Every profile ships with `DISCORD_ALLOW_ALL_USERS=false`, no roles and no pairing grants |
 
-Setup offers Codex, Claude Code, both or skip. New workers are paused with an inert
-native process adapter when skipped or when both are installed. With both, the
-owner selects each adapter in Paperclip. Selecting a single harness configures only a new
-worker or an unchanged installer placeholder; existing native agent settings
-remain under the owner's control. Both harnesses use the same OS accounts,
-scoped task bridge and worker security checks. Coding always remains paused.
+Setup offers Codex, Claude Code or skip. A harness creates the single Operations
+worker fully configured on its SSH environment, with wake on demand, and leaves
+only the model to the owner; its proof task waits in Backlog, so nothing runs
+until the owner moves it to Todo. Skip creates no worker, worker account, sudo
+grant or Discord task bridge. Existing native agent settings remain under the
+owner's control. There is no unprivileged coding worker: Paperclip's low-trust
+sandbox does not exist upstream yet.
 Codex imports only the selected subscription auth file into the coordinator;
 Claude Code signs in natively under the Operations account and keeps its config
 in that account's home. No provider credential is requested in chat or Git.
@@ -43,7 +43,7 @@ not do it for you.
 - The Paperclip remote-agent contract (adapter type, both URLs, secret
   reference, session strategy, no insecure-HTTP flag, permissions) and the
   inert submission agent (`/usr/bin/false`, no environment, no heartbeat).
-- Worker permissions, the Coding pause, project execution policy and that the
+- The worker's SSH environment, adapter family and permissions, project execution policy and that the
   guest's effective dotenv (parsed by Node itself) targets the declared bridge.
 
 These are provisioning-time assertions. Changing a native setting afterwards
@@ -141,7 +141,7 @@ What the installer does about it:
 What it cannot do: an instruction in a prompt is advice to the model, not an
 access control. Treat the Shared vault as untrusted input for Operations if
 anyone else can write to it, keep web browsing off for Operations unless you
-need it, and keep Coding paused until the upstream low-trust sandbox exists.
+need it, and add no unprivileged coding worker until the upstream low-trust sandbox exists.
 
 ## Known limitations
 

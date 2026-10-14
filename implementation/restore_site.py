@@ -22,6 +22,10 @@ from runtime import (maintenance_lock, private_directory, recover_on_interrupt,
 ROOT = Path(__file__).resolve().parents[1]
 STATE_FIELDS = ('vm_data', 'vm_root', 'paperclip_home', 'worker_ops_home',
                 'worker_code_home', 'notes_vault_dir', 'obsidian_state_dir', 'private_dir')
+# Skip creates no worker home, and only sites from the earlier two-worker layout
+# have a Coding home; backup.py archives a worker home only when it exists.
+WORKER_HOMES = frozenset({'worker_ops_home', 'worker_code_home'})
+PAPERCLIP_ENV = Path('/etc/zelab-paperclip.env')
 
 
 def select_archive(site, archive, interactive):
@@ -40,12 +44,23 @@ def select_archive(site, archive, interactive):
     return choices[int(answer) - 1]
 
 
-def restore_paths(site):
-    paths = [Path(site[name]) for name in STATE_FIELDS]
+def present(path):
+    return path.exists() or path.is_symlink()
+
+
+def restore_paths(site, snapshot):
+    """Live paths a restore replaces, given the authenticated extraction root.
+
+    A worker home is included when the live site or the backup has it, so
+    validate_snapshot refuses a backup that misses a present home and a site
+    that lacks a backed-up one; a home absent from both is not required.
+    """
+    paths = [Path(site[name]) for name in STATE_FIELDS if name not in WORKER_HOMES
+             or present(Path(site[name])) or present(snapshot / Path(site[name]).relative_to('/'))]
     paths += [Path(site.get('vm_bootstrap_dir', '/var/lib/zelab-vm/bootstrap')),
               Path(site.get('notes_config_dir', '/etc/zelab-notes')),
               Path(site.get('obsidian_config_dir', '/etc/zelab-obsidian')),
-              Path('/etc/zelab-paperclip.env')]
+              PAPERCLIP_ENV]
     return paths
 
 
@@ -207,10 +222,10 @@ def restore_site(site, archive, key, confirm='', interactive=False, site_config=
     archive = select_archive(site, archive, interactive)
     destination = Path(site['backup_dir']) / ('restore-' + datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ'))
     private_directory(destination.parent, site['operator_user'])
-    paths = restore_paths(site)
     vm = site['vm_service'] + '.service'
     with maintenance_lock(), recover_on_interrupt():
         root = extract_verified(site, archive, destination, key)
+        paths = restore_paths(site, root)
         validate_snapshot(site, root, paths, site_config=site_config, env_file=env_file)
         installed_mounts = supervised_mounts(site)
         print(f'Restore {archive.name} to {site_identity(site)}. The current application state will be replaced:')

@@ -21,7 +21,7 @@ def main():
     if sys.version_info < (3, 12):
         raise SystemExit('Controller requires Python 3.12 or newer.')
     for argv in ([sys.executable, '-m', 'venv', str(ROOT / '.venv')],
-                 [str(PYTHON), '-m', 'pip', 'install', '--disable-pip-version-check',
+                 [str(PYTHON), '-m', 'pip', 'install', '--disable-pip-version-check', '--no-cache-dir',
                   '--require-hashes', '-r', str(LOCK)]):
         code = subprocess.run(['rtk', 'proxy', *argv], cwd=ROOT).returncode
         if code:

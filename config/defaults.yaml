@@ -45,15 +45,17 @@ paperclip_home: /var/lib/zelab-paperclip
 paperclip_company_name: Zelab
 worker_ops_user: zelab-ops
 worker_ops_home: /var/lib/zelab-ops
+# Legacy Coding worker from earlier layouts: never created; clean removes it.
 worker_code_user: zelab-code
 worker_code_home: /var/lib/zelab-code
 worker_ssh_host: 127.0.0.1
 worker_ssh_port: 22
-# Optional Paperclip worker harness: codex, claude, both or none (skip).
-# Interactive make asks on each run; unattended setup retains a saved selection
-# or skips when absent. This file supplies defaults, not a saved site choice.
+# Optional Paperclip worker harness: codex, claude or none (skip). Codex or
+# Claude Code creates one fully configured Operations worker except its model;
+# skip creates none. Interactive make asks on each run; unattended setup retains
+# a saved selection or skips when absent. This file supplies defaults only.
 worker_harness: none
-# Empty uses the chosen harness's native default; native UI edits are retained.
+# Empty leaves the model to you in Paperclip (the CLI default until chosen).
 worker_model: ''
 
 # Hermes. Reserves are parked native profiles; they need no Discord application

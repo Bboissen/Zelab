@@ -3,7 +3,7 @@
     # Filter on the server before pagination. One unfinished task is enough to
     # stop migration; the first default page of all company history is not.
     url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ bridge_workers.company_id }}/issues?originKind=task_bridge&originId={{ item.id }}&status=backlog,todo,in_progress,in_review,blocked&limit=1&includeRoutineExecutions=true&includePluginOperations=true"
-    headers: {Cookie: "{{ bridge_owner.cookies_string }}"}
+    headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
   delegate_to: zelab_host
   register: bridge_legacy_issues
   loop: "{{ bridge_legacy_active }}"

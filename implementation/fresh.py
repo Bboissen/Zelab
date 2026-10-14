@@ -17,7 +17,6 @@ from pathlib import Path
 import pwd
 import shutil
 import socket
-import subprocess
 import sys
 import time
 
@@ -28,6 +27,7 @@ import yaml  # noqa: E402
 from run import read_inputs  # noqa: E402
 from install_resources import InstallationResources  # noqa: E402
 from console import heading, mark, paint  # noqa: E402
+import shell  # noqa: E402
 from runtime import maintenance_lock, recover_on_interrupt  # noqa: E402
 
 SYSTEMD = Path('/etc/systemd/system')
@@ -73,7 +73,7 @@ class Plan:
 
 
 def command(*argv, check=True):
-    result = subprocess.run(['rtk', 'proxy', *map(str, argv)], capture_output=True, text=True)
+    result = shell.quiet(argv, text=True)
     if check and result.returncode:
         raise RuntimeError(f'{argv[0]} {argv[1] if len(argv) > 1 else ""} failed; output suppressed')
     return result
@@ -156,15 +156,10 @@ def count_files(path, limit=100000):
     return total
 
 
-def serve_ports(config, hostname, backends):
+def owned_tail_ports(config, hostname, backends):
     """Tailnet HTTPS ports whose root handler proxies to this site's backends."""
-    ports = []
-    for endpoint, web in ((config or {}).get('Web') or {}).items():
-        host, _, port = endpoint.rpartition(':')
-        proxy = ((web.get('Handlers') or {}).get('/') or {}).get('Proxy')
-        if host == hostname and proxy in backends:
-            ports.append(int(port))
-    return sorted(ports)
+    return sorted(port for host, port, proxy in shell.serve_routes(config or {})
+                  if host == hostname and proxy in backends)
 
 
 def role_defaults(name):
@@ -185,8 +180,20 @@ def discover(site, hostname=None):
     obsidian_config = role_defaults('obsidian_host')['obsidian_config_dir']
     protected = [ROOT, site['private_dir'], site['backup_dir'], site['worker_codex_auth_source'],
                  pwd.getpwnam(site['operator_user']).pw_dir, '/etc', '/var/lib', '/opt', '/home', '/usr']
+    discover_guest(plan, site)
+    discover_paperclip(plan, site)
+    discover_workers(plan, site)
+    discover_notes(plan, site, notes)
+    discover_obsidian(plan, obsidian_config)
+    discover_routes(plan, site)
+    discover_shared_tools(plan, site)
+    discover_private(plan, site)
+    plan.protected = protected
+    return plan
 
-    # Guest VM: the creation receipt is the ownership proof for its directories.
+
+def discover_guest(plan, site):
+    """Guest VM: the creation receipt is the ownership proof for its directories."""
     vm_unit = SYSTEMD / (site['vm_service'] + '.service')
     if vm_unit.exists():
         if unit_mentions(vm_unit, VM_DESCRIPTION, f"RootDirectory={site['vm_root']}"):
@@ -224,7 +231,9 @@ def discover(site, hostname=None):
             else:
                 plan.refused.append((str(bootstrap), 'unexpected contents'))
 
-    # Paperclip coordinator, its database boundary and release directory.
+
+def discover_paperclip(plan, site):
+    """Paperclip coordinator, its database boundary and release directory."""
     paperclip = owned_account(site['paperclip_user'], home=site['paperclip_home'])
     if paperclip:
         plan.accounts.append((site['paperclip_user'], f"home {site['paperclip_home']}"))
@@ -253,7 +262,9 @@ def discover(site, hostname=None):
     if releases.is_dir() and uid is not None and all(owned_by(r, uid) for r in releases.iterdir()):
         plan.directories.append(('/opt/paperclip', 'releases owned by the Paperclip account'))
 
-    # Host workers.
+
+def discover_workers(plan, site):
+    """Host workers; a legacy Coding home is recognized on earlier two-worker sites."""
     for user, home in ((site['worker_ops_user'], site['worker_ops_home']),
                        (site['worker_code_user'], site['worker_code_home'])):
         entry = owned_account(user, home=home)
@@ -277,7 +288,9 @@ def discover(site, hostname=None):
         else:
             plan.refused.append((str(dropin), 'unexpected content'))
 
-    # Notes share and vault.
+
+def discover_notes(plan, site, notes):
+    """Notes share, its export units and the vault."""
     notes_owner = owned_account(notes['notes_owner_user'], home='/vault')
     for user in (notes['notes_owner_user'], notes['notes_shared_user']):
         if owned_account(user, home='/vault'):
@@ -331,7 +344,9 @@ def discover(site, hostname=None):
         if files:
             plan.notes.append(f'{files} file(s) in the notes vault')
 
-    # Obsidian container: Compose labels are the ownership proof.
+
+def discover_obsidian(plan, obsidian_config):
+    """Obsidian container: Compose labels are the ownership proof."""
     found = command('docker', 'container', 'inspect', 'zelab-obsidian', check=False)
     if found.returncode == 0:
         labels = (json.loads(found.stdout)[0].get('Config') or {}).get('Labels') or {}
@@ -352,18 +367,19 @@ def discover(site, hostname=None):
         else:
             plan.refused.append((obsidian_config, 'does not define the zelab-obsidian container'))
 
-    # Private HTTPS routes: only ports proxying to this site's backends.
+
+def discover_routes(plan, site):
+    """Private HTTPS routes: only ports proxying to this site's backends."""
     if site.get('ui_tailscale_enabled'):
         status = command('tailscale', 'serve', 'status', '--json', check=False)
-        try:
-            config = json.loads(status.stdout or '{}') if status.returncode == 0 else {}
-        except ValueError:
-            config = {}
+        config = shell.load_json(status.stdout) if status.returncode == 0 else {}
         backends = {f"http://127.0.0.1:{site[name]}" for name in
                     ('guest_dashboard_port', 'paperclip_port', 'obsidian_backend_port')}
-        plan.routes = serve_ports(config, site['ui_tailscale_hostname'], backends)
+        plan.routes = owned_tail_ports(config, site['ui_tailscale_hostname'], backends)
 
-    # Host-wide installed software: shared only with other Zelab guests on this host.
+
+def discover_shared_tools(plan, site):
+    """Host-wide installed software: shared only with other Zelab guests on this host."""
     others = other_zelab_guests(site)
     if others:
         plan.refused.append(('shared Zelab tools and download cache', 'also used by ' + ', '.join(others)))
@@ -376,6 +392,9 @@ def discover(site, hostname=None):
             if target.startswith('/opt/zelab-tools/'):
                 plan.files.append((link, f'link to {target}'))
 
+
+def discover_private(plan, site):
+    """Runtime VM resource receipts and generated private files."""
     private = Path(site['private_dir'])
     try:
         for path in InstallationResources(site).owned_files():
@@ -383,8 +402,6 @@ def discover(site, hostname=None):
     except (OSError, ValueError, RuntimeError) as error:
         plan.refused.append(('temporary VM installation resources', str(error)))
     plan.private_files = [str(private / name) for name in GENERATED_PRIVATE if (private / name).exists()]
-    plan.protected = protected
-    return plan
 
 
 def print_plan(plan, site):
@@ -458,10 +475,7 @@ def print_plan(plan, site):
 def unrelated_snapshot(plan, site):
     listing = command('docker', 'ps', '-a', '--format', '{{.ID}} {{.Names}} {{.State}}', check=False).stdout
     routes = command('tailscale', 'serve', 'status', '--json', check=False).stdout if site.get('ui_tailscale_enabled') else ''
-    try:
-        serve = json.loads(routes or '{}')
-    except ValueError:
-        serve = {}
+    serve = shell.load_json(routes)
     ours = {f"{site.get('ui_tailscale_hostname')}:{port}" for port in plan.routes}
     other_routes = sorted(endpoint for endpoint in (serve.get('Web') or {}) if endpoint not in ours)
     owned_users = {user for user, _ in plan.accounts}

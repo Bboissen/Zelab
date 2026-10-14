@@ -14,50 +14,25 @@
   register: obsidian_identity
   changed_when: false
 
-- name: Inspect the immutable container input
-  ansible.builtin.command:
-    argv: [rtk, proxy, docker, image, inspect, "{{ obsidian_image }}", --format, '{{ "{{.Id}}" }}']
-  register: obsidian_existing_image
-  failed_when: obsidian_existing_image.rc not in [0, 1]
-  changed_when: false
+- name: Start the image pull unless an earlier play already did
+  ansible.builtin.include_tasks: pull.yaml
+  when: obsidian_pull_job is not defined
 
-- name: Preserve the host disk and RAM reserves before a new image pull
-  ansible.builtin.command:
-    argv:
-      - rtk
-      - proxy
-      - python3
-      - -c
-      - |
-        import os,pathlib,subprocess,sys
-        # Images land in Docker's own data root, not necessarily on /.
-        root=subprocess.run(['rtk','proxy','docker','info','--format','{{ '{{' }}.DockerRootDir{{ '}}' }}'],capture_output=True,text=True).stdout.strip() or '/var/lib/docker'
-        disk=os.statvfs(root);free=disk.f_bavail*disk.f_frsize/2**30
-        mem={x.split(':')[0]:int(x.split()[1])*1024 for x in pathlib.Path('/proc/meminfo').read_text().splitlines()}
-        available=mem['MemAvailable']/2**30
-        need=0 if sys.argv[1]=='present' else 4
-        assert free>=need, f'{free:.0f} GiB free in Docker storage; the Obsidian image needs about 4 GiB.'
-        assert available>=2, f'{available:.1f} GiB RAM available; the Obsidian container needs 2 GiB.'
-        warnings=[]
-        if free<need+int(sys.argv[2]): warnings.append(f'Docker storage headroom below host_disk_reserve_gib ({free:.0f} GiB free)')
-        if available<2+int(sys.argv[3]): warnings.append(f'RAM headroom below host_memory_reserve_gib ({available:.1f} GiB available)')
-        print('; '.join(warnings))
-      - "{{ 'present' if obsidian_existing_image.rc == 0 else 'absent' }}"
-      - "{{ host_disk_reserve_gib | default(20) | string }}"
-      - "{{ host_memory_reserve_gib | default(8) | string }}"
-  register: obsidian_resources
-  changed_when: false
-
-- name: Report reduced host headroom without blocking installation
-  ansible.builtin.debug:
-    msg: "WARNING: {{ obsidian_resources.stdout }}"
-  when: obsidian_resources.stdout | length > 0
-
-- name: Pull the checksum-pinned upstream browser container
-  ansible.builtin.command:
-    argv: [rtk, proxy, docker, pull, "{{ obsidian_image }}"]
+- name: Wait for the checksum-pinned upstream browser container
+  ansible.builtin.async_status:
+    jid: "{{ obsidian_pull_job.ansible_job_id }}"
   register: obsidian_pull
-  changed_when: "'Downloaded newer image' in obsidian_pull.stdout"
+  until: obsidian_pull.finished
+  retries: 1200
+  delay: 3
+  changed_when: "'Downloaded newer image' in obsidian_pull.stdout | default('')"
+  when: obsidian_pull_job is not skipped
+
+- name: Remove the finished pull job record
+  ansible.builtin.async_status:
+    jid: "{{ obsidian_pull_job.ansible_job_id }}"
+    mode: cleanup
+  when: obsidian_pull_job is not skipped
 
 - name: Prepare private native browser state
   ansible.builtin.file:
@@ -129,7 +104,7 @@
 
 - name: Validate native Compose without rendering secrets
   ansible.builtin.command:
-    argv: [rtk, proxy, docker, compose, --project-name, zelab-notes, --env-file, "{{ obsidian_config_dir }}/compose.env", -f, "{{ obsidian_config_dir }}/compose.yaml", config, --quiet]
+    argv: "{{ obsidian_compose + ['config', '--quiet'] }}"
   changed_when: false
 
 - name: Inspect native first-run vault registration
@@ -139,7 +114,7 @@
 
 - name: Stop an uninitialized browser before the one-time native settings seed
   ansible.builtin.command:
-    argv: [rtk, proxy, docker, compose, --project-name, zelab-notes, --env-file, "{{ obsidian_config_dir }}/compose.env", -f, "{{ obsidian_config_dir }}/compose.yaml", stop, obsidian]
+    argv: "{{ obsidian_compose + ['stop', 'obsidian'] }}"
   register: obsidian_initial_stop
   changed_when: "'Stopped' in obsidian_initial_stop.stderr"
   when: not obsidian_preferences.stat.exists
@@ -168,7 +143,7 @@
 
 - name: Activate only the dedicated browser container
   ansible.builtin.command:
-    argv: [rtk, proxy, docker, compose, --project-name, zelab-notes, --env-file, "{{ obsidian_config_dir }}/compose.env", -f, "{{ obsidian_config_dir }}/compose.yaml", up, -d, obsidian]
+    argv: "{{ obsidian_compose + ['up', '-d', 'obsidian'] }}"
   register: obsidian_start
   changed_when: "'Started' in obsidian_start.stderr or 'Created' in obsidian_start.stderr or 'Recreated' in obsidian_start.stderr"
 

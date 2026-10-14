@@ -1,0 +1,113 @@
+# Runs only after a successful site run, when every current pin is installed
+# and running. Anything not selected by the current pins is superseded.
+- name: Find other Zelab guests sharing this host's tools and caches
+  ansible.builtin.find:
+    paths: "{{ prune_units_dir }}"
+    patterns: '*.service'
+    contains: 'Description=Zelab native Hermes guest'
+    excludes: ["{{ vm_service }}.service"]
+  register: prune_other_guests
+
+- name: Keep shared tools that another Zelab guest may still use
+  ansible.builtin.debug:
+    msg: "Kept superseded shared Zelab tools: also used by {{ prune_other_guests.files | map(attribute='path') | map('basename') | join(', ') }}"
+  when: prune_other_guests.matched > 0
+
+- name: Find consumed downloads and build leftovers
+  ansible.builtin.find:
+    paths: "{{ prune_cache_dir }}"
+    file_type: any
+    hidden: true
+    excludes: ["hermes-web-{{ hermes_commit }}.tar"]
+  register: prune_cache
+  when: prune_other_guests.matched == 0
+
+- name: Find superseded runtime versions
+  ansible.builtin.find:
+    paths: "{{ prune_tools_dir }}"
+    file_type: directory
+    patterns: [node-v*-linux-x64, codex-*-package, claude-*]
+    excludes:
+      - "node-v{{ node_version }}-linux-x64"
+      - "codex-{{ codex_version }}-package"
+      - "claude-{{ claude_version }}"
+  register: prune_tools
+  when: prune_other_guests.matched == 0
+
+- name: Find superseded Paperclip releases
+  ansible.builtin.find:
+    paths: "{{ paperclip_runtime_dir | dirname }}"
+    file_type: directory
+    excludes: ["{{ paperclip_runtime_dir | basename }}"]
+  register: prune_releases
+  when: prune_other_guests.matched == 0
+
+- name: Remove superseded downloads, runtimes and releases
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: >-
+    {{ ((prune_cache.files | default([])) + (prune_tools.files | default([]))
+        + (prune_releases.files | default([]))) | map(attribute='path') | list }}
+
+- name: Inspect Zelab command links
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    get_checksum: false
+  loop: "{{ prune_command_links }}"
+  register: prune_commands
+
+- name: Remove command links into a removed runtime
+  ansible.builtin.file:
+    path: "{{ item.item }}"
+    state: absent
+  loop: "{{ prune_commands.results | selectattr('stat.islnk', 'defined') | selectattr('stat.islnk') | list }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: >-
+    (prune_tools.files | default([]) | map(attribute='path')
+     | select('in', [item.stat.lnk_source | dirname, item.stat.lnk_source | dirname | dirname]) | list) | length > 0
+
+# Docker refuses to remove an image a container still uses, so only unused,
+# superseded copies of the pinned repository go. --all is required: an image
+# pulled by digest is untagged, and plain listings hide it.
+- name: Remove superseded Obsidian images
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - python3
+      - -c
+      - |
+        import json, subprocess, sys
+        reference, pinned = sys.argv[1].split('@')
+        repository = reference.rsplit(':', 1)[0]
+        listing = subprocess.run(['rtk', 'proxy', 'docker', 'image', 'ls', '--all', '--digests', '--no-trunc',
+                                  '--format', '{{ '{{json .}}' }}', repository],
+                                 capture_output=True, text=True, check=True).stdout
+        for image in map(json.loads, listing.splitlines()):
+            if image['Digest'] != pinned and subprocess.run(
+                    ['rtk', 'proxy', 'docker', 'image', 'rm', image['ID']],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                print('removed', image['ID'][:19])
+      - "{{ obsidian_image }}"
+  register: prune_images
+  changed_when: "'removed' in prune_images.stdout"
+  when: obsidian_enabled | default(false) | bool
+
+- name: Find private install logs
+  ansible.builtin.find:
+    paths: "{{ private_dir }}/logs"
+    patterns: install-*.log
+  become: false
+  register: prune_logs
+
+- name: Keep only the newest private install logs
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: false
+  loop: >-
+    {{ (prune_logs.files | sort(attribute='mtime', reverse=true))[prune_install_logs_kept | int:]
+       | map(attribute='path') | list }}

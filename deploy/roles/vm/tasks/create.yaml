@@ -102,27 +102,15 @@
       - rtk
       - proxy
       - python3
-      - -c
-      - |
-        import shutil,sys
-        from pathlib import Path
-        data,disk,reserve,memory,memory_reserve=sys.argv[1],*map(int,sys.argv[2:])
-        path=Path(data)
-        while not path.exists(): path=path.parent
-        free=shutil.disk_usage(path).free/2**30
-        assert free>=disk+2, f'{free:.0f} GiB free on the vm_data filesystem; the guest disk needs {disk+2} GiB. Free space or lower vm_disk_gib.'
-        mem={x.split(':')[0]:int(x.split()[1])*1024 for x in Path('/proc/meminfo').read_text().splitlines()}
-        available=mem['MemAvailable']/2**20
-        assert available>=memory, f'{available:.0f} MiB RAM available; the guest needs {memory} MiB. Lower vm_memory_mb or stop other workloads.'
-        warnings=[]
-        if free<disk+reserve: warnings.append(f'disk headroom below host_disk_reserve_gib ({free:.0f} GiB free)')
-        if available<memory+memory_reserve*1024: warnings.append(f'RAM headroom below host_memory_reserve_gib ({available/1024:.1f} GiB available)')
-        print('; '.join(warnings))
+      - "{{ playbook_dir }}/files/check_headroom.py"
       - "{{ vm_data }}"
-      - "{{ vm_disk_gib | string }}"
-      - "{{ host_disk_reserve_gib | default(20) | string }}"
+      - "{{ (vm_disk_gib | int + 2) | string }}"
       - "{{ vm_memory_mb | string }}"
+      - "{{ host_disk_reserve_gib | default(20) | string }}"
       - "{{ host_memory_reserve_gib | default(8) | string }}"
+      - the guest
+      - Free space on the vm_data filesystem or lower vm_disk_gib.
+      - Lower vm_memory_mb or stop other workloads.
   register: fresh_resources
   when: not fresh_disk.stat.exists
   changed_when: false
@@ -172,23 +160,14 @@
     group: root
     mode: '0700'
 
-- name: Prepare the public official image cache
-  ansible.builtin.file:
-    path: /var/cache/zelab
-    state: directory
-    mode: '0755'
-
 - name: Download and verify the pinned official Debian cloud image
-  ansible.builtin.get_url:
-    url: "{{ guest_image_url }}"
-    dest: "/var/cache/zelab/{{ guest_image_url | basename }}"
-    checksum: "sha512:{{ guest_image_sha512 }}"
-    mode: '0644'
-  # Mirrors rate-limit or drop connections now and then (HTTP 429/5xx); retry before failing.
-  register: download
-  until: download is succeeded
-  retries: 5
-  delay: 30
+  ansible.builtin.include_role:
+    name: pinned_download
+  vars:
+    download_url: "{{ guest_image_url }}"
+    download_dest: "/var/cache/zelab/{{ guest_image_url | basename }}"
+    download_checksum: "sha512:{{ guest_image_sha512 }}"
+  when: not fresh_disk.stat.exists
 
 - name: Generate the guest host key once for verified first SSH
   ansible.builtin.command:
@@ -225,6 +204,12 @@
   ansible.builtin.command:
     argv: [rtk, proxy, qemu-img, resize, "{{ vm_disk }}", "{{ vm_disk_gib }}G"]
   when: fresh_disk_created.changed
+
+# The disk is self-contained, so the base image is no longer needed.
+- name: Remove the consumed Debian base image
+  ansible.builtin.file:
+    path: "{{ '/var/cache/zelab/' + (guest_image_url | basename) }}"
+    state: absent
 
 - name: Write declarative native cloud-init settings
   ansible.builtin.template:

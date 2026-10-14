@@ -11,8 +11,8 @@ in [docs/TRUST_MODEL.md](docs/TRUST_MODEL.md).
 This is an experimental single-owner deployment, not a qualified multi-tenant
 service. Hermes profiles share one runtime Unix identity, so restricted SSH tool
 accounts limit what a profile's tools can do but do not isolate a compromised
-gateway or plugin. Keep every bot owner-only and keep the Coding worker paused
-until the upstream sandbox exists and the audience denial checks in
+gateway or plugin. Keep every bot owner-only, and add no unprivileged coding
+worker until the upstream sandbox exists and the audience denial checks in
 [docs/STATUS.md](docs/STATUS.md) have passed on your site.
 
 Reapplying the installer re-checks native owner allowlists, pairing grants,
