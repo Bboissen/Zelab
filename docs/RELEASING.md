@@ -64,6 +64,23 @@ distribute a tarball instead, run
 it stages the publishable files, re-checks them, runs Gitleaks on the staged
 tree and prints the archive's SHA-256.
 
+## Repository settings
+
+The public repository is configured so that nothing lands on `main` without
+review and a passing check, and so that forks cannot run arbitrary code:
+
+- Rulesets `protect-main` and `protect-release-tags`: no deletion, force push
+  or non-linear history on `main`; changes arrive through a pull request with
+  the `check` workflow job green and conversations resolved; `v*` tags are
+  immutable. There are no bypass actors, so the maintainer uses the same path.
+- Actions may use only SHA-pinned GitHub-owned actions; the workflow token is
+  read-only; Actions cannot approve pull requests; every pull request from an
+  outside fork waits for maintainer approval before a workflow runs.
+- Secret scanning with push protection and Dependabot alerts are on. Automatic
+  dependency update pull requests stay off: a version change needs a new
+  qualification, not an unreviewed lock edit.
+- Wiki and projects are off; merged branches are deleted automatically.
+
 ## Release notes
 
 Name the exact tested pins from `versions.yaml`, the host distribution the
