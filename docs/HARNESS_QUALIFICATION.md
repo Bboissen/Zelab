@@ -1,7 +1,9 @@
-# Optional worker harness qualification
+# Host agent CLI qualification
 
-Codex retains the previously qualified `0.162.0` package and SHA-256 pin.
-The setup choice adds Claude Code without changing that version or Paperclip's
+Both CLIs are installed for host agents, which run them on a project's host
+account over Paperclip's SSH environment. Codex retains the previously
+qualified `0.162.0` package and SHA-256 pin. Claude Code was added without
+changing that version or Paperclip's
 pinned upstream release (`v2026.1005.0`, commit
 `467125fafb47a8520856504fecc48d6e32055db1`).
 

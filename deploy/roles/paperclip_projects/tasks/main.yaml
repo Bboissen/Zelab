@@ -106,7 +106,7 @@
       vars:
         current: "{{ projects_environments.json | selectattr('name', 'equalto', item.value.name) | first | default({}) }}"
       when:
-        - current
+        - current | length > 0
         - (current.config.host, current.config.port | int, current.config.username, current.config.remoteWorkspacePath)
           != (item.value.config.host, item.value.config.port, item.value.config.username, item.value.config.remoteWorkspacePath)
       changed_when: true
@@ -118,7 +118,7 @@
         method: DELETE
         headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
         status_code: [200, 204, 404, 409]
-      loop: "{{ projects_environments.json | selectattr('description', 'defined') | selectattr('description', 'match', '^Zelab host project ') | list }}"
+      loop: "{{ projects_environments.json | selectattr('description', 'string') | selectattr('description', 'match', '^Zelab host project ') | list }}"
       loop_control:
         label: "{{ item.name }}"
       when: (item.description.split(':')[0] | replace('Zelab host project ', '')) not in (projects_wanted_environments | default({}))
@@ -137,8 +137,8 @@
           {{ {'company_id': projects_company.id,
               'projects': dict(zelab_projects | dict2items | map(attribute='key') | zip(zelab_projects | dict2items | map(attribute='value') | map(attribute='name')
                                | map('extract', dict(projects_native.json | map(attribute='name') | zip(projects_native.json | map(attribute='id')))))),
-              'environments': dict(projects_environments.json | selectattr('description', 'defined') | selectattr('description', 'match', '^Zelab host project ')
-                                   | map(attribute='name') | zip(projects_environments.json | selectattr('description', 'defined') | selectattr('description', 'match', '^Zelab host project ') | map(attribute='id')))}
+              'environments': dict(projects_environments.json | selectattr('description', 'string') | selectattr('description', 'match', '^Zelab host project ')
+                                   | map(attribute='name') | zip(projects_environments.json | selectattr('description', 'string') | selectattr('description', 'match', '^Zelab host project ') | map(attribute='id')))}
              | to_nice_json }}
         owner: "{{ operator_user }}"
         mode: '0600'

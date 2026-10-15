@@ -44,7 +44,7 @@ def check(root, files):
             continue
         if (relative.name in PRIVATE_NAMES or set(relative.parts) & PRIVATE_DIRS
                 or relative.suffix in PRIVATE_SUFFIXES
-                or relative.as_posix() in {"config/site.yaml", "config/fresh.yaml"}
+                or relative.as_posix() in {"config/site.yaml", "config/projects.yaml"}
                 or (relative.name.startswith(".env.") and relative.name != ".env.example")):
             errors.append(f"{relative}: private/generated file selected for publication")
             continue
