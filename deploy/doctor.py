@@ -377,7 +377,7 @@ def application_links(site):
             ("Hermes", "ui_tail_hermes_port", "guest_dashboard_port", "dashboard_username", "hermes-dashboard.password"),
             ("Paperclip", "ui_tail_paperclip_port", "paperclip_port", "paperclip_owner_email", "paperclip-owner.password"),
             ("Obsidian", "ui_tail_obsidian_port", "obsidian_backend_port", "obsidian_username", "obsidian.password")):
-        if name == "Obsidian" and not site.get("obsidian_enabled", True):
+        if name == "Obsidian" and not site.get("obsidian_enabled", False):
             continue
         url = (f"https://{site['ui_tailscale_hostname']}:{site[tail_port]}/" if tailnet
                else f"http://127.0.0.1:{site[local_port]}/")

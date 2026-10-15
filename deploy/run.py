@@ -124,6 +124,10 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
     check_private_inputs(site)
     check_identities(site)
     site["zelab_projects"], site["zelab_tiers"], site["zelab_team"] = read_projects(site)
+    remote = site.get("notes_sync_remote", "")
+    if not isinstance(remote, str) or (remote and not re.fullmatch(
+            r"(?:git@github\.com:|ssh://git@github\.com/)[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?(?:\.git)?", remote)):
+        raise ValueError("notes_sync_remote must be empty or a GitHub SSH address such as git@github.com:OWNER/REPO.git")
     state_paths = ["vm_data", "vm_root", "paperclip_home", "projects_dir", *check_applications(site)]
     check_resources_and_names(site)
     state_paths.append("vm_bootstrap_dir")
@@ -334,8 +338,8 @@ def main():
     if full_site and not inspection_only:
         if site.get("vm_isolated") is not False:
             raise SystemExit("Complete preservation/firewall bootstrap and select vm_isolated: false before full deployment.")
-        if site.get("notes_enabled") is not True or site.get("obsidian_enabled") is not True:
-            raise SystemExit("The core site deployment requires notes_enabled and obsidian_enabled.")
+        if site.get("notes_enabled") is not True:
+            raise SystemExit("The core site deployment requires notes_enabled.")
     # Unbuffered so the streamed log and terminal show progress as it happens.
     env = dict(os.environ, ANSIBLE_CONFIG=str(ROOT / "deploy/ansible.cfg"), PYTHONUNBUFFERED="1")
     readonly = inspection_only or "--check" in native_args or all(Path(p).resolve() == ROOT / "deploy/status.yaml" for p in args.playbooks)

@@ -54,6 +54,7 @@ STAGES = (
     ("Seed the native Hermes API", "Hermes API"),
     ("Prepare the host vault", "Vault"),
     ("Mount the vault", "Vault"),
+    ("Retire the browser Obsidian", "Obsidian"),
     ("Deploy the native Obsidian", "Obsidian"),
     ("Remove superseded", "Cleanup"),
 )
@@ -64,7 +65,7 @@ SECTIONS = (
     ("Install Paperclip, team tiers and Hermes", {"Paperclip", "Host agent CLIs", "Team tiers",
                                                     "Hermes dashboard", "Paperclip projects",
                                                     "Hermes gateway", "Hermes API"}),
-    ("Connect the vault and Obsidian", {"Vault", "Obsidian"}),
+    ("Connect the vault", {"Vault", "Obsidian"}),
     ("Verify services and prepare your guide", {"Cleanup"}),
 )
 
@@ -313,7 +314,7 @@ class Installer:
         result = subprocess.run(["rtk", "proxy", str(VENV_PYTHON), "-c", code, str(self.site_config),
                                  str(self.env_file)], cwd=ROOT, capture_output=True, text=True)
         settings = json.loads(result.stdout) if result.returncode == 0 else {}
-        if not settings.get("obsidian_enabled", True):
+        if not settings.get("obsidian_enabled", False):
             self.applications.discard("Obsidian")
         self.log.open(settings.get("private_dir", DEFAULT_PRIVATE_DIR))
 

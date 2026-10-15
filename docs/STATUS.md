@@ -49,6 +49,8 @@ Record PASS, FAIL or NOT RUN with timestamp, steps and sanitized evidence.
 | O1 | A second `make` changes nothing; a killed `make` resumes | NOT RUN |
 | O2 | `make backup`, `make fclean`, `make restore` bring back Paperclip, the vault and its history, every bot and its logins; a host task then runs | NOT RUN |
 | O3 | Source checks and gitleaks are clean; the docs describe v1.1 | NOT RUN |
+| N1 | With the browser Obsidian off: an agent reads and writes notes; `make` and a reboot keep the container and its route gone; root-only snapshots still run | NOT RUN |
+| N2 | `make notes`: a server edit reaches desktop Obsidian, a laptop edit reaches the server and an agent, a conflict keeps both versions, `.obsidian/` never travels, a public repository is refused | NOT RUN (unit-tested against a local bare remote) |
 
 ## Earlier versions
 

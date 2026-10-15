@@ -22,7 +22,7 @@ class PasswordTest(unittest.TestCase):
             with self.subTest(override=override), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 config = root / 'site.yaml'
-                config.write_text(f'operator_user: operator\nprivate_dir: {root}/private\n' +
+                config.write_text(f'operator_user: operator\nprivate_dir: {root}/private\nobsidian_enabled: true\n' +
                                   (f'obsidian_config_dir: {override}\n' if override else ''))
                 site = read_inputs(config, None)
                 runtime = root / 'runtime'
@@ -39,11 +39,25 @@ class PasswordTest(unittest.TestCase):
                 self.assertEqual(passwords.read_private(runtime / 'obsidian.password'),
                                  'obsidian-example-password')
 
-    def test_loaded_site_resumes_after_failure_before_obsidian_setup(self):
+    def test_default_site_asks_no_browser_obsidian_password(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = root / 'site.yaml'
             config.write_text(f'operator_user: operator\nprivate_dir: {root}/private\n')
+            site = read_inputs(config, None)
+            runtime = root / 'runtime'
+            runtime.mkdir(mode=0o700)
+            with patch.object(passwords, 'prompt_password', side_effect=[
+                    'hermes-example-password', 'paperclip-example-password']) as prompt, \
+                 patch.object(passwords, 'installed', return_value=False), redirect_stdout(io.StringIO()):
+                passwords.prepare(site, runtime)
+            self.assertEqual([call.args[0] for call in prompt.call_args_list], ['Hermes', 'Paperclip'])
+
+    def test_loaded_site_resumes_after_failure_before_obsidian_setup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / 'site.yaml'
+            config.write_text(f'operator_user: operator\nprivate_dir: {root}/private\nobsidian_enabled: true\n')
             site = read_inputs(config, None)
             private = Path(site['private_dir'])
             private.mkdir(mode=0o700)

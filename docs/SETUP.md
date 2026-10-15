@@ -18,13 +18,13 @@ x86-64 Debian/Ubuntu with KVM, Docker Compose, SSH, Python 3.12+, Make and [RTK]
 
 ### Administrator
 
-Enter your sudo password, then three UI passwords (Hermes, Paperclip, Obsidian) when make asks.
+Enter your sudo password, then the UI passwords (Hermes, Paperclip, and Obsidian if you turn the browser Obsidian on) when make asks.
 
 - Paste unique passwords of 16+ characters from your password manager. Input is
   hidden and nothing is printed or logged.
 - Reapply reuses them; Paperclip asks for its current owner password.
 - After a successful run, make offers to delete spare copies once you confirm
-  they are saved. Obsidian keeps its runtime password file.
+  they are saved. A browser Obsidian keeps its runtime password file.
 
 ### Tailscale
 
@@ -108,4 +108,5 @@ In a project's channel, ask a bot to research something; expect a Paperclip tick
 - `make fclean`: preview, confirm and reset this site.
 - `make re`: reset and reinstall (**deletes Zelab data**).
 - `make backup` / `make restore`: encrypted backup and restore.
-- `make help`: list all eight commands.
+- `make notes`: sync the vault with desktop Obsidian through Git ([NOTES.md](NOTES.md)).
+- `make help`: list all nine commands.

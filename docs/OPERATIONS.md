@@ -6,7 +6,7 @@ repository root as the configured operator.
 
 ## Routine commands
 
-Run from the checkout with `rtk proxy`. Only these eight Make commands exist:
+Run from the checkout with `rtk proxy`. Only these nine Make commands exist:
 
 | Command | Role |
 | --- | --- |
@@ -14,10 +14,11 @@ Run from the checkout with `rtk proxy`. Only these eight Make commands exist:
 | `make clean` | Reset local deployment choices and remove generated controller/bytecode; keep installed data |
 | `make fclean` | Preview, confirm and remove this site's installation/application data, then reset local choices/generated files |
 | `make re` | Complete fclean, then install again; reset finishes before install even under parallel Make |
-| `make help` | Print the eight commands |
+| `make help` | Print the nine commands |
 | `make backup` | Create/verify an encrypted application backup and resume previously running services |
 | `make restore` | Select, authenticate, confirm and restore a backup to a compatible installed site |
 | `make bot` | Add, set up or remove Hermes bots; terminal only |
+| `make notes` | Sync the server vault with its private Git remote, for desktop Obsidian ([NOTES.md](NOTES.md)) |
 
 `make` includes readiness checks, resumable provisioning, private logs and the
 guide. Source checks are developer tooling: `rtk proxy python3 tools/check.py`.
@@ -141,9 +142,10 @@ explicitly choose an absent/empty override file for a separate guest test.
 | Team tier homes | `/var/lib/zelab-projects/<tier>` |
 | Durable notes | `/var/lib/zelab-vault/Projects/<slug>` |
 | Vault history (root only) | `/var/lib/zelab-vault-history` |
-| Obsidian desktop configuration | `/var/lib/zelab-obsidian` |
+| Notes sync: Git directory, deploy key, GitHub host keys | `private_dir/notes-sync` (operator only) |
+| Browser Obsidian settings (kept when it is off) | `/var/lib/zelab-obsidian` |
 | Deployment keys, Hermes password hash and resource IDs | Configured `private_dir` |
-| Obsidian native startup password | `/etc/zelab-obsidian/password` (root-only) |
+| Browser Obsidian startup password | `/etc/zelab-obsidian/password` (root-only) |
 
 Hermes native memory stays in Hermes. Paperclip task state stays in Paperclip.
 The vault holds durable notes, one folder per project; every bot sees all of it.
@@ -158,16 +160,18 @@ rtk proxy sudo git --git-dir=/var/lib/zelab-vault-history log --oneline -- Proje
 rtk proxy sudo git --git-dir=/var/lib/zelab-vault-history checkout <commit> -- Projects/<slug>
 ```
 
-The restored files appear in Obsidian and in the guest at once.
+The restored files appear in the guest at once, and on the laptop after the next
+`make notes` and `git pull`. The history and the notes sync are separate: the
+history snapshots every change, synced or not.
 
 Administration backends bind to localhost; Tailscale Serve supplies private HTTPS.
 No LAN proxy or public tunnel is required. Passwords remain required locally.
 
-Fresh `make` asks for three UI passwords with hidden terminal input and
+Fresh `make` asks for the UI passwords with hidden terminal input and
 confirmation. Keep them in your password manager. Hermes retains a native
 scrypt hash; Paperclip owner login is staged only for the provisioning run in
 a private RAM directory, so future applies request its current password.
-Obsidian retains the protected startup file its native container requires.
+A browser Obsidian, if turned on, retains the protected startup file its container requires.
 Existing deployment password copies are reused without rotation, and may be
 removed after a successful apply only when you confirm password-manager custody
 in the terminal. No input comes from chat, command arguments or shell-sourced `.env`.

@@ -22,9 +22,10 @@ from runtime import (maintenance_lock, private_directory, recover_on_interrupt,
 ROOT = Path(__file__).resolve().parents[1]
 STATE_FIELDS = ('vm_data', 'vm_root', 'paperclip_home', 'projects_dir', 'notes_vault_dir',
                 'vault_history_dir', 'obsidian_state_dir', 'private_dir')
-# A site without host projects may have no projects_dir; backup.py archives it
-# only when it exists.
-WORKER_HOMES = frozenset({'projects_dir'})
+# A site without a team may have no projects_dir, and one that never ran the
+# browser Obsidian has no obsidian_state_dir; backup.py archives each only when
+# it exists.
+WORKER_HOMES = frozenset({'projects_dir', 'obsidian_state_dir'})
 PAPERCLIP_ENV = Path('/etc/zelab-paperclip.env')
 
 
@@ -57,9 +58,11 @@ def restore_paths(site, snapshot):
     """
     paths = [Path(site[name]) for name in STATE_FIELDS if name not in WORKER_HOMES
              or present(Path(site[name])) or present(snapshot / Path(site[name]).relative_to('/'))]
+    obsidian_config = Path(site.get('obsidian_config_dir', '/etc/zelab-obsidian'))
     paths += [Path(site.get('vm_bootstrap_dir', '/var/lib/zelab-vm/bootstrap')),
               Path(site.get('notes_config_dir', '/etc/zelab-notes')),
-              Path(site.get('obsidian_config_dir', '/etc/zelab-obsidian')),
+              *([obsidian_config] if present(obsidian_config) or present(snapshot / obsidian_config.relative_to('/'))
+                else []),
               PAPERCLIP_ENV]
     return paths
 
@@ -126,14 +129,15 @@ def supervised_mounts(site):
                 for part in line.partition('=')[2].split()]
     if site['paperclip_home'] not in writable:
         raise ValueError('Paperclip service does not belong to the selected site')
-    container = json.loads(run('docker', 'container', 'inspect', 'zelab-obsidian'))[0]
-    labels = (container.get('Config') or {}).get('Labels') or {}
-    if labels.get('com.docker.compose.project') != 'zelab-notes':
-        raise ValueError('Obsidian container is not owned by this Zelab site')
-    bound = {mount.get('Destination'): mount.get('Source') for mount in container.get('Mounts', [])}
-    if (bound.get('/vault') != site['notes_vault_dir']
-            or bound.get('/config') != site['obsidian_state_dir'] + '/config'):
-        raise ValueError('Obsidian does not mount this site vault/state')
+    if site.get('obsidian_enabled'):
+        container = json.loads(run('docker', 'container', 'inspect', 'zelab-obsidian'))[0]
+        labels = (container.get('Config') or {}).get('Labels') or {}
+        if labels.get('com.docker.compose.project') != 'zelab-notes':
+            raise ValueError('Obsidian container is not owned by this Zelab site')
+        bound = {mount.get('Destination'): mount.get('Source') for mount in container.get('Mounts', [])}
+        if (bound.get('/vault') != site['notes_vault_dir']
+                or bound.get('/config') != site['obsidian_state_dir'] + '/config'):
+            raise ValueError('Obsidian does not mount this site vault/state')
     exports = site.get('notes_sftp_root', '/var/lib/zelab-notes-sftp')
     sources = {site['notes_vault_dir']}
     mounts = []

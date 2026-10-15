@@ -62,13 +62,20 @@ hermes_install_dir: /opt/hermes/agent
 # Empty leaves provider/model selection to Hermes' native setup UI.
 hermes_initial_model: ''
 
-# Notes vault (one shared vault, Projects/<slug>/) and Obsidian browser UI.
+# Notes vault (one shared vault, Projects/<slug>/ and Server/).
 notes_enabled: true
 notes_vault_dir: /var/lib/zelab-vault
 # Root-only git history of the vault, outside it (the guest cannot reach it).
 vault_history_dir: /var/lib/zelab-vault-history
 notes_guest_root: /var/lib/zelab-notes
-obsidian_enabled: true
+# Desktop Obsidian on the owner's laptop syncs with the vault through `make notes`
+# and a private Git remote (git@github.com:OWNER/REPO.git; set it in
+# config/site.yaml). Empty disables it. See docs/NOTES.md.
+notes_sync_remote: ''
+# The optional browser Obsidian container (off: desktop Obsidian and make notes
+# replace it). Turning it off later stops and removes the container and its own
+# Tailscale route on the next make; the vault and its settings are kept.
+obsidian_enabled: false
 obsidian_state_dir: /var/lib/zelab-obsidian
 obsidian_config_dir: /etc/zelab-obsidian
 

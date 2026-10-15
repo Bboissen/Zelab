@@ -68,6 +68,29 @@ layer.
   Outside one (straight from chat) a bot can create tickets but not comment;
   it assigns the ticket to itself so Paperclip runs it.
 
+## Notes sync
+
+`make notes` moves notes between the server vault and a private GitHub repository
+only when the owner runs it. Agents can write anything in the vault, so:
+
+- **The sync's Git directory, hooks, config and deploy key** live in `private_dir/notes-sync`,
+  owned by the operator, outside the vault and the guest. The operator's own Git
+  config is not loaded.
+- **What travels:** `.obsidian/`, Git files (`.gitignore`, `.gitattributes`...) and symlinks are
+  never committed, and a remote that carries them is refused before anything
+  reaches the vault. Obsidian plugins and snippets are code that would run on the
+  laptop.
+- **Private only:** before each push, the repository must be invisible to anonymous GitHub
+  and reachable with the deploy key, so a public repository is refused.
+- **No forced pushes or resets:** merges happen with `git merge-tree`, outside any working tree, and
+  the vault only fast-forwards, so Git refuses rather than overwrite an agent's
+  newer edit. A conflict leaves both versions (`main` and `server-pending`) for
+  the owner to merge on the laptop.
+
+Accepted risk: notes are text the agents wrote. On the laptop, a plugin that runs
+code from notes (Dataview JavaScript, Templater) would run agent-written code;
+[NOTES.md](NOTES.md) asks to keep such plugins off for this vault.
+
 ## Secrets
 
 - UI passwords are entered only in the operator's terminal, with hidden input

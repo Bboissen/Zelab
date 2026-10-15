@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The eight supported Make commands."""
+"""The nine supported Make commands."""
 
 from console import heading
 
@@ -15,6 +15,7 @@ def main():
     print('  make backup   Create and verify an encrypted application backup')
     print('  make restore  Select, verify and restore an encrypted backup, with confirmation')
     print('  make bot      Add, set up or remove Hermes bots (terminal only)')
+    print('  make notes    Sync the server vault with its private Git remote (docs/NOTES.md)')
     print('\n  clean/fclean reset local resource and app choices.')
     print('  Host connections and installed resource names/locations are kept.')
     print('  fclean/re also delete Zelab notes, tasks and application logins. Backups,')

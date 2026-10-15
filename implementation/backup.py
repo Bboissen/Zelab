@@ -40,9 +40,10 @@ COMPATIBILITY_FIELDS = (
 
 def selected_paths(site, repository, require_existing=True):
     required = [Path(site[name]) for name in ['vm_data', 'vm_root', 'paperclip_home',
-                'notes_vault_dir', 'vault_history_dir', 'obsidian_state_dir', 'private_dir']]
-    # A site without host projects may never have created projects_dir.
-    workers = [Path(site['projects_dir'])]
+                'notes_vault_dir', 'vault_history_dir', 'private_dir']]
+    # A site without a team may never have created projects_dir, and one that never
+    # ran the browser Obsidian has no obsidian_state_dir.
+    workers = [Path(site['projects_dir']), Path(site['obsidian_state_dir'])]
     workers = [path for path in workers if not require_existing or path.exists()]
     for path in required + workers:
         absolute_path(str(path), 'persistent state')
@@ -126,8 +127,8 @@ def main():
         raise SystemExit('Backup requires actual administrator access')
     os.umask(0o077)
     site = read_inputs(args.site_config, args.env_file)
-    if site.get('notes_enabled') is not True or site.get('obsidian_enabled') is not True:
-        raise ValueError('Application backup requires the complete native core site')
+    if site.get('notes_enabled') is not True:
+        raise ValueError('Application backup requires the notes vault (notes_enabled)')
     repository = Path(__file__).resolve().parents[1]
     key = recovery_key(args.key_file or Path(site['private_dir']) / 'backup-passphrase')
     destination = Path(absolute_path(site.get('backup_dir'), 'backup_dir'))

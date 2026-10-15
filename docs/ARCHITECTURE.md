@@ -13,12 +13,14 @@ flowchart LR
   end
   subgraph Host[Linux server]
     UIs[Tailscale Serve] --> Paperclip
-    UIs --> Obsidian[Obsidian container]
     UIs --> HermesUI
     Paperclip[Paperclip + embedded PostgreSQL] -->|SSH environment per tier| Accounts[zelab-team-&lt;tier&gt; accounts: the Claude Code team]
-    Vault[(Vault: Projects/&lt;slug&gt;/)] <--> Obsidian
+    Vault[(Vault: Projects/&lt;slug&gt;/, Server/)]
     History[(Root-only git history)] -. every 5 min .- Vault
+    Sync[make notes: git dir and deploy key in private_dir] --- Vault
   end
+  Sync <-->|SSH, deliberate push/pull| Remote[(Private GitHub repo)]
+  Remote <-->|git pull / push| Laptop[Desktop Obsidian on the owner's laptop]
   P1 -->|task_bridge key, own projects| Paperclip
   Paperclip -->|hermes_gateway adapter: /p/&lt;bot&gt;| Gateway
   Mount <-->|SFTP share of the whole vault| Vault
@@ -45,7 +47,8 @@ host account stay on the host.
 | Team | Claude Code agents make hires once from `config/team.yaml` (PM as lead; frontend, backend, mobile, game, data on `dev`; devops on `ops`; sysadmin on `root`): Claude CLI engine, Opus 5.5, persona `config/team/<member>.md` plus `TEAM.md` as the first `AGENTS.md`; runs use the owner's Claude sign-in. Both pinned CLIs are installed as `codex` and `claude` |
 | Notes | Host vault `/var/lib/zelab-vault` with `Projects/<slug>/`; one notes-only SFTP listener on loopback exports the whole vault; the guest mounts it with SSHFS as the Hermes account |
 | Vault history | `/var/lib/zelab-vault-history`, a root-only git directory outside the vault, snapshotted by `zelab-vault-history.timer` every 5 minutes |
-| Obsidian | linuxserver.io container pinned by digest, loopback-published, password from a file, vault bind-mounted |
+| Desktop notes | Obsidian on the owner's laptop, on a clone of a private GitHub repository; `make notes` syncs the server vault with it on demand (Git directory, hooks, config and deploy key in `private_dir/notes-sync`, outside the vault and the guest; `.obsidian/`, Git files and symlinks never travel). See [NOTES.md](NOTES.md) |
+| Browser Obsidian (optional, off) | linuxserver.io container pinned by digest, loopback-published, password from a file, vault bind-mounted; `obsidian_enabled: false` retires it and its own Tailscale route |
 | Provisioning | Ansible roles under `deploy/`, systemd units, one Compose file; Python entry points in `deploy/` and `implementation/` |
 
 ## Flows
@@ -78,7 +81,7 @@ host account stay on the host.
 | Archived profiles (no logins or tokens) | `/var/lib/zelab/hermes/home/profile-exports` inside the guest |
 | Paperclip database, uploads, secrets key, AI connections | `paperclip_home` (default `/var/lib/zelab-paperclip`) |
 | Team tier homes and workspaces | `projects_dir` (default `/var/lib/zelab-projects/<tier>`) |
-| Notes vault, its history, Obsidian configuration | `/var/lib/zelab-vault`, `/var/lib/zelab-vault-history`, `/var/lib/zelab-obsidian` |
+| Notes vault, its history, notes sync, browser Obsidian settings (kept when off) | `/var/lib/zelab-vault`, `/var/lib/zelab-vault-history`, `private_dir/notes-sync`, `/var/lib/zelab-obsidian` |
 | Deployment keys, project keys, Hermes password hash, resource IDs | `private_dir` (default `~/.local/state/zelab-deployment`) |
 | UI password working copies | Private temporary `/dev/shm/zelab-passwords-*` directory during `make`; removed on exit, and stale ones at the next start |
 

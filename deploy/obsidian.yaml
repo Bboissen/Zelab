@@ -1,5 +1,16 @@
 - import_playbook: notes-share.yaml
 
+- name: Retire the browser Obsidian when it is turned off
+  hosts: host
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Stop the container and remove its own route; keep the vault and settings
+      ansible.builtin.include_role:
+        name: obsidian_host
+        tasks_from: retire.yaml
+      when: not (obsidian_enabled | default(false) | bool)
+
 - name: Deploy the native Obsidian browser container and private HTTPS
   hosts: host
   gather_facts: false

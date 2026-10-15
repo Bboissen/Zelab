@@ -29,7 +29,7 @@ class ChecklistTest(unittest.TestCase):
         makefile = (ROOT / 'Makefile').read_text()
         targets = set(re.findall(r'^([a-z][a-z0-9 /-]*):', makefile, re.M))
         targets = {name for line in targets for name in line.split()}
-        self.assertEqual(targets, {'all', 'clean', 'fclean', 're', 'help', 'backup', 'restore', 'bot'})
+        self.assertEqual(targets, {'all', 'clean', 'fclean', 're', 'help', 'backup', 'restore', 'bot', 'notes'})
         for doc in ['README.md', 'docs/SETUP.md', 'docs/OPERATIONS.md']:
             for command in re.findall(r'rtk proxy make ([a-z][a-z-]*)', (ROOT / doc).read_text()):
                 with self.subTest(doc=doc, command=command):

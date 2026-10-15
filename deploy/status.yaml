@@ -34,7 +34,7 @@
         {{ [{'name': 'Paperclip health', 'url': 'http://127.0.0.1:' + (paperclip_port | string) + '/api/health', 'expected': 200},
             {'name': 'Hermes authentication', 'url': 'http://127.0.0.1:' + (guest_dashboard_port | string) + '/api/profiles', 'expected': 401}]
            + ([{'name': 'Obsidian authentication', 'url': 'http://127.0.0.1:' + (obsidian_backend_port | string) + '/', 'expected': 401}]
-              if obsidian_enabled | default(true) else []) }}
+              if obsidian_enabled | default(false) else []) }}
       when: status_vm.stdout == 'active' or item.name != 'Hermes authentication'
       no_log: true
       failed_when: false
@@ -49,9 +49,9 @@
     - name: Show configured private browser endpoints
       ansible.builtin.debug:
         msg:
-          Localhost: ["http://127.0.0.1:{{ guest_dashboard_port }}/", "http://127.0.0.1:{{ paperclip_port }}/", "http://127.0.0.1:{{ obsidian_backend_port }}/"]
-          Tailscale: "{{ ['https://' + ui_tailscale_hostname + ':' + (ui_tail_hermes_port | string) + '/', 'https://' + ui_tailscale_hostname + ':' + (ui_tail_paperclip_port | string) + '/', 'https://' + ui_tailscale_hostname + ':' + (ui_tail_obsidian_port | string) + '/'] if ui_tailscale_enabled | default(false) else [] }}"
-          Login: "Hermes user {{ dashboard_username }}, Paperclip {{ paperclip_owner_email }}, Obsidian user {{ obsidian_username }}"
+          Localhost: "{{ ['http://127.0.0.1:' + (guest_dashboard_port | string) + '/', 'http://127.0.0.1:' + (paperclip_port | string) + '/'] + (['http://127.0.0.1:' + (obsidian_backend_port | string) + '/'] if obsidian_enabled | default(false) else []) }}"
+          Tailscale: "{{ (['https://' + ui_tailscale_hostname + ':' + (ui_tail_hermes_port | string) + '/', 'https://' + ui_tailscale_hostname + ':' + (ui_tail_paperclip_port | string) + '/'] + (['https://' + ui_tailscale_hostname + ':' + (ui_tail_obsidian_port | string) + '/'] if obsidian_enabled | default(false) else [])) if ui_tailscale_enabled | default(false) else [] }}"
+          Login: "Hermes user {{ dashboard_username }}, Paperclip {{ paperclip_owner_email }}{{ (', Obsidian user ' + obsidian_username) if obsidian_enabled | default(false) else '' }}"
           Passwords: "Use your password manager. Legacy recovery copies, if retained, are in {{ private_dir }}; never paste passwords in chat."
 
 - name: Show native guest supervision state

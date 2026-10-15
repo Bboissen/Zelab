@@ -107,6 +107,19 @@ class PrivateInputsTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     read_inputs(self.site, self.env)
 
+    def test_notes_sync_remote_must_be_a_github_ssh_address(self):
+        site = yaml.safe_load(self.site.read_text())
+        for remote, ok in (('', True), ('git@github.com:owner/zelab-notes.git', True),
+                           ('https://github.com/owner/notes.git', False), ('git@evil.example:owner/notes.git', False),
+                           ('git@github.com:owner/notes.git; rm -rf /', False)):
+            with self.subTest(remote=remote):
+                self.site.write_text(yaml.safe_dump({**site, 'notes_sync_remote': remote}))
+                if ok:
+                    self.assertEqual(read_inputs(self.site, self.env)['notes_sync_remote'], remote)
+                else:
+                    with self.assertRaises(ValueError):
+                        read_inputs(self.site, self.env)
+
     def test_team_file_is_validated(self):
         import projects
         good = {'tiers': {'dev': {'preset': 'repo-dev'}},
