@@ -66,7 +66,8 @@ Create one channel per project, named after its slug, and invite the bots that w
 
 - Before the chat app step, create one application per bot in the
   [Discord developer portal](https://discord.com/developers/applications). On
-  its **Bot** page: **Public Bot** on and **Requires OAuth2 Code Grant** off;
+  its **Bot** page: **Username** set to the bot's name (Discord shows that,
+  not the application name), **Public Bot** on and **Requires OAuth2 Code Grant** off;
   under Privileged Gateway Intents, **Server Members Intent** and **Message
   Content Intent** on (without the latter Discord refuses the bot), then Save
   Changes; **Reset Token** and copy the token for Hermes' wizard.

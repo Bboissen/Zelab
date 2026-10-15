@@ -49,7 +49,8 @@ CHAT_TOKENS = {'DISCORD_BOT_TOKEN': 'Discord', 'TELEGRAM_BOT_TOKEN': 'Telegram',
 DISCORD_HINT = '''
   Discord: one application per bot, at https://discord.com/developers/applications
     1. New Application, named like the bot.
-    2. Bot page: Public Bot ON (Hermes' invite link needs it), Requires OAuth2 Code Grant OFF.
+    2. Bot page: set Username to the bot's name (the application name is not shown in chat);
+       Public Bot ON (Hermes' invite link needs it), Requires OAuth2 Code Grant OFF.
     3. Bot page, Privileged Gateway Intents: Server Members Intent ON and Message Content
        Intent ON (without it Discord refuses the bot), then Save Changes.
     4. Bot page: Reset Token and copy it; paste it into Hermes below (hidden input).
@@ -424,7 +425,7 @@ class Bots:
     def add(self, profiles):
         heading('ADD A BOT')
         while True:
-            name = input('  Name (lowercase, used in Paperclip and Discord): ').strip().lower()
+            name = input('  Name (lowercase; the Hermes profile and Paperclip agent): ').strip().lower()
             problem = valid_name(name, profiles)
             if not problem:
                 break
