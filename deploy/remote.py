@@ -55,35 +55,33 @@ def run_remote(args):
     if args.port:
         ssh.extend(["-p", args.port])
         scp.extend(["-P", args.port])
-    inputs = [f"SITE_CONFIG={args.site_config}", f"ENV_FILE={args.env_file}"]
-    command = ["rtk", "proxy", "make", "--no-print-directory", "GUIDE_MODE=remote", *inputs]
-    if args.action == 'guide':
-        code = ("import os,subprocess; p='.venv/bin/python' if os.path.isfile('.venv/.controller-ready') else 'python3'; "
-                "raise SystemExit(subprocess.call(['rtk','proxy',p,'deploy/doctor.py','--brief','--open',"
-                "'--guide-mode','remote','--site-config'," + repr(args.site_config) + ","
-                "'--env-file'," + repr(args.env_file) + "]))")
-        command = ['rtk', 'proxy', 'python3', '-c', code]
-    if "NO_COLOR" in os.environ:
-        command = ["rtk", "proxy", "env", "NO_COLOR=" + os.environ["NO_COLOR"], *command]
+    colors = ["rtk", "proxy", "env", "NO_COLOR=" + os.environ["NO_COLOR"]] if "NO_COLOR" in os.environ else []
     heading("ZELAB REMOTE INSTALLER")
     print(f"  Server: {args.host}\n  Checkout: {args.directory}\n", flush=True)
-    # A real stdin terminal allows one-time sudo authentication on the server.
-    terminal = ["-t"] if sys.stdin.isatty() else ["-T"]
-    result = subprocess.run([*ssh, *terminal, args.host, remote_command(args.directory, command)])
+    guide_only = args.action == "guide"
+    status = 0
+    if not guide_only:
+        inputs = [f"SITE_CONFIG={args.site_config}", f"ENV_FILE={args.env_file}"]
+        command = [*colors, "rtk", "proxy", "make", "--no-print-directory", "GUIDE_MODE=remote", *inputs]
+        # A real stdin terminal allows one-time sudo authentication on the server.
+        terminal = ["-t"] if sys.stdin.isatty() else ["-T"]
+        status = subprocess.run([*ssh, *terminal, args.host, remote_command(args.directory, command)]).returncode
 
     # Also retrieve an actionable guide after a failed install. The path endpoint
-    # uses system Python if controller bootstrapping never finished.
+    # uses system Python if controller bootstrapping never finished. For the
+    # guide action this single doctor run also reports blockers on stderr.
     code = ("import os,subprocess,sys; "
             "p='.venv/bin/python' if os.path.isfile('.venv/.controller-ready') else 'python3'; "
             "sys.exit(subprocess.call(['rtk','proxy',p,'deploy/doctor.py','--guide-path-only',"
-            "'--site-config',sys.argv[1],'--env-file',sys.argv[2]]))")
-    snapshot = subprocess.run([*ssh, "-T", args.host, remote_command(args.directory,
-                              ["rtk", "proxy", "python3", "-c", code, args.site_config, args.env_file])],
-                              capture_output=True, text=True)
+            "'--site-config',sys.argv[1],'--env-file',sys.argv[2],*sys.argv[3:]]))")
+    path_command = [*colors, "rtk", "proxy", "python3", "-c", code, args.site_config, args.env_file,
+                    *(["--brief"] if guide_only else [])]
+    snapshot = subprocess.run([*ssh, "-T", args.host, remote_command(args.directory, path_command)],
+                              stdout=subprocess.PIPE, stderr=None if guide_only else subprocess.PIPE, text=True)
     path = snapshot.stdout.strip()
     if snapshot.returncode or not path.startswith("/") or "\n" in path or "\r" in path:
         print("\n  Could not retrieve the server guide. Rerun rtk proxy make on the server.")
-        return result.returncode or 1
+        return status or 1
 
     destination = args.guide_destination.expanduser().resolve()
     destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -96,7 +94,7 @@ def run_remote(args):
         copy = subprocess.run([*scp, "--", f"{args.host}:{path}", str(temporary)])
         if copy.returncode:
             print("\n  Guide copy failed. Rerun rtk proxy make on the server for manual copy instructions.")
-            return result.returncode or copy.returncode
+            return status or copy.returncode
         temporary.chmod(0o600)
         temporary.replace(destination)
     finally:
@@ -106,7 +104,7 @@ def run_remote(args):
     print("  " + ("Opened in your browser." if open_guide(destination) else "Open this file in your browser."))
     print("\n  Rerun the same make command after completing the account steps.")
     print("  Use the same REMOTE_HOST and REMOTE_DIR values.\n")
-    return result.returncode
+    return status
 
 
 def main(argv=None):

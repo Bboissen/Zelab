@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import pwd
 import secrets
+import shutil
 import subprocess
 import tempfile
 from types import SimpleNamespace
@@ -18,12 +19,23 @@ import yaml
 from backup import COMPATIBILITY_FIELDS, SOURCE_PINS
 from restore_site import Replacement, restore_site
 from runtime import maintenance_lock
+from archive_fixture import encrypt
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class RestoreSiteTest(unittest.TestCase):
+CORE_FIELDS = ('vm_data', 'vm_root', 'vm_bootstrap_dir', 'paperclip_home', 'notes_vault_dir',
+               'obsidian_state_dir', 'private_dir', 'notes_config_dir', 'obsidian_config_dir')
+WORKER_HOMES = ('worker_ops_home', 'worker_code_home')
+
+
+class RestoreFixture:
+    """A disposable site; worker homes vary between the backup and the live site."""
+
+    backed_up = WORKER_HOMES  # earlier two-worker layout
+    live = WORKER_HOMES
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix='zelab-site-restore-')
         self.addCleanup(self.directory.cleanup)
@@ -39,17 +51,17 @@ class RestoreSiteTest(unittest.TestCase):
         self.site = {**yaml.safe_load((ROOT / 'config/defaults.yaml').read_text()),
                      **yaml.safe_load((ROOT / 'config/site.example.yaml').read_text())}
         self.site['operator_user'] = pwd.getpwuid(os.geteuid()).pw_name
-        fields = ('vm_data', 'vm_root', 'vm_bootstrap_dir', 'paperclip_home',
-                  'worker_ops_home', 'worker_code_home', 'notes_vault_dir',
-                  'obsidian_state_dir', 'private_dir', 'backup_dir')
-        for name in fields:
+        for name in (*CORE_FIELDS, *WORKER_HOMES, 'backup_dir'):
             self.site[name] = str(self.base / 'live' / name)
+        for name in (*CORE_FIELDS, *self.backed_up, 'backup_dir'):
             Path(self.site[name]).mkdir(parents=True)
         self.site.update(vm_disk=self.site['vm_data'] + '/disk.qcow2',
                          deploy_key=self.site['private_dir'] + '/deploy_key',
                          guest_known_hosts=self.site['private_dir'] + '/known_hosts',
                          host_disk_reserve_gib=0)
-        self.paths = [Path(self.site[name]) for name in fields if name != 'backup_dir']
+        self.paperclip_env = self.base / 'live/zelab-paperclip.env'
+        self.paperclip_env.write_text('backup environment')
+        self.paths = [Path(self.site[name]) for name in (*CORE_FIELDS, *self.backed_up)]
         for path in self.paths:
             (path / 'state.txt').write_text('backup state')
         (Path(self.site['vm_data']) / 'disk.qcow2').write_text('disposable disk fixture')
@@ -62,27 +74,29 @@ class RestoreSiteTest(unittest.TestCase):
         self.key.chmod(0o600)
         self.staged = self.base / 'snapshot'
         self.staged.mkdir()
-        listing = []
         # tar records the live absolute paths as members, as the real backup does.
-        for path in self.paths:
-            listing.append(str(path).lstrip('/'))
         pins = [ROOT / relative for relative in SOURCE_PINS]
-        listing += [str(path).lstrip('/') for path in pins]
+        captured = [*self.paths, self.paperclip_env, *pins]
         manifest = self.staged / 'run/zelab-backup-fixture/manifest.json'
         manifest.parent.mkdir(parents=True)
-        manifest.write_text(json.dumps({'scope': [str(path) for path in self.paths + pins],
+        manifest.write_text(json.dumps({'scope': [str(path) for path in captured],
                                        'compatibility': {name: self.site.get(name) for name in COMPATIBILITY_FIELDS},
                                        'vm_chain': [{'filename': self.site['vm_disk']}]}))
         tar = self.base / 'backup.tar'
         self.command('tar', '--sparse', '--acls', '--xattrs', '--numeric-owner', '-C', '/',
-                     '-cf', tar, *listing, '-C', self.staged, 'run/zelab-backup-fixture/manifest.json')
+                     '-cf', tar, *(str(path).lstrip('/') for path in captured),
+                     '-C', self.staged, 'run/zelab-backup-fixture/manifest.json')
         self.archive = Path(self.site['backup_dir']) / 'zelab-applications-fixture.tar.gpg'
-        self.command('gpg', '--batch', '--pinentry-mode', 'loopback', '--no-symkey-cache',
-                     '--passphrase-file', self.key, '--symmetric', '--cipher-algo', 'AES256',
-                     '--compress-algo', 'none', '--output', self.archive, tar)
-        self.archive.chmod(0o600)
+        encrypt(self, tar, self.archive, self.key)
+        # The live layout can differ from the backup (harness changed or skipped).
+        for name in set(self.backed_up) - set(self.live):
+            shutil.rmtree(self.site[name])
+        for name in set(self.live) - set(self.backed_up):
+            Path(self.site[name]).mkdir()
+        self.paths = [Path(self.site[name]) for name in (*CORE_FIELDS, *self.live)]
         for path in self.paths:
             (path / 'state.txt').write_text('current state')
+        self.paperclip_env.write_text('current environment')
         (private / 'backup-passphrase').write_text('current recovery key')
         (private / 'logs/current.log').write_text('current log')
         self.events = []
@@ -102,7 +116,7 @@ class RestoreSiteTest(unittest.TestCase):
     def restore(self, *, confirm=None, readiness=None):
         with ExitStack() as stack:
             stack.enter_context(patch('restore_site.maintenance_lock', side_effect=lambda: maintenance_lock(self.base / 'lock')))
-            stack.enter_context(patch('restore_site.restore_paths', return_value=self.paths))
+            stack.enter_context(patch('restore_site.PAPERCLIP_ENV', self.paperclip_env))
             stack.enter_context(patch('restore_site.supervised_mounts', return_value=['fixture.mount']))
             stack.enter_context(patch('restore_site.site_identity', return_value='fixture:zelab'))
             stack.enter_context(patch('restore_site.service_active', return_value=True))
@@ -114,10 +128,22 @@ class RestoreSiteTest(unittest.TestCase):
             return restore_site(self.site, self.archive, self.key,
                                 'fixture:zelab' if confirm is None else confirm)
 
-    def test_authenticated_state_is_activated_and_current_key_logs_are_kept(self):
-        self.assertEqual(self.restore(), 0)
+    def assert_unchanged(self):
+        self.assertTrue(all((path / 'state.txt').read_text() == 'current state' for path in self.paths))
+        self.assertEqual(self.paperclip_env.read_text(), 'current environment')
+        self.assertFalse(list((self.base / 'live').glob('.zelab-restore-*')))
+
+    def assert_restored(self):
         for path in self.paths:
             self.assertEqual((path / 'state.txt').read_text(), 'backup state')
+        self.assertEqual(self.paperclip_env.read_text(), 'backup environment')
+        self.assertFalse(list((self.base / 'live').glob('.zelab-restore-*')))
+
+
+class RestoreSiteTest(RestoreFixture, unittest.TestCase):
+    def test_authenticated_state_is_activated_and_current_key_logs_are_kept(self):
+        self.assertEqual(self.restore(), 0)
+        self.assert_restored()
         private = Path(self.site['private_dir'])
         self.assertEqual((private / 'backup-passphrase').read_text(), 'current recovery key')
         self.assertEqual((private / 'logs/current.log').read_text(), 'current log')
@@ -176,6 +202,54 @@ class RestoreSiteTest(unittest.TestCase):
             self.restore()
         self.assertTrue(all((path / 'state.txt').read_text() == 'current state' for path in self.paths))
         self.assertFalse(list((self.base / 'live').glob('.zelab-restore-*')))
+
+
+
+class SingleWorkerRestoreTest(RestoreFixture, unittest.TestCase):
+    """Current layout: Operations only, no Coding home on either side."""
+
+    backed_up = live = ('worker_ops_home',)
+
+    def test_restores_without_a_coding_home(self):
+        self.assertFalse(Path(self.site['worker_code_home']).exists())
+        self.assertEqual(self.restore(), 0)
+        self.assert_restored()
+        self.assertFalse(Path(self.site['worker_code_home']).exists())
+
+
+class SkippedWorkerRestoreTest(RestoreFixture, unittest.TestCase):
+    """worker_harness: none creates no worker home at all."""
+
+    backed_up = live = ()
+
+    def test_restores_without_any_worker_home(self):
+        self.assertEqual(self.restore(), 0)
+        self.assert_restored()
+        self.assertFalse(Path(self.site['worker_ops_home']).exists())
+
+
+class UncoveredWorkerHomeTest(RestoreFixture, unittest.TestCase):
+    """A worker home created after the backup must not be left half-restored."""
+
+    backed_up, live = (), ('worker_ops_home',)
+
+    def test_backup_missing_a_present_worker_home_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'does not cover.*worker_ops_home'):
+            self.restore()
+        self.assertEqual(self.events, [])
+        self.assert_unchanged()
+
+
+class MissingLiveWorkerHomeTest(RestoreFixture, unittest.TestCase):
+    """A backed-up worker home needs the matching installed worker first."""
+
+    backed_up, live = ('worker_ops_home',), ()
+
+    def test_backed_up_worker_home_absent_from_the_site_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'complete installed site'):
+            self.restore()
+        self.assertEqual(self.events, [])
+        self.assert_unchanged()
 
 
 if __name__ == '__main__':

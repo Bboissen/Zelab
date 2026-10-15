@@ -9,21 +9,11 @@
   no_log: true
   block:
     - name: Generate a retained strong API credential once
-      ansible.builtin.command:
-        argv:
-          - rtk
-          - proxy
-          - python3
-          - -c
-          - |
-            from pathlib import Path
-            import os, secrets, sys
-            path = Path(sys.argv[1])
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, 'w') as out:
-                out.write(secrets.token_urlsafe(48) + '\n')
-          - "{{ private_dir }}/hermes-api.key"
-        creates: "{{ private_dir }}/hermes-api.key"
+      ansible.builtin.copy:
+        dest: "{{ private_dir }}/hermes-api.key"
+        content: "{{ lookup('ansible.builtin.password', '/dev/null', length=64, chars=['ascii_letters', 'digits', '-_']) }}\n"
+        mode: '0600'
+        force: false
       delegate_to: zelab_host
 
     - name: Retain private operator access to the generated credential
@@ -77,10 +67,7 @@
     argv: ["{{ hermes_install_dir }}/.hermes/bin/hermes", config, set, approvals.mode, 'off']
     creates: /var/lib/zelab/hermes/operations-approvals-seeded
   become_user: zelab-hermes
-  environment:
-    HOME: /home/zelab-hermes
-    HERMES_HOME: /var/lib/zelab/hermes/home
-    TMPDIR: /var/lib/zelab/hermes/tmp
+  environment: "{{ hermes_cli_environment }}"
 
 - name: Retain subsequent owner approval preferences
   ansible.builtin.copy:
@@ -96,8 +83,5 @@
     name: "{{ hermes_gateway_unit }}"
     state: restarted
   become_user: zelab-hermes
-  environment:
-    HOME: /home/zelab-hermes
-    XDG_RUNTIME_DIR: /run/user/61102
-    DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/61102/bus
+  environment: "{{ hermes_cli_environment | combine(hermes_session_environment) }}"
   when: not hermes_api_seed.stat.exists

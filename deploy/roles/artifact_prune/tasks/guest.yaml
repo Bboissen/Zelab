@@ -1,0 +1,39 @@
+- name: Remove downloaded package files
+  ansible.builtin.apt:
+    clean: true
+
+- name: Find superseded Hermes installers and dashboard archives
+  ansible.builtin.find:
+    paths: /opt/hermes/releases
+    excludes:
+      - "install-{{ hermes_commit }}.sh"
+      - "hermes-web-{{ hermes_commit }}.tar"
+  register: prune_hermes_releases
+
+- name: Find completion markers of superseded Hermes pins
+  ansible.builtin.find:
+    paths: "{{ hermes_install_dir }}/.hermes"
+    patterns: [zelab-dependencies-ready-*, zelab-ddgs-ready-*, zelab-web-assets-*]
+    excludes:
+      - "zelab-dependencies-ready-{{ hermes_dependency_revision }}"
+      - "zelab-ddgs-ready-{{ hermes_dependency_revision }}"
+      - "zelab-web-assets-{{ hermes_commit }}"
+  register: prune_hermes_markers
+
+# The installer's npm download cache; Hermes state and its own tools are kept.
+- name: Remove superseded Hermes artifacts and the installer's npm cache
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: >-
+    {{ (prune_hermes_releases.files + prune_hermes_markers.files) | map(attribute='path') | list
+       + ['/home/zelab-hermes/.npm'] }}
+
+# Returns freed guest blocks to the host so disk.qcow2 shrinks. Best effort:
+# a guest started before discard was enabled reports it as unsupported.
+- name: Release freed guest disk space to the host
+  ansible.builtin.command:
+    argv: [fstrim, /]
+  register: prune_trim
+  changed_when: false
+  failed_when: false

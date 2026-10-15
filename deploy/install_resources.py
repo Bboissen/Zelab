@@ -120,7 +120,8 @@ def atomic_write(path, text, mode):
 class InstallationResources:
     def __init__(self, site, *, unit_directory=Path('/etc/systemd/system'),
                  runtime_directory=Path('/run/systemd/system'),
-                 receipt_directory=Path('/run/zelab-install-resources')):
+                 receipt_directory=Path('/run/zelab-install-resources'),
+                 control_directory=Path('/run/systemd/system.control')):
         self.site = site
         if not re.fullmatch(r'[A-Za-z0-9_.-]+', site['vm_service']):
             raise ValueError('Invalid VM service identity')
@@ -128,6 +129,8 @@ class InstallationResources:
         self.unit_file = unit_directory / self.unit
         self.override = runtime_directory / (self.unit + '.d') / '90-zelab-install-resources.conf'
         self.receipt = receipt_directory / (self.unit + '.json')
+        # Where `systemctl set-property --runtime` keeps a live CPU quota.
+        self.startup_quota = control_directory / (self.unit + '.d') / '50-CPUQuota.conf'
         self.identity = {key: site[key] for key in ('vm_service', 'vm_data', 'vm_root', 'vm_user')}
 
     def active(self):
@@ -186,6 +189,31 @@ class InstallationResources:
             time.sleep(1)
         raise RuntimeError('Normal VM limits are restored, but guest startup needs attention; rerun make')
 
+    def start_on_full_cpus(self, dashboard_was_ready):
+        """Let the restarted guest use whole vCPUs until it answers, then apply the
+        normal quota live. Starting Hermes under a 50% quota takes about a minute.
+
+        Only a quota this method set is touched: an existing runtime quota is kept.
+        """
+        full = f"{self.site['vm_cpu'] * 100}%"
+        if (self.startup_quota.exists() or self.startup_quota.is_symlink()
+                or int(full[:-1]) <= int(self.site['vm_cpu_quota'][:-1])):
+            self.wait_for_guest(dashboard_was_ready)
+            return
+        command('systemctl', 'set-property', '--runtime', self.unit, 'CPUQuota=' + full)
+        try:
+            self.wait_for_guest(dashboard_was_ready)
+        finally:
+            command('systemctl', 'set-property', '--runtime', self.unit, 'CPUQuota=' + self.site['vm_cpu_quota'])
+            # The live value is now the unit's own; drop the runtime copy so a
+            # later change to the permanent unit is not masked until reboot.
+            self.startup_quota.unlink(missing_ok=True)
+            try:
+                self.startup_quota.parent.rmdir()
+            except OSError:
+                pass
+            command('systemctl', 'daemon-reload')
+
     def dashboard_ready(self):
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{self.site['guest_dashboard_port']}/api/profiles", timeout=2):
@@ -229,16 +257,22 @@ class InstallationResources:
             active = False
         print('RESOURCE RESTORE START', flush=True)
         dashboard_was_ready = self.dashboard_ready() if active else False
-        if override_exists:
-            receipt['restart_pending'] = active
+        restart = self.unit_file.exists() and (receipt['restart_pending'] or (active and override_exists))
+        if restart and not receipt['restart_pending']:
+            receipt['restart_pending'] = True
             atomic_write(self.receipt, json.dumps(receipt), 0o600)
+        if restart and active:
+            # Stop under the boosted limit: reloading first applies the normal
+            # MemoryMax to the larger live QEMU and the kernel OOM-kills it.
+            command('systemctl', 'stop', self.unit)
+        if override_exists:
             self.override.unlink()
         command('systemctl', 'daemon-reload')
-        if receipt['restart_pending'] and active:
-            command('systemctl', 'restart', self.unit)
+        if restart:
+            command('systemctl', 'start', self.unit)
             receipt['restart_pending'] = False
             atomic_write(self.receipt, json.dumps(receipt), 0o600)
-            self.wait_for_guest(dashboard_was_ready)
+            self.start_on_full_cpus(dashboard_was_ready)
         self.receipt.unlink()
         # Remove only empty directories created for this boost.
         for directory in (self.override.parent, self.receipt.parent):

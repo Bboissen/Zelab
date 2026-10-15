@@ -1,6 +1,7 @@
 """Verify the installer's step lines, stage names and failure report."""
 
 import io
+import json
 from contextlib import redirect_stdout
 import os
 from pathlib import Path
@@ -13,7 +14,9 @@ from contextlib import ExitStack
 
 import yaml
 
+import ansible_log
 import install
+from fixtures import replay
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,7 +52,7 @@ class InstallerTest(unittest.TestCase):
             return 0, []
 
         with ExitStack() as stack, redirect_stdout(io.StringIO()):
-            for method in ('host', 'administration', 'configuration', 'controller', 'worker_harness', 'open_log', 'services'):
+            for method in ('host', 'administration', 'configuration', 'controller', 'worker_harness', 'open_log', 'services', 'hermes_model'):
                 stack.enter_context(patch.object(runner, method))
             stack.enter_context(patch.object(runner, 'ui_passwords', side_effect=passwords))
             stack.enter_context(patch.object(runner, 'deploy', side_effect=lambda: stages.append('deploy')))
@@ -93,10 +96,7 @@ class InstallerTest(unittest.TestCase):
                  "TASK [codex : Download] ***\n", "ok: [zelab_host]\n", "PLAY RECAP ***\n"]
         runner = self.installer()
 
-        def capture(argv, on_line=None, env=None):
-            for line in lines:
-                on_line(line)
-            return 0, []
+        capture = replay(lines)
         with patch.object(runner, "capture", side_effect=capture):
             runner.deploy()
         output = runner.screen.stream.getvalue()
@@ -111,16 +111,51 @@ class InstallerTest(unittest.TestCase):
                  "Installation stopped.\n", "  Cause: Request failed — HTTP Error 429: Too Many Requests\n"]
         runner = self.installer()
 
-        def capture(argv, on_line=None, env=None):
-            for line in lines:
-                on_line(line)
-            return 2, []
+        capture = replay(lines, 2)
         with patch.object(runner, "capture", side_effect=capture), self.assertRaises(install.StepFailed):
             runner.deploy()
         output = runner.screen.stream.getvalue()
         self.assertRegex(output, r"✗ Hermes build +stopped at: Download verified Hermes source archive")
         self.assertIn("Cause: Request failed — HTTP Error 429: Too Many Requests", output)
         self.assertNotIn("fatal:", output)
+
+    def test_deployment_logs_each_task_duration_by_name_only(self):
+        lines = ["PLAY [Install pinned native Paperclip on the host] ***\n",
+                 "TASK [paperclip : Install the service] ***\n", "changed: [zelab_host]\n",
+                 '    "msg": "private task output"\n',
+                 "TASK [paperclip : Start it] ***\n", "ok: [zelab_host]\n",
+                 "PLAY [Provision native host worker identities and SSH access] ***\n",
+                 "TASK [host_workers : Create account] ***\n", "ok: [zelab_host]\n", "PLAY RECAP ***\n"]
+        runner = self.installer()
+
+        def capture(argv, on_line=None, env=None):
+            for line in lines:
+                runner.log.write(line)
+                on_line(line)
+            return 0, []
+        with patch.object(runner, "capture", side_effect=capture):
+            runner.deploy()
+        records = [json.loads(line.removeprefix("TASK_TIMING ")) for line in "".join(runner.log.buffer).splitlines()
+                   if line.startswith("TASK_TIMING ")]
+        self.assertEqual([(record["play"], record["task"]) for record in records], [
+            ("Install pinned native Paperclip on the host", "paperclip : Install the service"),
+            ("Install pinned native Paperclip on the host", "paperclip : Start it"),
+            ("Provision native host worker identities and SSH access", "host_workers : Create account")])
+        self.assertTrue(all(set(record) == {"play", "task", "seconds"} and record["seconds"] >= 0 for record in records))
+        self.assertNotIn("TASK_TIMING", runner.screen.stream.getvalue())
+
+    def test_task_timer_measures_to_the_next_task_or_recap(self):
+        records, clock = [], iter([10.0, 12.5, 20.0, 21.0, 30.0, 33.0]).__next__
+        progress = ansible_log.Progress(on_task=records.append, clock=clock)
+        for line in ("PLAY [One] ***", "TASK [a : first] ***", "PLAY [Two] ***", "TASK [second] ***",
+                     "PLAY RECAP ***", "TASK [third] ***"):
+            progress.feed(line)
+        # An interrupted run has no recap; the caller closes the open task once.
+        progress.finish_task()
+        progress.finish_task()
+        self.assertEqual(records, [{"play": "One", "task": "a : first", "seconds": 2.5},
+                                   {"play": "Two", "task": "second", "seconds": 1.0},
+                                   {"play": "Two", "task": "third", "seconds": 3.0}])
 
     def test_log_is_private_and_keeps_output_written_before_it_opened(self):
         log = install.Log()
@@ -218,11 +253,7 @@ class InstallerTest(unittest.TestCase):
         runner = self.installer()
         runner.applications.discard("Obsidian")
 
-        def capture(argv, on_line=None, env=None):
-            for line in ('"msg": "Paperclip health: HTTP 200 ready"',
-                         '"msg": "Hermes authentication: HTTP 401 ready"'):
-                on_line(line)
-            return 0, []
+        capture = replay(('"msg": "Paperclip health: HTTP 200 ready"', '"msg": "Hermes authentication: HTTP 401 ready"'))
 
         with patch.object(runner, "capture", side_effect=capture):
             runner.services()

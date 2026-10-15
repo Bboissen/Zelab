@@ -1,11 +1,17 @@
 # Fresh or adopted site. Legacy removal remains an explicit migration phase.
+# Host and guest work overlap: prefetch starts host jobs once the guest is
+# booting (after its resources are sized on an idle host), and Paperclip
+# installs while the guest prepares Hermes dependencies.
 - import_playbook: preflight.yaml
-- import_playbook: bootstrap.yaml
+- import_playbook: create-guest.yaml
+- import_playbook: prefetch.yaml
+- import_playbook: guest-ready.yaml
 - import_playbook: guest-network.yaml
-- import_playbook: build-hermes.yaml
 - import_playbook: install-hermes.yaml
+- import_playbook: build-hermes.yaml
 - import_playbook: install-paperclip.yaml
 - import_playbook: host-workers.yaml
+- import_playbook: finish-hermes.yaml
 - import_playbook: research-profile.yaml
 - import_playbook: bot-pool.yaml
 - import_playbook: paperclip-workers.yaml
@@ -13,3 +19,4 @@
 - import_playbook: hermes-gateway.yaml
 - import_playbook: hermes-api.yaml
 - import_playbook: obsidian.yaml
+- import_playbook: prune.yaml

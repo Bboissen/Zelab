@@ -3,38 +3,26 @@
 import os
 from pathlib import Path
 import pwd
-import subprocess
 import tempfile
 import unittest
 
 import yaml
 
+from fixtures import role_tasks, run_play
+
 
 class BootstrapTest(unittest.TestCase):
     def test_empty_private_directory_is_seeded_once(self):
-        tasks = yaml.safe_load(Path('deploy/roles/vm/tasks/main.yaml').read_text())
-        names = {'Prepare private deployment state',
-                 'Generate the fresh guest deployment key once',
-                 'Prepare a private recovery key once'}
-        tasks = [task for task in tasks if task.get('name') in names]
-        self.assertEqual(len(tasks), 3)
+        tasks = role_tasks('deploy/roles/vm/tasks/main.yaml', 'Prepare private deployment state',
+                           'Generate the fresh guest deployment key once', 'Prepare a private recovery key once')
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             private = root / 'private'
-            playbook = root / 'bootstrap.yaml'
-            playbook.write_text(yaml.safe_dump([{
-                'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
-                'become': False,
-                'vars': {'private_dir': str(private),
-                         'deploy_key': str(private / 'deploy_ed25519'),
-                         'operator_user': pwd.getpwuid(os.getuid()).pw_name},
-                'tasks': tasks,
-            }]))
+            variables = {'private_dir': str(private), 'deploy_key': str(private / 'deploy_ed25519'),
+                         'operator_user': pwd.getpwuid(os.getuid()).pw_name}
+
             def apply():
-                result = subprocess.run(
-                    ['rtk', 'proxy', '.venv/bin/ansible-playbook', '-i', 'localhost,', str(playbook)],
-                    capture_output=True, text=True,
-                )
+                result = run_play(directory, tasks=tasks, variables=variables)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 return result.stdout
 
@@ -49,6 +37,16 @@ class BootstrapTest(unittest.TestCase):
             self.assertEqual(first, [key.read_bytes() for key in keys])
 
 
+    def test_deployment_key_allows_the_owner_model_picker_terminal(self):
+        # OpenSSH restrict implies no-pty; doctor.hermes_picker runs ssh -t.
+        option = 'restrict,pty,from="10.0.2.2" '
+        self.assertIn(option, Path('deploy/roles/vm/templates/cloud-init.yaml.j2').read_text())
+        play = yaml.safe_load(Path('deploy/guest-ready.yaml').read_text())[0]
+        task = next(t for t in play['tasks'] if 'ansible.builtin.lineinfile' in t)['ansible.builtin.lineinfile']
+        self.assertTrue(task['line'].startswith(option))
+        self.assertIn('(pty,)?', task['regexp'])
+
+
 class InterruptedCreationTest(unittest.TestCase):
     NAMES = ['Inspect the explicitly selected fresh disk', 'Inspect the fresh creation receipt',
              'Inspect an unfinished creation from an interrupted run',
@@ -59,9 +57,7 @@ class InterruptedCreationTest(unittest.TestCase):
              'Re-inspect the selected disk after unfinished-creation cleanup']
 
     def apply(self, root, receipts):
-        tasks = yaml.safe_load(Path('deploy/roles/vm/tasks/create.yaml').read_text())
-        tasks = [task for task in tasks if task.get('name') in self.NAMES]
-        self.assertEqual(len(tasks), len(self.NAMES))
+        tasks = role_tasks('deploy/roles/vm/tasks/create.yaml', *self.NAMES)
         data, bootstrap = root / 'data', root / 'bootstrap'
         for directory in (data, bootstrap):
             directory.mkdir(exist_ok=True)
@@ -71,14 +67,9 @@ class InterruptedCreationTest(unittest.TestCase):
             (bootstrap / name).unlink(missing_ok=True)
         for name, service in receipts.items():
             (bootstrap / name).write_text(f'{disk}\nzelab\n{service}\n')
-        playbook = root / 'create.yaml'
-        playbook.write_text(yaml.safe_dump([{
-            'hosts': 'localhost', 'connection': 'local', 'gather_facts': False, 'become': False,
-            'vars': {'vm_disk': str(disk), 'vm_data': str(data), 'vm_bootstrap_dir': str(bootstrap),
-                     'vm_instance': 'zelab', 'vm_service': 'zelab-test-absent-unit'},
-            'tasks': tasks}]))
-        result = subprocess.run(['rtk', 'proxy', '.venv/bin/ansible-playbook', '-i', 'localhost,', str(playbook)],
-                                capture_output=True, text=True)
+        result = run_play(root, tasks=tasks, variables={
+            'vm_disk': str(disk), 'vm_data': str(data), 'vm_bootstrap_dir': str(bootstrap),
+            'vm_instance': 'zelab', 'vm_service': 'zelab-test-absent-unit'})
         return result.returncode, disk.exists()
 
     def test_only_this_sites_unfinished_disk_is_recreated(self):

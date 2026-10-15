@@ -1,0 +1,84 @@
+# Started early by prefetch.yaml so npm overlaps guest creation; main.yaml waits.
+- name: Validate private Paperclip inputs
+  ansible.builtin.assert:
+    that:
+      - paperclip_port | int > 1024
+      - paperclip_home.startswith('/')
+      - paperclip_user != operator_user
+
+- name: Install declared native host prerequisites
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, git, openssh-client, libatomic1, nftables]
+    state: present
+
+- name: Prepare the pinned native coordinator runtime
+  ansible.builtin.import_role:
+    name: node_runtime
+
+- name: Create dedicated Paperclip coordinator account
+  ansible.builtin.user:
+    name: "{{ paperclip_user }}"
+    home: "{{ paperclip_home }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: true
+  register: paperclip_identity
+
+- name: Keep coordinator state private
+  ansible.builtin.file:
+    path: "{{ paperclip_home }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: '0700'
+
+- name: Create native release and instance directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: '0700'
+  loop:
+    - "{{ paperclip_runtime_dir }}"
+    - "{{ paperclip_home }}/instances/default"
+    - "{{ paperclip_home }}/instances/default/secrets"
+
+- name: Copy exact native npm dependency declaration and lock
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ paperclip_runtime_dir }}/{{ item }}"
+    owner: "{{ paperclip_user }}"
+    group: "{{ paperclip_user }}"
+    mode: '0600'
+  loop:
+    - package.json
+    - package-lock.json
+  register: paperclip_lock
+
+- name: Check completed installation marker
+  ansible.builtin.stat:
+    path: "{{ paperclip_runtime_dir }}/.zelab-runtime-ready"
+  register: paperclip_ready
+
+- name: Start the locked published native runtime installation in the background
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/npm"
+      - ci
+      - --omit=dev
+      - --no-audit
+      - --no-fund
+    chdir: "{{ paperclip_runtime_dir }}"
+  when: paperclip_lock.changed or not paperclip_ready.stat.exists
+  become_user: "{{ paperclip_user }}"
+  environment:
+    HOME: "{{ paperclip_home }}"
+    PATH: "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin:/usr/local/bin:/usr/bin:/bin"
+    NODE_OPTIONS: --max-old-space-size=4096
+    npm_config_registry: https://registry.npmjs.org
+  async: 1800
+  poll: 0
+  register: paperclip_install_job

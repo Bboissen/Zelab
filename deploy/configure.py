@@ -4,12 +4,12 @@
 Only values that differ per host are written; everything else comes from
 config/defaults.yaml. Existing site inputs are retained; interactive harness
 selection updates only worker_harness when the installer invokes --select-harness.
+--hermes-model offers the native Hermes model picker; it changes no site input.
 """
 
 import argparse
 import datetime
 import ipaddress
-import json
 import os
 from pathlib import Path
 import pwd
@@ -17,6 +17,7 @@ import subprocess
 import sys
 
 from console import heading, paint
+import shell
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,11 +28,7 @@ TAIL_SPARES = (8444, 9444, 10443, 10444, 11443, 11444)
 
 def probe(argv):
     """Return command output, or None. Never print it: it can contain host details."""
-    try:
-        result = subprocess.run(["rtk", "proxy", *argv], capture_output=True, text=True, timeout=20)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return result.stdout if result.returncode == 0 else None
+    return shell.output(argv, timeout=20)
 
 
 def operator():
@@ -44,28 +41,19 @@ def operator():
 
 
 def tailnet(status_json):
-    try:
-        status = json.loads(status_json or "")
-        name = status["Self"]["DNSName"].rstrip(".")
-    except (ValueError, KeyError, TypeError, AttributeError):
-        return None
-    return name if status.get("BackendState") == "Running" and name.endswith(".ts.net") else None
+    running, name = shell.tailnet_name(shell.load_json(status_json))
+    return name if running and name and name.endswith(".ts.net") else None
 
 
-def serve_ports(serve, owned_backends):
+def choose_tail_ports(serve, owned_backends):
     """Pick the default Serve ports unless another route already uses them.
 
     A port already proxying to this site's own backend is reused, so rerunning
     discovery after installation keeps the same URLs.
     """
-    try:
-        config = json.loads(serve or "{}") or {}
-    except ValueError:
-        config = {}
+    config = shell.load_json(serve)
     ours = {}
-    for endpoint, web in (config.get("Web") or {}).items():
-        port = int(endpoint.rsplit(":", 1)[1])
-        proxy = ((web.get("Handlers") or {}).get("/") or {}).get("Proxy")
+    for _, port, proxy in shell.serve_routes(config):
         if proxy in owned_backends:
             ours[owned_backends[proxy]] = port
     used = {int(port) for port in (config.get("TCP") or {})} - set(ours.values())
@@ -111,7 +99,7 @@ def discover(user):
         facts["ui_tailscale_hostname"] = hostname
         backends = {f"http://127.0.0.1:{defaults[key]}": route for key, route in
                     zip(defaults, TAIL_ROUTES)}
-        facts.update(serve_ports(probe(["tailscale", "serve", "status", "--json"]), backends))
+        facts.update(choose_tail_ports(probe(["tailscale", "serve", "status", "--json"]), backends))
     effective = probe(["sudo", "-n", "/usr/sbin/sshd", "-T", "-C",
                        f"user={user},host=localhost,addr=127.0.0.1,laddr=127.0.0.1,lport=22"])
     facts["worker_ssh_host"], facts["worker_ssh_port"] = ssh_listener(effective)
@@ -158,31 +146,33 @@ def select_harness(site_path):
     from run import load_yaml
     site = load_yaml(site_path)
     saved = site.get('worker_harness', 'none')
-    if saved not in ('codex', 'claude', 'both', 'none'):
-        raise ValueError('worker_harness must be codex, claude, both or none')
+    # 'both' was removed with the single-worker layout; a terminal run replaces it.
+    if saved not in ('codex', 'claude', 'none') and not (saved == 'both' and sys.stdin.isatty()):
+        raise ValueError('worker_harness must be codex, claude or none')
     choice = saved
-    labels = {'codex': 'Codex', 'claude': 'Claude Code', 'both': 'Codex + Claude Code', 'none': 'skipped'}
+    labels = {'codex': 'Codex', 'claude': 'Claude Code', 'none': 'skipped', 'both': 'both (no longer offered)'}
     if sys.stdin.isatty():
-        heading('Optional Paperclip worker harness')
-        print('  1. Codex\n  2. Claude Code\n  3. Both\n  4. Skip for now')
-        print('  Selected CLIs are installed for workers. Sign in using their native login.')
-        print('  Skip leaves new workers paused; existing Paperclip settings are retained.')
-        print('  Both installs both CLIs; choose each worker adapter in Paperclip before resuming.')
+        heading('Optional Paperclip worker')
+        print('  1. Codex\n  2. Claude Code\n  3. Skip for now')
+        print('  Codex or Claude Code creates one Operations worker, fully configured except')
+        print('  its model, with a waiting task that proves host access and sudo.')
+        print('  Skip creates no worker, no worker account and no Discord host tasks.')
         print(f'  Current selection: {labels[saved]}')
         choices = {'1': 'codex', 'codex': 'codex', '2': 'claude', 'claude': 'claude',
-                   'claude code': 'claude', '3': 'both', 'both': 'both',
-                   '4': 'none', 'none': 'none', 'skip': 'none', '': saved}
-        default = {'codex': 1, 'claude': 2, 'both': 3, 'none': 4}[saved]
+                   'claude code': 'claude', '3': 'none', 'none': 'none', 'skip': 'none'}
+        default = {'codex': 1, 'claude': 2, 'none': 3}.get(saved)
+        if default:
+            choices[''] = saved
         while True:
-            answer = input(f'  Choose [1/2/3/4, default {default}]: ').strip().lower()
+            answer = input(f'  Choose [1/2/3{f", default {default}" if default else ""}]: ').strip().lower()
             if answer in choices:
                 choice = choices[answer]
                 break
-            print('  Enter 1 (Codex), 2 (Claude Code), 3 (both), or 4 (skip).')
+            print('  Enter 1 (Codex), 2 (Claude Code) or 3 (skip).')
     # Replace only the value, keeping comments, permissions and unrelated inputs.
     if 'worker_harness' not in site:
         with site_path.open('a') as output:
-            output.write(f'\n# Optional Paperclip harness: codex, claude, both or none.\nworker_harness: {choice}\n')
+            output.write(f'\n# Optional Paperclip worker harness: codex, claude or none.\nworker_harness: {choice}\n')
     elif choice != saved:
         original = site_path.read_text()
         document = yaml.compose(original)
@@ -194,11 +184,43 @@ def select_harness(site_path):
     print(f'  Paperclip worker harness: {paint(labels[choice], "bold")} (saved in {site_path})')
 
 
+def select_hermes_model(site_path, env_path):
+    """Offer the native picker in a terminal once Hermes runs without a provider login."""
+    import doctor
+    from run import read_inputs
+    if not sys.stdin.isatty():
+        return
+    site = read_inputs(site_path, env_path)
+    guest = doctor.guest_facts(site)
+    if not guest or guest['hermes_auth']:
+        return
+    heading('Hermes model provider')
+    print('  Hermes answers only after you sign it in to a provider and choose a model.')
+    print('  For a ChatGPT plan, choose OpenAI Codex: it prints a link and a code to')
+    print('  approve on any device, then lists the models. Skip to do it later from the guide.')
+    while True:
+        answer = input('  Open the Hermes model picker now? [Y/n]: ').strip().lower()
+        if answer in ('', 'y', 'yes'):
+            break
+        if answer in ('n', 'no', 'skip'):
+            return
+        print('  Enter y to open the picker or n to skip.')
+    try:
+        subprocess.run(doctor.hermes_picker(site))
+    except KeyboardInterrupt:
+        print()
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site-config", type=Path, default=ROOT / "config/site.yaml")
+    parser.add_argument("--env-file", type=Path, default=ROOT / ".env")
     parser.add_argument('--select-harness', action='store_true')
+    parser.add_argument('--hermes-model', action='store_true')
     args = parser.parse_args(argv)
+    if args.hermes_model:
+        select_hermes_model(args.site_config, args.env_file)
+        return 0
     if args.select_harness:
         select_harness(args.site_config)
         return 0

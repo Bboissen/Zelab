@@ -2,7 +2,8 @@
 """Render docs/SETUP.md as one HTML guide, optionally with installer status.
 
 docs/SETUP.md is the only guide text. Each checklist step has a short `### title`
-heading; doctor.py attaches its status to that heading. The renderer needs
+heading and a one-line first paragraph; the rest of the step folds into Details.
+doctor.py attaches its status and open checks to that step. The renderer needs
 only the standard library because `make` runs it before the controller exists.
 """
 
@@ -46,33 +47,55 @@ PAGE = """<!doctype html>
 <title>Zelab setup</title>
 <style>
 * {{ box-sizing: border-box; }}
-body {{ max-width: 54rem; margin: 1.5rem auto; padding: 0 1.2rem; font: 15px/1.4 system-ui,sans-serif; color: #172b3a; background: #fff; }}
-h1 {{ font-size: 1.5rem; margin: 0 0 .6rem; }}
-h3 {{ font-size: 1rem; margin: 0; display: inline-flex; gap: .4rem; align-items: center; }}
-.step {{ margin: .55rem 0; }} .step p {{ display: inline; margin: 0; }}
-p {{ margin: .15rem 0 .5rem; }}
-a {{ color: #00667d; overflow-wrap: anywhere; }}
-pre, code {{ background: #edf2f7; border-radius: 4px; }}
-code {{ padding: .1rem .2rem; overflow-wrap: anywhere; }}
-pre {{ padding: .65rem; overflow-x: auto; margin: .5rem 0; }}
+:root {{ --fg: #172b3a; --muted: #5b6f7d; --bg: #f5f7f9; --card: #fff; --line: #dde4ea; --accent: #00758a;
+  --code: #edf2f7; --ok: #c8edda; --todo: #ffe8a3; --bad: #ffd0d0; --grey: #e0e7ed; }}
+body {{ max-width: 46rem; margin: 2rem auto; padding: 0 1rem; font: 15px/1.5 system-ui, sans-serif;
+  color: var(--fg); background: var(--bg); }}
+h1 {{ font-size: 1.4rem; margin: 0; }}
+h2 {{ font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 1.6rem 0 .5rem; }}
+p {{ margin: .2rem 0; }} li p {{ margin: 0; }} ul {{ margin: .3rem 0; padding-left: 1.2rem; }} li {{ margin: .15rem 0; }}
+a {{ color: var(--accent); overflow-wrap: anywhere; }}
+code {{ background: var(--code); border-radius: 4px; padding: .05rem .25rem; font-size: .88em; overflow-wrap: anywhere; }}
+pre {{ background: var(--code); border-radius: 6px; padding: .6rem; overflow-x: auto; margin: .4rem 0; }}
 pre code {{ padding: 0; }}
-.summary {{ background: #eaf6f8; border-left: 3px solid #00758a; padding: .6rem; margin-bottom: .6rem; }}
-.status {{ font-size: .75rem; border-radius: 4px; padding: .1rem .4rem; color: #172b3a; }}
-.PASS {{ background: #c8edda; }} .PENDING, .WARN {{ background: #ffe8a3; }}
-.FAIL {{ background: #ffd0d0; }} .MANUAL, .UNKNOWN {{ background: #e0e7ed; }}
-input {{ accent-color: #00758a; }}
-.failure {{ color: #a22121; }}
-.applications {{ border-top: 1px solid #91a8b6; margin-top: .7rem; padding-top: .5rem; }}
-.application {{ margin: .35rem 0; }}
-.application small {{ display: block; overflow-wrap: anywhere; }}
+.intro {{ color: var(--muted); margin: .4rem 0 0; }}
+.progress {{ display: flex; align-items: center; gap: .6rem; margin-top: .8rem; font-size: .85rem; color: var(--muted); }}
+.bar {{ flex: 1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }}
+.bar span {{ display: block; height: 100%; background: var(--accent); }}
+.apps {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .5rem; }}
+.app {{ background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .6rem .75rem; }}
+.app small {{ display: block; color: var(--muted); overflow-wrap: anywhere; }}
+.todo {{ list-style: none; padding: 0; margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }}
+.step {{ display: flex; gap: .7rem; padding: .7rem .9rem; margin: 0; border-top: 1px solid var(--line); }}
+.step:first-child {{ border-top: 0; }}
+.step.next {{ box-shadow: inset 3px 0 var(--accent); }}
+.step input {{ margin-top: .3rem; accent-color: var(--accent); width: 1rem; height: 1rem; flex: none; }}
+.step > div {{ flex: 1; min-width: 0; }}
+.head {{ display: flex; align-items: center; gap: .5rem; }}
+.head label {{ font-weight: 600; }}
+.PASS .head label {{ color: var(--muted); text-decoration: line-through; }}
+.desc {{ color: var(--muted); }}
+.hint {{ font-size: .88rem; border-radius: 4px; padding: .25rem .5rem; margin: .35rem 0; background: var(--todo); }}
+.hint.FAIL {{ background: var(--bad); }} .hint.WARN {{ background: var(--grey); }}
+details {{ margin-top: .3rem; font-size: .92rem; }}
+summary {{ cursor: pointer; color: var(--accent); font-size: .85rem; }}
+.more {{ background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .5rem .9rem; }}
+.status {{ font-size: .72rem; border-radius: 4px; padding: .05rem .4rem; color: #172b3a; }}
+.status.PASS {{ background: var(--ok); }} .status.PENDING, .status.WARN {{ background: var(--todo); }}
+.status.FAIL {{ background: var(--bad); }} .status.MANUAL, .status.UNKNOWN {{ background: var(--grey); }}
 @media (prefers-color-scheme: dark) {{
-  body {{ color: #edf3fa; background: #172431; }}
-  pre, code {{ background: #243646; }} a {{ color: #85e3f1; }}
-  .summary {{ background: #183c46; }} .failure {{ color: #ffabab; }}
+  :root {{ --fg: #edf3fa; --muted: #9fb2c1; --bg: #121c25; --card: #1a2733; --line: #2c3d4c; --accent: #5fd0e0;
+    --code: #243646; --todo: #5a4a14; --bad: #5c2626; --grey: #2c3d4c; }}
+  .hint {{ color: var(--fg); }}
 }}
-@media print {{ body {{ font-size: 10pt; margin: 0; }} }}
+@media print {{ body {{ background: #fff; margin: 0; }} details {{ display: block; }} }}
 </style></head><body>
-{title}{summary}{body}{applications}
+<header><h1>{title}</h1>{intro}{progress}</header>
+{applications}<h2>To do</h2>
+<ol class="todo">
+{steps}
+</ol>
+{extra}
 </body></html>
 """
 
@@ -91,12 +114,7 @@ def inline(text, link_base=None):
 
         def link(match):
             label, target = match.group(1), html.unescape(match.group(2))
-            if callable(link_base) and not re.match(r"[a-z]+:|#", target):
-                resolved = link_base(target)
-                if resolved is None:
-                    return f'{label} (in the server checkout: <code>{html.escape(target)}</code>)'
-                target = resolved
-            elif link_base and not re.match(r"[a-z]+:|#", target):
+            if link_base and not re.match(r"[a-z]+:|#", target):
                 path, _, anchor = target.partition("#")
                 target = (link_base / path).resolve().as_uri() + (f"#{anchor}" if anchor else "")
             return f'<a href="{html.escape(target)}">{label}</a>'
@@ -107,7 +125,7 @@ def inline(text, link_base=None):
 LIST_ITEM = re.compile(r"(\d+\.|-) ")
 
 
-def blocks(lines, link_base, heading=None):
+def blocks(lines, link_base):
     """Render the Markdown subset used by SETUP.md (no raw HTML is passed through)."""
     out, i = [], 0
     while i < len(lines):
@@ -120,7 +138,7 @@ def blocks(lines, link_base, heading=None):
             i = end + 1
         elif match := re.match(r"(#{1,3}) (.*)", line):
             level, text = len(match.group(1)), match.group(2)
-            out.append(heading(level, text) if heading else f"<h{level}>{inline(text, link_base)}</h{level}>")
+            out.append(f"<h{level}>{inline(text, link_base)}</h{level}>")
             i += 1
         elif line.startswith("|"):
             rows = []
@@ -168,42 +186,77 @@ def blocks(lines, link_base, heading=None):
     return "\n".join(out)
 
 
-def render_html(statuses=None, generated=None, checks=None, link_base=None, standalone=False, applications=None):
-    """Render only the short setup checklist; do not append other documents."""
-    statuses, checks = statuses or {}, checks or {}
+def code_spans(text):
+    """Escape doctor's check text, keeping only its `code` spans."""
+    return "".join(f"<code>{html.escape(part[1:-1])}</code>" if part.startswith("`") and part.endswith("`")
+                   and len(part) > 1 else html.escape(part) for part in re.split(r"(`[^`]*`)", text))
 
-    def heading(level, text):
-        item = STEPS.get(text) if level == 3 else None
-        if item is None:
-            anchor = ' id="guide-top"' if level == 1 else ""
-            return f"<h{level}{anchor}>{inline(text, link_base)}</h{level}>"
+
+def sections(lines):
+    """Split SETUP.md into its title, intro, `### step`s and closing `## section`s."""
+    title, intro, steps, extra = "", [], {}, []
+    current, fenced = intro, False
+    for line in lines:
+        if line.startswith("```"):
+            fenced = not fenced
+        if not fenced and line.startswith("# "):
+            title = line[2:]
+        elif not fenced and line.startswith("### "):
+            current = steps.setdefault(line[4:], [])
+        elif not fenced and line.startswith("## "):
+            extra.append((line[3:], []))
+            current = extra[-1][1]
+        else:
+            current.append(line)
+    return title, intro, steps, extra
+
+
+def render_html(statuses=None, generated=None, checks=None, link_base=None, applications=None):
+    """Render SETUP.md as a short to-do list; each step's extra text folds away."""
+    statuses, checks = statuses or {}, checks or {}
+    title, intro, steps, extra = sections(GUIDE.read_text().splitlines())
+    following = next((item for item in ITEMS if statuses.get(item.key, ("",))[0] != "PASS"), None) \
+        if generated else None
+
+    rows = []
+    for item in ITEMS:
+        text = "\n".join(steps[item.title]).strip().split("\n\n", 1)
+        desc, more = inline(" ".join(text[0].split()), link_base), text[1] if len(text) > 1 else ""
         label, detail = statuses.get(item.key, (None, ""))
         done = " checked disabled" if label == "PASS" else ""
         badge = (f'<span class="status {html.escape(label)}" title="{html.escape(detail)}">'
                  f"{html.escape(BADGES.get(label, label))}</span>") if label else ""
-        failures = "".join(f'<p class="failure">{html.escape(name)}: {html.escape(info)}</p>'
-                           for state, name, info in checks.get(item.key, []) if state == 'FAIL')
-        return (f'<h3 id="{item.key}"><input type="checkbox" id="step-{item.key}"{done}>'
-                f'<label for="step-{item.key}">{inline(text, link_base)}</label>{badge}</h3>' + failures)
+        hints = "".join(f'<p class="hint {html.escape(state)}"><strong>{html.escape(name)}</strong>: '
+                        f"{code_spans(info)}</p>"
+                        for state, name, info in checks.get(item.key, []) if state != "PASS" and label != "MANUAL")
+        details = (f'<details{" open" if item is following else ""}><summary>Details</summary>'
+                   f"{blocks(more.splitlines(), link_base)}</details>") if more else ""
+        state = f' class="step {html.escape(label or "")}{" next" if item is following else ""}"'
+        rows.append(f'<li{state} id="{item.key}"><input type="checkbox" id="step-{item.key}"{done}><div>'
+                    f'<div class="head"><label for="step-{item.key}">{html.escape(item.title)}</label>{badge}</div>'
+                    f'<p class="desc">{desc}</p>{hints}{details}</div></li>')
 
-    summary = ""
+    progress = ""
     if generated:
-        done = sum(statuses.get(item.key, ("",))[0] == "PASS" for item in ITEMS)
-        following = next((item for item in ITEMS if statuses.get(item.key, ("",))[0] != "PASS"), None)
+        count = sum(statuses.get(item.key, ("",))[0] == "PASS" for item in ITEMS)
         upcoming = f' Next: <a href="#{following.key}">{html.escape(following.title)}</a>.' if following else ""
-        summary = f'<p class="summary">{done} of {len(ITEMS)} steps done.{upcoming}</p>'
-    body = blocks(GUIDE.read_text().splitlines(), link_base, heading)
-    body = re.sub(r'(<h3[^>]*>.*?</h3>)\n(<p>.*?</p>)', r'<div class="step">\1 \2</div>', body, flags=re.S)
-    title = re.search(r'<h1 id="guide-top">.*?</h1>', body).group(0)
-    body = body.replace(title, "", 1)
+        progress = (f'<div class="progress"><div class="bar"><span style="width:{100 * count // len(ITEMS)}%">'
+                    f"</span></div><span>{count} of {len(ITEMS)} steps done.{upcoming} "
+                    f"Updated {html.escape(generated)}.</span></div>")
+
     links = []
     for app in applications or []:
         name, url = html.escape(app['name']), html.escape(app['url'], quote=True)
-        entry = f'<a href="{url}">{name}</a>' if app['tailnet'] else f'<strong>{name}</strong> <code>{url}</code> (server only)'
-        links.append(f'<div class="application">{entry} — {html.escape(app["user"])}'
+        entry = f'<a href="{url}"><strong>{name}</strong></a>' if app['tailnet'] \
+            else f'<strong>{name}</strong> <small><code>{url}</code> (server only)</small>'
+        links.append(f'<div class="app">{entry}<small>Login: {html.escape(app["user"])}</small>'
                      f'<small>Password: <code>{html.escape(app["password"])}</code></small></div>')
-    apps = '<div class="applications">' + ''.join(links) + '</div>' if links else ''
-    return PAGE.format(title=title, summary=summary, body=body, applications=apps)
+    apps = f'<h2>Your apps</h2><div class="apps">{"".join(links)}</div>' if links else ""
+
+    rest = "".join(f'<h2>{inline(name, link_base)}</h2><div class="more">{blocks(body, link_base)}</div>'
+                   for name, body in extra)
+    return PAGE.format(title=inline(title, link_base), intro=f'<p class="intro">{inline(" ".join(" ".join(intro).split()), link_base)}</p>',
+                       progress=progress, applications=apps, steps="\n".join(rows), extra=rest)
 
 
 def main(argv=None):

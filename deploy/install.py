@@ -24,7 +24,9 @@ import time
 
 import doctor
 import controller
-from console import colored, heading, interactive, mark, paint, terminal_width, unicode
+from ansible_log import Progress, message, open_private_log, play_name, task_name
+from console import colored, heading, interactive, mark, paint, plain, terminal_width, unicode
+import shell
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,12 +36,14 @@ DEFAULT_PRIVATE_DIR = Path.home() / ".local/state/zelab-deployment"
 STAGES = (
     ("Check host prerequisites", "Host packages"),
     ("Create the pinned Debian guest", "Hermes VM"),
+    ("Start pinned host downloads", "Downloads"),
     ("Verify guest administrator", "Hermes VM"),
     ("Replace retired guest egress", "VM firewall"),
     ("Build pinned upstream Hermes", "Hermes build"),
     ("Install pinned unmodified Hermes", "Hermes"),
     ("Install pinned native Paperclip", "Paperclip"),
     ("Provision native host worker", "Host workers"),
+    ("Finish pinned Hermes", "Hermes dashboard"),
     ("Prepare a native Research profile", "Research profile"),
     ("Prepare parked native bot", "Reserve bots"),
     ("Configure native Paperclip host worker", "Paperclip agents"),
@@ -50,16 +54,17 @@ STAGES = (
     ("Prepare the host vault", "Shared notes"),
     ("Mount explicitly shared notes", "Shared notes"),
     ("Deploy the native Obsidian", "Obsidian"),
+    ("Remove superseded", "Cleanup"),
 )
-APPLICATION = re.compile(r'"msg": "(\w+) [\w ]+?: (HTTP \d+ ready|HTTP \d+ needs attention|VM stopped)"')
+APPLICATION = re.compile(r'(\w+) [\w ]+?: (HTTP \d+ ready|HTTP \d+ needs attention|VM stopped)')
 SECTIONS = (
     ("Prepare the host", {"Host packages"}),
-    ("Build the Hermes VM and runtime", {"Hermes VM", "VM firewall", "Hermes build", "Hermes"}),
-    ("Install applications, workers and bots", {"Paperclip", "Host workers", "Research profile",
+    ("Build the Hermes VM and runtime", {"Hermes VM", "Downloads", "VM firewall", "Hermes build", "Hermes"}),
+    ("Install applications, workers and bots", {"Paperclip", "Host workers", "Hermes dashboard", "Research profile",
                                               "Reserve bots", "Paperclip agents", "Task bridge",
                                               "Hermes gateway", "Hermes API"}),
     ("Connect shared notes and Obsidian", {"Shared notes", "Obsidian"}),
-    ("Verify services and prepare your guide", set()),
+    ("Verify services and prepare your guide", {"Cleanup"}),
 )
 
 
@@ -91,18 +96,10 @@ class Log:
     def open(self, private_dir):
         if self.file:
             return
-        try:
-            logs = Path(private_dir) / "logs"
-            logs.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            logs.mkdir(mode=0o700, exist_ok=True)
-            if logs.stat().st_uid != os.getuid():
-                return
-            stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-            path = logs / f"install-{stamp}.log"
-            self.file = os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w")
-        except OSError:
+        opened = open_private_log(private_dir)
+        if not opened:
             return
-        self.path = path
+        self.path, self.file = opened
         self.file.write("".join(self.buffer))
         self.file.flush()
         self.buffer = []
@@ -212,7 +209,7 @@ class Installer:
         if terminal_output and colored():
             child_env.pop("NO_COLOR", None)
             child_env["CLICOLOR_FORCE"] = "1"
-        process = subprocess.Popen(["rtk", "proxy", *argv], cwd=ROOT, stdout=subprocess.PIPE,
+        process = subprocess.Popen(shell.rtk(*argv), cwd=ROOT, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True, bufsize=1,
                                    env=child_env)
         try:
@@ -275,7 +272,7 @@ class Installer:
                                            "import os,sys; sys.exit(os.geteuid() != 0)"])
         if not granted:
             self.screen.say("Zelab needs your sudo password once, so the rest can run unattended.")
-            if subprocess.run(["rtk", "proxy", "sudo", "-p", "    sudo password for %u: ", "-v"]).returncode:
+            if subprocess.run(shell.rtk("sudo", "-p", "    sudo password for %u: ", "-v")).returncode:
                 self.screen.start("Administrator")
                 self.fail("sudo was not authorized")
         self.screen.start("Administrator")
@@ -315,6 +312,16 @@ class Installer:
             self.screen.start('Worker harness')
             self.fail('selection could not be saved')
 
+    def hermes_model(self):
+        # Native picker and device-code login need the terminal; the guide covers a skip.
+        command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/configure.py', *self.inputs(), '--hermes-model']
+        # A handler, unlike SIG_IGN, is reset on exec, so Ctrl-C still reaches the picker.
+        previous = signal.signal(signal.SIGINT, lambda *_: None)
+        try:
+            subprocess.run(command, cwd=ROOT)
+        finally:
+            signal.signal(signal.SIGINT, previous)
+
     def open_log(self):
         """The log lives in the site's private directory once the inputs can be read."""
         code = ("import sys,json; sys.path.insert(0, 'deploy'); from pathlib import Path; from run import read_inputs; "
@@ -340,8 +347,8 @@ class Installer:
         # Recover an orphaned runtime boost before checking available memory.
         # Otherwise a killed installer could leave too little headroom to reach
         # run.py, whose finally block normally restores the resources.
-        code, tail = self.capture(['sudo', '-n', '/usr/local/bin/rtk', 'proxy', str(VENV_PYTHON),
-                                   'deploy/install_resources.py', 'restore', *self.inputs()])
+        code, tail = self.capture(shell.as_root(VENV_PYTHON, 'deploy/install_resources.py', 'restore',
+                                                *self.inputs()))
         if code:
             self.tool_failed('VM resource recovery failed', tail)
         code, tail = self.capture([str(VENV_PYTHON), "deploy/doctor.py", *self.inputs(), "--brief"],
@@ -354,6 +361,8 @@ class Installer:
         state = {"stage": None, "changes": 0, "task": "", "cause": None,
                  "started": 0.0, "resources": "", "deployment_failed": False,
                  "failed_stage": None, "restored": False}
+        # Per-task durations for speed work; names only, never task output.
+        tasks = Progress(on_task=lambda record: self.log.write('TASK_TIMING ' + json.dumps(record) + '\n'))
 
         def close_stage(result="PASS"):
             if state["stage"]:
@@ -368,6 +377,7 @@ class Installer:
                     self.screen.finish("PASS", note)
 
         def on_line(line):
+            tasks.feed(line)
             if line.startswith('RESOURCE RESTORE START'):
                 if state['deployment_failed']:
                     close_stage('FAIL')
@@ -387,18 +397,18 @@ class Installer:
                 state['deployment_failed'] = True
             elif line.startswith('Installation resources: '):
                 state['cause'] = line.removeprefix('Installation resources: ').strip()
-            elif '"msg": "Installation VM resources: ' in line:
-                state['resources'] = line.split('Installation VM resources: ', 1)[1].split('"', 1)[0]
-            elif line.startswith("PLAY [") and "RECAP" not in line:
-                stage = stage_of(line[6:].split("]", 1)[0])
+            elif (text := message(line) or '').startswith('Installation VM resources: '):
+                state['resources'] = text.removeprefix('Installation VM resources: ')
+            elif (play := play_name(line)) is not None:
+                stage = stage_of(play)
                 if stage != state["stage"]:
                     close_stage()
                     state.update(stage=stage, changes=0, started=time.monotonic(), resources='')
                     section = next((index for index, (_, stages) in enumerate(SECTIONS) if stage in stages), 2)
                     self.screen.section(section)
                     self.screen.start(stage)
-            elif line.startswith("TASK ["):
-                state["task"] = line[6:].split("]", 1)[0].split(" : ", 1)[-1]
+            elif (task := task_name(line)) is not None:
+                state["task"] = task.split(" : ", 1)[-1]
                 self.screen.update(state["task"])
             elif line.startswith("changed: ["):
                 state["changes"] += 1
@@ -406,9 +416,12 @@ class Installer:
                 state["cause"] = line[9:].strip()
 
         self.screen.start("Deployment")
-        code, _ = self.capture([str(VENV_PYTHON), "deploy/run.py", *self.inputs(), "deploy/site.yaml"],
-                               on_line, env={"ZELAB_INSTALL_LOG": str(self.log.path or ""),
-                                             "ZELAB_PASSWORD_DIR": self.password_dir or ''})
+        try:
+            code, _ = self.capture([str(VENV_PYTHON), "deploy/run.py", *self.inputs(), "deploy/site.yaml"],
+                                   on_line, env={"ZELAB_INSTALL_LOG": str(self.log.path or ""),
+                                                 "ZELAB_PASSWORD_DIR": self.password_dir or ''})
+        finally:
+            tasks.finish_task()
         if code:
             if state['failed_stage'] and state['restored']:
                 close_stage()
@@ -426,7 +439,7 @@ class Installer:
         results = {}
 
         def on_line(line):
-            if found := APPLICATION.search(line):
+            if found := APPLICATION.fullmatch(message(line) or ''):
                 results[found.group(1)] = found.group(2)
 
         code, _ = self.capture([str(VENV_PYTHON), "deploy/run.py", *self.inputs(), "deploy/status.yaml"], on_line)
@@ -443,7 +456,7 @@ class Installer:
                                 "--brief", "--open", "--after-install", "--guide-mode", self.guide_mode],
                                on_line=lambda line: lines.append(line.rstrip()), terminal_output=True,
                                env={"ZELAB_PASSWORD_DIR": self.password_dir or ''})
-        plain_lines = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in lines]
+        plain_lines = [plain(line) for line in lines]
         if code and not any(line.strip().startswith(("✗", "X ")) for line in plain_lines):
             self.tool_failed("could not generate guide", lines)
         self.screen.finish("FAIL" if code else "PASS", "could not be completed" if code else "ready")
@@ -479,6 +492,7 @@ class Installer:
                 self.deploy()
                 self.screen.section(4)
                 self.services()
+                self.hermes_model()
                 self.ui_passwords('finish')
                 self.summary()
             self.password_dir = None
@@ -512,7 +526,7 @@ class Installer:
         except (OSError, ValueError, subprocess.SubprocessError):
             code, lines = 1, []
         guide_index = next((index for index, line in enumerate(lines)
-                            if re.sub(r"\x1b\[[0-9;]*m", "", line).strip().startswith("Guide:")), None)
+                            if plain(line).strip().startswith("Guide:")), None)
         if not code and guide_index is not None:
             for line in lines[guide_index:]:
                 print("  " + line)

@@ -56,6 +56,15 @@ class ChecklistTest(unittest.TestCase):
         self.assertIn('Next: <a href="#admin">', page)
         self.assertIn('id="step-host" checked disabled', page)
 
+    def test_steps_show_one_line_and_fold_the_rest(self):
+        page = checklist.render_html({'host': ('PASS', ''), 'admin': ('PENDING', 'sudo')}, 'now',
+                                     {'admin': [('PENDING', 'Sudo', 'Run `sudo -v`'), ('PASS', 'Disk', 'ok')]})
+        self.assertIn('class="step PENDING next" id="admin"', page)
+        self.assertIn('<p class="hint PENDING"><strong>Sudo</strong>: Run <code>sudo -v</code></p>', page)
+        self.assertNotIn('<strong>Disk</strong>', page)
+        self.assertEqual(page.count('<details open>'), 1)
+        self.assertNotIn('<h3', page)
+
     def test_private_guide_distinguishes_tailnet_links_from_server_local_urls(self):
         apps = [{'name': 'Hermes', 'url': 'https://box.example.ts.net:8444/', 'user': 'operator',
                  'password': '/private/hermes-dashboard.password', 'tailnet': True},

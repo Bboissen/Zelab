@@ -41,20 +41,19 @@ COMPATIBILITY_FIELDS = (
 
 def selected_paths(site, repository, require_existing=True):
     required = [Path(site[name]) for name in ['vm_data', 'vm_root', 'paperclip_home',
-                'worker_ops_home', 'worker_code_home', 'notes_vault_dir',
-                'obsidian_state_dir', 'private_dir']]
-    for path in required:
+                'notes_vault_dir', 'obsidian_state_dir', 'private_dir']]
+    # Skip has no worker home, and sites before the single-worker layout keep a Coding home.
+    workers = [Path(site[name]) for name in ['worker_ops_home', 'worker_code_home']]
+    workers = [path for path in workers if not require_existing or path.exists()]
+    for path in required + workers:
         absolute_path(str(path), 'persistent state')
         if (require_existing and not path.is_dir()) or path.resolve() != path:
             raise ValueError('A required persistent directory is absent or uses a symlink alias')
-    paths = required + [Path('/etc/ssh')]
+    paths = required + workers + [Path('/etc/ssh')]
     for pattern in ['/etc/zelab-*', '/etc/systemd/system/zelab-*',
                     '/etc/systemd/system/var-lib-zelab*', '/etc/sudoers.d/zelab-*']:
         paths.extend(Path('/').glob(pattern.lstrip('/')))
-    # Retain former LAN proxy state when present; fresh sites do not need it.
-    for name in [site.get('ui_state_dir', '/var/lib/zelab-ui'),
-                 site.get('ui_config_dir', '/etc/zelab-ui'),
-                 site.get('obsidian_config_dir', '/etc/zelab-obsidian'),
+    for name in [site.get('obsidian_config_dir', '/etc/zelab-obsidian'),
                  site.get('vm_bootstrap_dir', ''), site.get('deploy_key', ''),
                  site.get('guest_known_hosts', ''),
                  site.get('worker_codex_auth_source', ''),

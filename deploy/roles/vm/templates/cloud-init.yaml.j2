@@ -10,13 +10,16 @@ users:
     lock_passwd: true
     sudo: 'ALL=(ALL:ALL) NOPASSWD: ALL'
     ssh_authorized_keys:
-      - 'restrict,from="10.0.2.2" {{ lookup("ansible.builtin.file", deploy_key + ".pub") }}'
+      # restrict implies no-pty; the owner's model picker needs a terminal.
+      - 'restrict,pty,from="10.0.2.2" {{ lookup("ansible.builtin.file", deploy_key + ".pub") }}'
 ssh_keys:
   ed25519_private: |
 {{ fresh_host_key.content | b64decode | indent(4, true) }}
   ed25519_public: {{ fresh_host_public.content | b64decode | trim }}
 package_update: true
-packages: [python3, sudo, nftables]
+# One first-boot apt run covers the later Hermes and notes package tasks, which
+# then only confirm them.
+packages: [python3, sudo, nftables, git, curl, tar, ca-certificates, libatomic1, acl, sshfs]
 write_files:
   - path: /etc/nftables.conf
     owner: root:root

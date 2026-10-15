@@ -21,6 +21,14 @@ Run from the checkout with `rtk proxy`. Only these seven Make commands remain:
 `make` includes readiness checks, resumable provisioning, private logs and the
 guide. Source checks are developer tooling: `rtk proxy python3 tools/check.py`.
 
+A successful `make` ends by deleting what the current pins no longer use:
+consumed downloads and the Hermes build tree in `/var/cache/zelab`, superseded
+runtimes in `/opt/zelab-tools`, earlier Paperclip releases, npm caches, unused
+earlier Obsidian images, guest package files and superseded Hermes installers,
+and all but the five newest private install logs. The guest then returns freed
+blocks to the host so `disk.qcow2` shrinks. Shared tools stay while another Zelab
+guest on the host may use them. A failed run removes nothing, so it can resume.
+
 `clean` removes `.venv` and Python caches and clears repo choices from the selected
 local, untracked site file: harness/model, VM resource limits and install boost,
 host reserve preferences, optional apps, profile counts/audiences and Discord IDs.
@@ -52,27 +60,29 @@ Do not mutate the same state manually during maintenance.
 
 ## Inputs and ownership
 
-Setup offers `worker_harness: codex`, `claude`, `both`, or `none` (skip), saving the
+Setup offers `worker_harness: codex`, `claude` or `none` (skip), saving the
 choice in the site file. Every interactive run asks again with the saved choice
-as its default. Noninteractive setup retains the saved choice or defaults to skip. Only the
-selected pinned CLIs are installed during Host workers; there is no mandatory
-Codex stage. `worker_model: ''` uses the harness's native default.
+as its default. Noninteractive setup retains the saved choice or defaults to skip;
+the removed `both` stops unattended runs until a terminal run replaces it. Only the
+selected pinned CLI is installed during Host workers.
 
-To enable skipped workers later, select a harness and rerun `rtk proxy make`;
-only unchanged installer placeholders are activated. Existing worker adapters,
-models and logins remain as configured in Paperclip. Change an existing agent's
-harness in Paperclip's native UI, retain its declared SSH environment and test
-the environment before running it. Selecting `none` does not uninstall an
-existing CLI or deactivate a previously configured worker.
+A harness creates one Paperclip agent, **Operations**: its adapter, installed
+command (`/usr/local/bin/zelab-codex` or `zelab-claude`), `Zelab Operations host`
+SSH environment, adapter environment (Claude: `CLAUDE_CONFIG_DIR`,
+`DISABLE_UPDATES=1`, `DISABLE_AUTOUPDATER=1`), permissions and wake on demand are
+set, and it is active. Only the model is left to you; `worker_model` presets one,
+and otherwise the CLI default applies until you choose. The install also queues
+**Prove Operations host access and sudo** in Backlog, assigned to Operations.
+Backlog never wakes an agent; moving the task to Todo starts it.
 
-With `both`, both CLIs are installed and new workers remain paused until an
-adapter and its declared SSH environment are chosen in Paperclip. Inert placeholders
-have no execution environment because the native process adapter supports only
-local execution. Authenticate only the harnesses you intend to
-use. Choose the CLI engine and the installed command; Claude Operations uses
-its account's `.claude` directory via `CLAUDE_CONFIG_DIR` plus native
-`DISABLE_UPDATES=1` and `DISABLE_AUTOUPDATER=1` settings. Enable wake on demand
-and resume Operations only after Test Environment succeeds; Coding remains paused.
+Skip creates no worker, worker account, sudo grant or Discord task bridge; the
+Operations project and the Hermes Operations remote agent remain. Choose a harness
+later and rerun `rtk proxy make` to add the worker. Existing worker adapters,
+models and logins remain as configured in Paperclip; a reapply refuses a worker
+moved off its SSH environment, because the adapter would then run as Paperclip's
+own account. Selecting `none` does not uninstall an existing CLI or remove a
+previously configured worker. Sites from the earlier two-worker layout keep
+their Coding agent until `make re`.
 
 Claude Code login belongs to the Operations account, under its `.claude`
 directory; worker homes are backed up and deleted by a full clean. Personal
@@ -102,7 +112,7 @@ explicitly choose an absent/empty override file for a separate guest test.
 | VM disk and cloud-init | `/var/lib/zelab-vm/{data,bootstrap}` |
 | Hermes native state inside VM | `/var/lib/zelab/hermes/home` |
 | Paperclip database, uploads, agent state | `/var/lib/zelab-paperclip` |
-| Host worker homes | `/var/lib/zelab-ops`, `/var/lib/zelab-code` |
+| Host worker home | `/var/lib/zelab-ops` |
 | Durable notes | `/var/lib/zelab-vault/{Private,Shared}` |
 | Obsidian desktop configuration | `/var/lib/zelab-obsidian` |
 | Deployment keys, Hermes password hash and resource IDs | Configured `private_dir` |
@@ -110,7 +120,7 @@ explicitly choose an absent/empty override file for a separate guest test.
 
 Hermes native memory stays in Hermes. Paperclip task state stays in Paperclip.
 The vault holds durable notes and runbooks, with task references where useful.
-Operations can access Private and Shared; Research/Coding get Shared only.
+Operations can access Private and Shared; Research gets Shared only.
 Reserves have no notes mount until selected in `notes_shared_profiles`.
 
 Administration backends bind to localhost; Tailscale Serve supplies private HTTPS.
@@ -189,8 +199,10 @@ release stays pinned. Hermes dependency manifests are qualified as described in
 
 Paperclip release directories include a digest of Node, the package declaration
 and dependency lock. A candidate installs and verifies beside the active release;
-its service switches paths only after installation succeeds. Earlier directories
-remain available. Persistent database state is separate: switching binaries alone
+its service switches paths only after installation succeeds. The run's final
+cleanup then removes earlier release directories; to return to an earlier
+runtime, check out its matching source snapshot and rerun `make`, which installs
+that release again. Persistent database state is separate: switching binaries alone
 is **not** a database rollback. Before a deployed update, take a consistent backup,
 keep its matching source snapshot, and verify restore with the previous runtime.
 Restore the database/files/keys together before activating an older runtime when

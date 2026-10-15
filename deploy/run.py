@@ -1,7 +1,6 @@
 """Read private deployment paths as data, then invoke the native Ansible CLI."""
 
 import argparse
-import datetime
 import json
 import os
 from pathlib import Path
@@ -15,9 +14,11 @@ from contextlib import nullcontext
 
 import yaml
 
+from ansible_log import Progress, open_private_log
 from doctor import platform_checks, report_checks
 from install_resources import resource_fraction
 from configure import operator
+import shell
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -123,6 +124,10 @@ def derive_defaults(site):
         site.setdefault("guest_known_hosts", site["private_dir"] + "/guest_known_hosts")
     if isinstance(site.get("vm_data"), str):
         site.setdefault("vm_disk", site["vm_data"] + "/disk.qcow2")
+    # Legacy Coding worker of the earlier two-worker layout: never created, but
+    # clean, backup and restore still recognize (and refuse to confuse) it.
+    site.setdefault("worker_code_user", "zelab-code")
+    site.setdefault("worker_code_home", "/var/lib/zelab-code")
     hosts = site.get("paperclip_allowed_hosts", ["127.0.0.1", "10.0.2.2"])
     if isinstance(hosts, list) and site.get("ui_tailscale_enabled") is True \
             and isinstance(site.get("ui_tailscale_hostname"), str) and site["ui_tailscale_hostname"] not in hosts:
@@ -135,21 +140,43 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
     site = load_yaml(defaults_path) if defaults_path else {}
     site.update(load_yaml(site_path))
     if env_path is not None and (env_path.exists() or env_path.is_symlink()):
-        seen = set()
-        for number, line in enumerate(env_path.read_text().splitlines(), 1):
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            name, separator, value = line.partition("=")
-            name, value = name.strip(), value.strip()
-            if not separator or name not in ENV_FIELDS or name in seen:
-                raise ValueError(f"Invalid or duplicate deployment input at .env line {number}")
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                value = value[1:-1]
-            site[ENV_FIELDS[name]] = absolute_path(value, name)
-            seen.add(name)
+        site.update(read_env(env_path))
     derive_defaults(site)
     resource_fraction(site.get('vm_install_resource_fraction', 0.7))
+    check_private_inputs(site)
+    check_identities(site)
+    state_paths = ["vm_data", "vm_root", "paperclip_home", "worker_ops_home", "worker_code_home",
+                   *check_applications(site)]
+    check_resources_and_names(site)
+    state_paths.append("vm_bootstrap_dir")
+    check_state_layout(site, state_paths, inspect_private)
+    check_ports(site)
+    if inspect_private:
+        check_guest_pin(site)
+    if site.get("ui_tailscale_enabled", False):
+        check_tailnet(site)
+    return site
+
+
+def read_env(env_path):
+    """The four .env path selectors, as data; never shell syntax."""
+    values, seen = {}, set()
+    for number, line in enumerate(env_path.read_text().splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, separator, value = line.partition("=")
+        name, value = name.strip(), value.strip()
+        if not separator or name not in ENV_FIELDS or name in seen:
+            raise ValueError(f"Invalid or duplicate deployment input at .env line {number}")
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        values[ENV_FIELDS[name]] = absolute_path(value, name)
+        seen.add(name)
+    return values
+
+
+def check_private_inputs(site):
     if not site.get("operator_user"):
         raise ValueError("Set operator_user in config/site.yaml (rtk proxy make writes it for you)")
     paths = ["private_dir", "deploy_key", "guest_known_hosts", "vm_disk", "vm_data", "vm_root",
@@ -167,6 +194,9 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
         raise ValueError('Deployment key and host-key pin must be different files')
     if "hermes_auth_import" in site:
         absolute_path(site["hermes_auth_import"], "hermes_auth_import")
+
+
+def check_identities(site):
     for name in ("vm_isolated", "notes_enabled", "obsidian_enabled", "ui_tailscale_enabled"):
         if type(site.get(name)) is not bool:
             raise ValueError(f"{name} must be an explicit YAML boolean")
@@ -176,7 +206,11 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
     users = [site[name] for name in identities]
     if len(users) != len(set(users)) or "root" in users or site["guest_user"] == "root":
         raise ValueError("Operator and service identities must be distinct non-root accounts")
-    state_paths = ["vm_data", "vm_root", "paperclip_home", "worker_ops_home", "worker_code_home"]
+
+
+def check_applications(site):
+    """Validate the optional notes/Obsidian inputs; return their state path names."""
+    state_paths = []
     for enabled, name in (("notes_enabled", "notes_vault_dir"), ("obsidian_enabled", "obsidian_state_dir")):
         if site[enabled]:
             absolute_path(site.get(name), name)
@@ -188,6 +222,10 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
             raise ValueError("notes_shared_profiles must be a list of profile names")
         if len(profiles) != len(set(profiles)):
             raise ValueError("notes_shared_profiles must not repeat an audience")
+    return state_paths
+
+
+def check_resources_and_names(site):
     for name, minimum, maximum in (("vm_cpu", 1, 256), ("vm_memory_mb", 1024, 1048576),
                                     ("host_disk_reserve_gib", 0, 1048576), ("host_memory_reserve_gib", 0, 1048576),
                                     ("hermes_reserve_count", 0, 10)):
@@ -198,8 +236,9 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
     require_pattern(site, "worker_ssh_host", r"(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)")
     for name in ("dashboard_username", "obsidian_username"):
         require_pattern(site, name, r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
-    if site.get('worker_harness') not in ('codex', 'claude', 'both', 'none'):
-        raise ValueError('worker_harness must be codex, claude, both or none')
+    # 'both' remains readable so clean, backup and restore still work on older sites.
+    if site.get('worker_harness') not in ('codex', 'claude', 'none', 'both'):
+        raise ValueError('worker_harness must be codex, claude or none')
     for name in ('hermes_initial_model', 'worker_model', 'worker_codex_model'):
         if name in site and site[name] != '':
             require_pattern(site, name, r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,127}")
@@ -217,11 +256,14 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
         if not isinstance(site.get(name), str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,47}", site[name]):
             raise ValueError(f"Creation requires an explicit safe {name}")
     absolute_path(site.get("vm_bootstrap_dir"), "vm_bootstrap_dir")
-    state_paths.append("vm_bootstrap_dir")
     # The pinned Debian image plus Hermes dependencies need about 6 GiB.
     if type(site.get("vm_disk_gib")) is not int or site["vm_disk_gib"] < 8:
         raise ValueError("vm_disk_gib must be an integer of at least 8 (GiB)")
-    # These directories are recursively owned/mounted by different identities.
+
+
+def check_state_layout(site, state_paths, inspect_private):
+    """These directories are recursively owned/mounted by different identities."""
+    private = Path(site['private_dir'])
     for index, name in enumerate(state_paths):
         path = Path(site[name])
         if len(path.parts) < 4:
@@ -246,6 +288,9 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
         raise ValueError("VM disk must be the declared data directory's disk.qcow2")
     if site["vm_data"] == site["vm_root"]:
         raise ValueError("VM data and runtime root must be separate directories")
+
+
+def check_ports(site):
     ports = ["guest_ssh_port", "guest_dashboard_port", "guest_api_port", "paperclip_port", "paperclip_db_port"]
     if site.get("notes_enabled", False):
         ports.append("notes_sftp_port")
@@ -262,21 +307,24 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
     values.append(worker_port)
     if len(values) != len(set(values)):
         raise ValueError("Host component ports conflict")
-    if inspect_private:
-        pin = Path(site["guest_known_hosts"])
-        if pin.exists():
-            expected = f"[127.0.0.1]:{site['guest_ssh_port']}"
-            hosts = [line.split()[0] for line in pin.read_text().splitlines() if line.strip() and not line.startswith("#")]
-            if any(host != expected for host in hosts):
-                raise ValueError("Fresh guest_known_hosts points at another guest; select separate .env paths before creation")
-    if site.get("ui_tailscale_enabled", False):
-        require_pattern(site, "ui_tailscale_hostname", r"[a-z0-9][a-z0-9.-]*\.ts\.net")
-        tail_ports = [site.get("ui_tail_hermes_port"), site.get("ui_tail_paperclip_port")]
-        if site.get("obsidian_enabled", False):
-            tail_ports.append(site.get("ui_tail_obsidian_port"))
-        if any(type(value) is not int or not 0 < value < 65536 for value in tail_ports) or len(tail_ports) != len(set(tail_ports)):
-            raise ValueError("Tailnet HTTPS ports must be valid and distinct")
-    return site
+
+
+def check_guest_pin(site):
+    pin = Path(site["guest_known_hosts"])
+    if pin.exists():
+        expected = f"[127.0.0.1]:{site['guest_ssh_port']}"
+        hosts = [line.split()[0] for line in pin.read_text().splitlines() if line.strip() and not line.startswith("#")]
+        if any(host != expected for host in hosts):
+            raise ValueError("Fresh guest_known_hosts points at another guest; select separate .env paths before creation")
+
+
+def check_tailnet(site):
+    require_pattern(site, "ui_tailscale_hostname", r"[a-z0-9][a-z0-9.-]*\.ts\.net")
+    tail_ports = [site.get("ui_tail_hermes_port"), site.get("ui_tail_paperclip_port")]
+    if site.get("obsidian_enabled", False):
+        tail_ports.append(site.get("ui_tail_obsidian_port"))
+    if any(type(value) is not int or not 0 < value < 65536 for value in tail_ports) or len(tail_ports) != len(set(tail_ports)):
+        raise ValueError("Tailnet HTTPS ports must be valid and distinct")
 
 
 def main():
@@ -307,6 +355,8 @@ def main():
             raise SystemExit("Complete preservation/firewall bootstrap and select vm_isolated: false before full deployment.")
         if site.get("notes_enabled") is not True or site.get("obsidian_enabled") is not True:
             raise SystemExit("The core site deployment requires notes_enabled and obsidian_enabled.")
+        if site.get("worker_harness") == "both":
+            raise SystemExit("worker_harness: both was removed; choose codex, claude or none (rerun make in a terminal).")
     # Unbuffered so the streamed log and terminal show progress as it happens.
     env = dict(os.environ, ANSIBLE_CONFIG=str(ROOT / "deploy/ansible.cfg"), PYTHONUNBUFFERED="1")
     readonly = inspection_only or "--check" in native_args or all(Path(p).resolve() == ROOT / "deploy/status.yaml" for p in args.playbooks)
@@ -316,8 +366,8 @@ def main():
             raise SystemExit("Host prerequisites failed; see docs/SETUP.md.")
         sys.path.insert(0, str(ROOT / "implementation"))
         from runtime import maintenance_lock
-        result = subprocess.run(["rtk", "proxy", "sudo", "-n", "/usr/local/bin/rtk", "proxy",
-                                 sys.executable, str(ROOT / "implementation/runtime.py"), "--prepare-lock"])
+        result = subprocess.run(shell.rtk(*shell.as_root(sys.executable, ROOT / "implementation/runtime.py",
+                                                          "--prepare-lock")))
         if result.returncode:
             raise SystemExit("Cannot prepare the deployment lock; verify unattended sudo and the root-owned RTK prerequisite.")
         lock = maintenance_lock()
@@ -347,33 +397,11 @@ def restore_install_resources(variables):
     # A second Ctrl-C must not strand the temporary resources during cleanup.
     previous = {sig: signal.signal(sig, signal.SIG_IGN) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     try:
-        return subprocess.run(['rtk', 'proxy', 'sudo', '-n', '/usr/local/bin/rtk', 'proxy',
-                               sys.executable, str(ROOT / 'deploy/install_resources.py'),
-                               'restore', '--site-json', str(variables)]).returncode
+        return subprocess.run(shell.rtk(*shell.as_root(sys.executable, ROOT / 'deploy/install_resources.py',
+                                                       'restore', '--site-json', variables))).returncode
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
-
-
-FAILED = re.compile(r"^(?:fatal|failed): \[[^]]+\]")
-MESSAGE = re.compile(r'"msg": "((?:[^"\\]|\\.)*)"')
-# HTTP modules put the useful part (e.g. "HTTP Error 429: Too Many Requests") here.
-RESPONSE = re.compile(r'"response": "((?:[^"\\]|\\.)*)"')
-
-
-def install_log(private_dir):
-    """Open a private log beside other deployment state; None if unavailable."""
-    try:
-        logs = private_dir / "logs"
-        private_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        logs.mkdir(mode=0o700, exist_ok=True)
-        if logs.stat().st_uid != os.getuid():
-            return None
-        stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        path = logs / f"install-{stamp}.log"
-        return path, os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w")
-    except OSError:
-        return None
 
 
 def logged_run(command, env, private_dir):
@@ -383,10 +411,9 @@ def logged_run(command, env, private_dir):
     private log (ZELAB_INSTALL_LOG), so the failure summary points there.
     """
     caller_log = os.environ.get("ZELAB_INSTALL_LOG")
-    opened = None if caller_log else install_log(private_dir)
+    opened = None if caller_log else open_private_log(private_dir)
     path, log = opened if opened else (caller_log, None)
-    play = task = cause = None
-    hidden_cause = False
+    progress = Progress()
 
     def stopped(_signum, _frame):
         raise KeyboardInterrupt
@@ -398,33 +425,19 @@ def logged_run(command, env, private_dir):
             sys.stdout.write(line)
             if log:
                 log.write(line)
-            if line.startswith("PLAY [") and "RECAP" not in line:
-                play = line[6:].split("]", 1)[0]
-            elif line.startswith("TASK ["):
-                task = line[6:].split("]", 1)[0]
-            elif FAILED.match(line) and (cause is None or hidden_cause):
-                found, response = MESSAGE.search(line), RESPONSE.search(line)
-                if cause is None:
-                    failed_at = (play, task)
-                cause = (json.loads('"' + found.group(1) + '"') if found
-                         else "Ansible hid task details to protect credentials; the private log is also censored.").splitlines()[0][:300]
-                hidden_cause = found is None
-                if response:
-                    cause += " — " + json.loads('"' + response.group(1) + '"').splitlines()[0][:200]
-            elif line.strip() == "...ignoring":
-                cause = None
-                hidden_cause = False
+            progress.feed(line)
         returncode = process.wait()
     except KeyboardInterrupt:
         process.terminate()
         returncode = process.wait()
-        cause, failed_at = "interrupted by the operator", (play, task)
+        progress.cause, progress.failed_at = "interrupted by the operator", (progress.play, progress.task)
     finally:
         signal.signal(signal.SIGTERM, previous)
         if log:
             log.close()
     if returncode:
-        where = failed_at if cause else (play, task)
+        cause = progress.cause
+        where = progress.failed_at if cause else (progress.play, progress.task)
         print("\nInstallation stopped.", file=sys.stderr)
         print(f"  Phase: {where[0] or 'before the first phase'}", file=sys.stderr)
         print(f"  Step:  {where[1] or 'not started'}", file=sys.stderr)

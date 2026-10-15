@@ -1,14 +1,11 @@
 """Negative cases for complete native bridge scopes and adapter identity."""
 
 import copy
-import os
-from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
-import yaml
 
+from fixtures import run_play
 from filter_plugins.bridge_security import exact_scope, bridge_identity, gateway_contract, submission_contract
 
 
@@ -60,18 +57,12 @@ class BridgeSecurityTest(unittest.TestCase):
             self.assertFalse(bridge_identity({**identity, **change}, 'company', 'agent', 'p'))
 
     def test_provisioning_loads_the_filter_and_rejects_broadened_scopes(self):
-        root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as directory:
-            playbook = Path(directory) / 'check.yaml'
             for scope, allowed in [({'kind': 'task_bridge', 'projectIds': ['p']}, True),
                                    ({'kind': 'task_bridge', 'projectIds': ['p'], 'projectId': 'other'}, False),
                                    ({'kind': 'task_bridge', 'projectIds': ['p'], 'parentIssueIds': ['tree']}, False)]:
-                playbook.write_text(yaml.safe_dump([{'hosts': 'localhost', 'gather_facts': False,
-                    'connection': 'local', 'become': False, 'vars': {'scope': scope},
-                    'tasks': [{'ansible.builtin.assert': {'that': "scope | zelab_exact_bridge_scope('p')"}}]}]))
-                result = subprocess.run(['rtk', 'proxy', str(root / '.venv/bin/ansible-playbook'),
-                    '-i', 'localhost,', str(playbook)], text=True, capture_output=True,
-                    env=dict(os.environ, ANSIBLE_CONFIG=str(root / 'deploy/ansible.cfg')))
+                result = run_play(directory, variables={'scope': scope}, tasks=[
+                    {'ansible.builtin.assert': {'that': "scope | zelab_exact_bridge_scope('p')"}}])
                 self.assertEqual(result.returncode, 0 if allowed else 2, result.stdout + result.stderr)
 
     def test_retained_gateway_security_fields_are_checked_without_blocking_model_edits(self):

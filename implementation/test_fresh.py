@@ -51,8 +51,8 @@ class FreshTest(unittest.TestCase):
             'box.ts.net:9443': {'Handlers': {'/': {'Path': '/srv/site'}}},
         }}
         backends = {'http://127.0.0.1:18640', 'http://127.0.0.1:13100', 'http://127.0.0.1:18645'}
-        self.assertEqual(fresh.serve_ports(config, 'box.ts.net', backends), [8443, 8444])
-        self.assertEqual(fresh.serve_ports({}, 'box.ts.net', backends), [])
+        self.assertEqual(fresh.owned_tail_ports(config, 'box.ts.net', backends), [8443, 8444])
+        self.assertEqual(fresh.owned_tail_ports({}, 'box.ts.net', backends), [])
 
     def test_backup_key_logs_and_personal_login_are_never_generated_files(self):
         self.assertNotIn('backup-passphrase', fresh.GENERATED_PRIVATE)

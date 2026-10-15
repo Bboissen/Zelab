@@ -1,9 +1,7 @@
-- name: Require distinct fresh worker identities
+- name: Require a distinct fresh worker identity
   ansible.builtin.assert:
     that:
-      - worker_ops_user not in [operator_user, paperclip_user, worker_code_user, 'root', 'zelab-deploy']
-      - worker_code_user not in [operator_user, paperclip_user, 'root', 'zelab-deploy']
-      - worker_ops_home != worker_code_home
+      - worker_ops_user not in [operator_user, paperclip_user, 'root', 'zelab-deploy']
 
 - name: Inspect the native SSH runner Node prerequisite
   ansible.builtin.stat:
@@ -36,33 +34,24 @@
   loop: ["{{ notes_owner_group | default('zelab-vault-owner') }}", "{{ notes_shared_group | default('zelab-vault-shared') }}"]
   when: notes_enabled | default(false) | bool
 
-- name: Create separate native worker accounts without administrator groups
+- name: Create the native Operations worker account without administrator groups
   ansible.builtin.user:
-    name: "{{ item.user }}"
-    home: "{{ item.home }}"
+    name: "{{ worker_ops_user }}"
+    home: "{{ worker_ops_home }}"
     shell: /bin/bash
     system: true
     create_home: true
-    groups: "{{ item.notes_groups if notes_enabled | default(false) | bool else '' }}"
+    groups: "{{ (notes_owner_group | default('zelab-vault-owner')) + ',' + (notes_shared_group | default('zelab-vault-shared')) if notes_enabled | default(false) | bool else '' }}"
     append: false
-  loop:
-    - {user: "{{ worker_ops_user }}", home: "{{ worker_ops_home }}", notes_groups: "{{ notes_owner_group | default('zelab-vault-owner') }},{{ notes_shared_group | default('zelab-vault-shared') }}"}
-    - {user: "{{ worker_code_user }}", home: "{{ worker_code_home }}", notes_groups: "{{ notes_shared_group | default('zelab-vault-shared') }}"}
 
-- name: Restrict worker homes and SSH directories
+- name: Restrict the worker home and SSH directories
   ansible.builtin.file:
-    path: "{{ item.home }}{{ item.suffix }}"
+    path: "{{ worker_ops_home }}{{ item }}"
     state: directory
-    owner: "{{ item.user }}"
-    group: "{{ item.user }}"
+    owner: "{{ worker_ops_user }}"
+    group: "{{ worker_ops_user }}"
     mode: '0700'
-  loop:
-    - {user: "{{ worker_ops_user }}", home: "{{ worker_ops_home }}", suffix: ''}
-    - {user: "{{ worker_code_user }}", home: "{{ worker_code_home }}", suffix: ''}
-    - {user: "{{ worker_ops_user }}", home: "{{ worker_ops_home }}", suffix: /.ssh}
-    - {user: "{{ worker_code_user }}", home: "{{ worker_code_home }}", suffix: /.ssh}
-    - {user: "{{ worker_ops_user }}", home: "{{ worker_ops_home }}", suffix: /workspace}
-    - {user: "{{ worker_code_user }}", home: "{{ worker_code_home }}", suffix: /workspace}
+  loop: ['', /.ssh, /workspace]
 
 - name: Preserve retained native worker keys
   ansible.builtin.include_role:
@@ -70,27 +59,22 @@
   vars:
     retained_secrets:
       - {installed: "{{ worker_ops_home }}/.ssh/authorized_keys", source: "{{ private_dir }}/worker-ops.key"}
-      - {installed: "{{ worker_code_home }}/.ssh/authorized_keys", source: "{{ private_dir }}/worker-code.key"}
 
-- name: Generate persistent independent worker keys outside Git
+- name: Generate a persistent worker key outside Git
   ansible.builtin.command:
-    argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -C, "zelab-{{ item }}-worker", -f, "{{ private_dir }}/worker-{{ item }}.key"]
-    creates: "{{ private_dir }}/worker-{{ item }}.key"
-  loop: [ops, code]
+    argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -C, zelab-ops-worker, -f, "{{ private_dir }}/worker-ops.key"]
+    creates: "{{ private_dir }}/worker-ops.key"
   become: false
   no_log: true
 
 - name: Authorize only host-origin worker SSH without forwarding or PTY
   ansible.builtin.lineinfile:
-    path: "{{ item.home }}/.ssh/authorized_keys"
-    line: "from=\"{{ worker_ssh_host }}\",restrict {{ lookup('ansible.builtin.file', private_dir + '/worker-' + item.role + '.key.pub') }}"
+    path: "{{ worker_ops_home }}/.ssh/authorized_keys"
+    line: "from=\"{{ worker_ssh_host }}\",restrict {{ lookup('ansible.builtin.file', private_dir + '/worker-ops.key.pub') }}"
     create: true
-    owner: "{{ item.user }}"
-    group: "{{ item.user }}"
+    owner: "{{ worker_ops_user }}"
+    group: "{{ worker_ops_user }}"
     mode: '0600'
-  loop:
-    - {user: "{{ worker_ops_user }}", home: "{{ worker_ops_home }}", role: ops}
-    - {user: "{{ worker_code_user }}", home: "{{ worker_code_home }}", role: code}
 
 - name: Give only designated Operations unattended native sudo
   ansible.builtin.copy:
@@ -107,7 +91,7 @@
     content: |
       # Worker keys enforce source restrictions and disable forwarding.
       {% if worker_ssh_before.stdout_lines | select('match', '^allowusers ') | list %}
-      AllowUsers {{ worker_ops_user }}@{{ worker_ssh_host }} {{ worker_code_user }}@{{ worker_ssh_host }}
+      AllowUsers {{ worker_ops_user }}@{{ worker_ssh_host }}
       {% endif %}
     owner: root
     group: root
@@ -154,22 +138,22 @@
     owner: "{{ paperclip_user }}"
     group: "{{ paperclip_user }}"
     mode: '0700'
-  when: worker_harness in ['codex', 'both']
+  when: worker_harness == 'codex'
 
 - name: Check whether the operator has completed native Codex login
   ansible.builtin.stat:
     path: "{{ worker_codex_auth_source }}"
   register: worker_codex_login
   no_log: true
-  when: worker_harness in ['codex', 'both']
+  when: worker_harness == 'codex'
 
 - name: Report a pending Codex login without blocking installation
   ansible.builtin.debug:
     msg: "PENDING: run `/usr/local/bin/zelab-codex login --device-auth` as {{ operator_user }}, then rerun make before using a Codex worker."
-  when: worker_harness in ['codex', 'both'] and not (worker_codex_login.stat.isreg | default(false))
+  when: worker_harness == 'codex' and not (worker_codex_login.stat.isreg | default(false))
 
 - name: Import preserved subscription login once without owner configuration or secrets
-  when: worker_harness in ['codex', 'both'] and (worker_codex_login.stat.isreg | default(false))
+  when: worker_harness == 'codex' and (worker_codex_login.stat.isreg | default(false))
   ansible.builtin.copy:
     src: "{{ worker_codex_auth_source }}"
     dest: "{{ paperclip_home }}/.codex/auth.json"
@@ -180,9 +164,6 @@
     force: false
   no_log: true
   diff: false
-- name: Install only the selected native worker harnesses
+- name: Install only the selected native worker harness
   ansible.builtin.include_role:
-    name: "{{ selected_harness }}"
-  loop: "{{ ['codex', 'claude'] if worker_harness == 'both' else ([worker_harness] if worker_harness != 'none' else []) }}"
-  loop_control:
-    loop_var: selected_harness
+    name: "{{ worker_harness }}"

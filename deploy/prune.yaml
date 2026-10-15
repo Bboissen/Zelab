@@ -1,0 +1,25 @@
+# Last step of a successful run: delete what the current pins no longer use, so
+# superseded downloads, builds, releases and images do not accumulate.
+- name: Remove superseded host artifacts
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  tasks:
+    - name: Prune host artifacts
+      ansible.builtin.include_role:
+        name: artifact_prune
+        tasks_from: host.yaml
+
+- name: Remove superseded guest artifacts
+  hosts: guest
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  tasks:
+    - name: Prune guest artifacts
+      ansible.builtin.include_role:
+        name: artifact_prune
+        tasks_from: guest.yaml

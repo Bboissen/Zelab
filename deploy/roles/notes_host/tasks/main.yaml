@@ -49,7 +49,7 @@
     append: true
   loop:
     - {user: "{{ worker_ops_user }}", groups: "{{ notes_owner_group }},{{ notes_shared_group }}"}
-    - {user: "{{ worker_code_user }}", groups: "{{ notes_shared_group }}"}
+  when: worker_harness in ['codex', 'claude']
 
 - name: Prepare vault roots without recursively changing existing notes
   ansible.builtin.file:

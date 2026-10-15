@@ -13,6 +13,7 @@ import yaml
 import install_resources as resources
 import install
 import run
+from fixtures import replay
 
 
 class ResourceBudgetTest(unittest.TestCase):
@@ -64,7 +65,8 @@ class ResourceRecoveryTest(unittest.TestCase):
         self.site = yaml.safe_load(Path('config/defaults.yaml').read_text())
         self.budget = resources.InstallationResources(
             self.site, unit_directory=self.root / 'etc',
-            runtime_directory=self.root / 'run', receipt_directory=self.root / 'receipt')
+            runtime_directory=self.root / 'run', receipt_directory=self.root / 'receipt',
+            control_directory=self.root / 'control')
         self.budget.unit_file.parent.mkdir()
         self.normal = ('[Unit]\nDescription=Zelab native Hermes guest\n[Service]\nUser=zelab-vm\n'
                        'RootDirectory=/var/lib/zelab-vm/root\n'
@@ -107,7 +109,58 @@ class ResourceRecoveryTest(unittest.TestCase):
         self.assertTrue(unrelated.exists())
         self.assertFalse(self.budget.override.exists())
         self.assertFalse(self.budget.receipt.exists())
-        self.assertIn(('systemctl', 'restart', 'zelab-vm.service'), self.commands)
+        lifecycle = [args for args in self.commands if args[:2] != ('systemctl', 'show')]
+        self.assertEqual(lifecycle[-6:], [('systemctl', 'stop', 'zelab-vm.service'),
+                                          ('systemctl', 'daemon-reload'),
+                                          ('systemctl', 'start', 'zelab-vm.service'),
+                                          ('systemctl', 'set-property', '--runtime', 'zelab-vm.service', 'CPUQuota=100%'),
+                                          ('systemctl', 'set-property', '--runtime', 'zelab-vm.service', 'CPUQuota=50%'),
+                                          ('systemctl', 'daemon-reload')])
+
+    def test_restarted_guest_returns_to_the_normal_quota_even_if_startup_fails(self):
+        self.budget.begin()
+        self.active = True
+        self.budget.startup_quota.parent.mkdir(parents=True)
+        written = []
+
+        def command(*args):
+            self.commands.append(args)
+            if args[:3] == ('systemctl', 'set-property', '--runtime'):
+                written.append(args[-1])
+                self.budget.startup_quota.write_text('[Service]\n' + args[-1] + '\n')
+            return 'active\n' if args[:2] == ('systemctl', 'show') else ''
+
+        with patch('install_resources.command', side_effect=command), \
+                patch('install_resources.InstallationResources.wait_for_guest', side_effect=RuntimeError('slow')), \
+                redirect_stdout(io.StringIO()), self.assertRaises(RuntimeError):
+            self.budget.restore()
+        self.assertEqual(written, ['CPUQuota=100%', 'CPUQuota=50%'])
+        self.assertFalse(self.budget.startup_quota.parent.exists())
+
+    def test_an_existing_runtime_quota_is_left_alone(self):
+        self.budget.begin()
+        self.active = True
+        self.budget.startup_quota.parent.mkdir(parents=True)
+        self.budget.startup_quota.write_text('[Service]\nCPUQuota=30%\n')
+        with redirect_stdout(io.StringIO()):
+            self.budget.restore()
+        self.assertFalse(any(args[1] == 'set-property' for args in self.commands))
+        self.assertEqual(self.budget.startup_quota.read_text(), '[Service]\nCPUQuota=30%\n')
+
+    def test_boosted_vm_stops_before_the_normal_limit_is_loaded(self):
+        self.budget.begin()
+        self.active = True
+        override_at_stop = []
+        real_command = resources.command
+
+        def command(*args):
+            if args[:2] == ('systemctl', 'stop'):
+                override_at_stop.append(self.budget.override.exists())
+            return real_command(*args)
+
+        with patch('install_resources.command', side_effect=command), redirect_stdout(io.StringIO()):
+            self.budget.restore()
+        self.assertEqual(override_at_stop, [True])
 
     def test_running_vm_reapply_has_no_resource_changes_or_restart(self):
         self.active = True
@@ -115,7 +168,7 @@ class ResourceRecoveryTest(unittest.TestCase):
         self.assertFalse(self.budget.restore()['changed'])
         self.assertFalse(self.budget.override.exists())
         self.assertFalse(self.budget.receipt.exists())
-        self.assertFalse(any(args[:2] == ('systemctl', 'restart') for args in self.commands))
+        self.assertFalse(any(args[:2] in {('systemctl', 'stop'), ('systemctl', 'start')} for args in self.commands))
 
     def test_reset_preview_can_select_only_the_proven_runtime_artifacts_without_mutating_them(self):
         self.budget.begin()
@@ -127,7 +180,7 @@ class ResourceRecoveryTest(unittest.TestCase):
         self.budget.begin()
         with redirect_stdout(io.StringIO()):
             self.budget.restore()
-        self.assertFalse(any(args[:2] == ('systemctl', 'restart') for args in self.commands))
+        self.assertFalse(any(args[:2] in {('systemctl', 'stop'), ('systemctl', 'start')} for args in self.commands))
         self.assertFalse(self.budget.override.exists())
 
     def test_interruption_after_receipt_before_override_is_recoverable(self):
@@ -154,7 +207,7 @@ class ResourceRecoveryTest(unittest.TestCase):
             self.budget.restore()
         self.assertFalse(self.budget.override.exists())
         self.assertFalse(self.budget.receipt.exists())
-        self.assertFalse(any(args[:2] == ('systemctl', 'restart') for args in self.commands))
+        self.assertFalse(any(args[:2] in {('systemctl', 'stop'), ('systemctl', 'start')} for args in self.commands))
 
     def test_missing_native_unit_cannot_restore_a_vm_that_is_still_running(self):
         self.budget.begin()
@@ -172,7 +225,9 @@ class ResourceRecoveryTest(unittest.TestCase):
         real_command = resources.command
 
         def command(*args):
-            if args[:2] == ('systemctl', 'restart'):
+            if args[:2] == ('systemctl', 'stop'):
+                self.active = False
+            if args[:2] == ('systemctl', 'start'):
                 raise RuntimeError('restart failed')
             return real_command(*args)
 
@@ -181,9 +236,29 @@ class ResourceRecoveryTest(unittest.TestCase):
             self.budget.restore()
         self.assertFalse(self.budget.override.exists())
         self.assertTrue(json.loads(self.budget.receipt.read_text())['restart_pending'])
+        self.commands.clear()
         with redirect_stdout(io.StringIO()):
             self.budget.restore()
         self.assertFalse(self.budget.receipt.exists())
+        self.assertIn(('systemctl', 'start', 'zelab-vm.service'), self.commands)
+
+    def test_failed_stop_keeps_the_boost_loaded_for_the_next_recovery(self):
+        self.budget.begin()
+        self.active = True
+        self.commands.clear()
+        real_command = resources.command
+
+        def command(*args):
+            if args[:2] == ('systemctl', 'stop'):
+                raise RuntimeError('stop failed')
+            return real_command(*args)
+
+        with patch('install_resources.command', side_effect=command), redirect_stdout(io.StringIO()), \
+                self.assertRaisesRegex(RuntimeError, 'stop failed'):
+            self.budget.restore()
+        self.assertTrue(self.budget.override.exists())
+        self.assertNotIn(('systemctl', 'daemon-reload'), self.commands)
+        self.assertTrue(json.loads(self.budget.receipt.read_text())['restart_pending'])
 
     def test_changed_override_or_foreign_receipt_is_never_removed(self):
         self.budget.begin()
@@ -276,10 +351,7 @@ class ResourceOutputTest(unittest.TestCase):
                  'RESOURCE RESTORE START\n',
                  'RESOURCE RESTORE DONE {"cpu": 1, "memory_mb": 2048, "cpu_quota": "50%"}\n']
 
-        def capture(argv, on_line=None, env=None):
-            for line in lines:
-                on_line(line)
-            return 2, []
+        capture = replay(lines, 2)
 
         with patch.object(runner, 'capture', side_effect=capture), self.assertRaises(install.StepFailed):
             runner.deploy()

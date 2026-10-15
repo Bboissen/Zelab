@@ -1,12 +1,3 @@
-- name: Create the pinned Debian guest under native supervision
-  hosts: host
-  gather_facts: false
-  become: true
-  vars_files:
-    - ../versions.yaml
-  roles:
-    - vm
-
 - name: Verify guest administrator reachability
   hosts: guest
   gather_facts: false
@@ -25,6 +16,12 @@
     - name: Wait for the fresh guest's native cloud-init completion
       ansible.builtin.command: cloud-init status --wait
       changed_when: false
+    - name: Allow a terminal for the deployment key on guests created before it was permitted
+      ansible.builtin.lineinfile:
+        path: "/home/{{ guest_user }}/.ssh/authorized_keys"
+        regexp: '^restrict,(pty,)?from="10\.0\.2\.2" {{ (lookup("ansible.builtin.file", deploy_key + ".pub").split())[1] | regex_escape }}'
+        line: 'restrict,pty,from="10.0.2.2" {{ lookup("ansible.builtin.file", deploy_key + ".pub") }}'
+        firstmatch: true
     - name: Verify locked guest accounts and effective SSH password denial
       ansible.builtin.command:
         argv:

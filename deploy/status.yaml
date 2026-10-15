@@ -76,9 +76,7 @@
       ansible.builtin.command:
         argv: [systemctl, --user, show, "{{ hermes_gateway_unit }}", '--property=Id,ActiveState,SubState,UnitFileState', --no-pager]
       become_user: zelab-hermes
-      environment:
-        XDG_RUNTIME_DIR: /run/user/61102
-        DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/61102/bus
+      environment: "{{ hermes_session_environment }}"
       register: guest_gateway
       changed_when: false
       when: hostvars['zelab_host'].status_vm.stdout == 'active'

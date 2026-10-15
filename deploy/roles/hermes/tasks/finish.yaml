@@ -1,0 +1,180 @@
+# Runs after the host plays that overlap the dependency stage started by main.yaml.
+- name: Wait for native pinned Python and dependency generations
+  ansible.builtin.async_status:
+    jid: "{{ hermes_dependencies_job.ansible_job_id }}"
+  become_user: zelab-hermes
+  register: hermes_dependencies
+  until: hermes_dependencies.finished
+  retries: 1200
+  delay: 3
+
+- name: Remove the finished dependency job record
+  ansible.builtin.async_status:
+    jid: "{{ hermes_dependencies_job.ansible_job_id }}"
+    mode: cleanup
+  become_user: zelab-hermes
+
+- name: Record completed native dependency preparation
+  ansible.builtin.copy:
+    dest: "{{ hermes_install_dir }}/.hermes/zelab-dependencies-ready-{{ hermes_dependency_revision }}"
+    content: "{{ hermes_commit }} {{ hermes_dependency_revision }}\n"
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0600'
+
+- name: Transfer host-built native dashboard assets
+  ansible.builtin.copy:
+    src: "/var/cache/zelab/hermes-web-{{ hermes_commit }}.tar"
+    dest: "/opt/hermes/releases/hermes-web-{{ hermes_commit }}.tar"
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0644'
+
+- name: Install prebuilt dashboard output
+  ansible.builtin.unarchive:
+    src: "/opt/hermes/releases/hermes-web-{{ hermes_commit }}.tar"
+    remote_src: true
+    dest: "{{ hermes_install_dir }}"
+    owner: zelab-hermes
+    group: zelab-hermes
+    creates: "{{ hermes_install_dir }}/.hermes/zelab-web-assets-{{ hermes_commit }}"
+  register: hermes_web_assets
+
+- name: Record the source revision of the installed native dashboard assets
+  ansible.builtin.copy:
+    dest: "{{ hermes_install_dir }}/.hermes/zelab-web-assets-{{ hermes_commit }}"
+    content: "{{ hermes_commit }}\n"
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0600'
+
+- name: Check the one-time initial configuration marker
+  ansible.builtin.stat:
+    path: /var/lib/zelab/hermes/native-config-migrated
+  register: native_config
+
+- name: Seed the initial native configuration once
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /var/lib/zelab/hermes/home/config.yaml
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0600'
+  when: not native_config.stat.exists
+
+- name: Initialize fresh messaging with owner-only admission before token entry
+  ansible.builtin.copy:
+    dest: /var/lib/zelab/hermes/home/.env
+    content: |
+      # Enter a bot token in the native Hermes Channels UI.
+      DISCORD_ALLOWED_USERS={{ research_initial_allowed_user }}
+      DISCORD_ALLOW_ALL_USERS=false
+      GATEWAY_ALLOW_ALL_USERS=false
+      DISCORD_ALLOW_BOTS=false
+    force: false
+    owner: zelab-hermes
+    group: zelab-hermes
+    mode: '0600'
+
+- name: Admit the declared owner once discord_owner_id is configured
+  ansible.builtin.script:
+    cmd: >-
+      seed_dotenv.py /var/lib/zelab/hermes/home/.env --fill-empty
+      DISCORD_ALLOWED_USERS={{ research_initial_allowed_user | quote }}
+    executable: /usr/bin/python3
+  register: hermes_owner_admission
+  changed_when: hermes_owner_admission.stdout | trim == 'changed'
+  when: research_initial_allowed_user | length > 0
+  no_log: true
+
+- name: Check retained owner admission before exposing the native dashboard
+  ansible.builtin.include_role:
+    name: hermes_config_check
+
+- name: Record the completed initial configuration seed
+  ansible.builtin.copy:
+    dest: /var/lib/zelab/hermes/native-config-migrated
+    content: "Native initial config seeded; subsequent UI changes are retained.\n"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Preserve retained native dashboard credentials
+  ansible.builtin.include_role:
+    name: retained_secrets
+  vars:
+    retained_secrets:
+      - {installed: /etc/hermes-dashboard.env, source: "{{ private_dir }}/hermes-dashboard.password-hash"}
+      - {installed: /etc/hermes-dashboard.env, source: "{{ private_dir }}/hermes-dashboard.session-secret"}
+
+- name: Install persistent native dashboard authentication
+  ansible.builtin.template:
+    src: dashboard.env.j2
+    dest: /etc/hermes-dashboard.env
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+  register: dashboard_auth
+
+- name: Install native dashboard service
+  ansible.builtin.template:
+    src: hermes-dashboard.service.j2
+    dest: /etc/systemd/system/hermes-dashboard.service
+    owner: root
+    group: root
+    mode: '0644'
+  register: dashboard_unit
+
+- name: Activate authenticated native dashboard behind host loopback forwarding
+  ansible.builtin.systemd_service:
+    name: hermes-dashboard.service
+    daemon_reload: true
+    enabled: true
+    state: "{{ 'restarted' if dashboard_unit.changed or dashboard_auth.changed or hermes_dependencies.changed or hermes_web_assets.changed else 'started' }}"
+
+- name: Wait for the native dashboard listener instead of trusting a restarting unit
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 8640
+    timeout: 90
+
+- name: Verify the running dashboard rejects anonymous profile access
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8640/api/profiles
+    status_code: 401
+
+- name: Inspect the transient password for native hash migration verification
+  ansible.builtin.stat:
+    path: "{{ zelab_password_dir }}/hermes-dashboard.password"
+    get_checksum: false
+  delegate_to: zelab_host
+  register: dashboard_password_input
+  when: zelab_password_dir is defined
+  no_log: true
+
+- name: Verify native password login after migrating to a retained hash
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8640/auth/password-login
+    method: POST
+    body_format: json
+    body:
+      provider: basic
+      username: "{{ dashboard_username }}"
+      password: "{{ lookup('ansible.builtin.file', zelab_password_dir + '/hermes-dashboard.password') }}"
+    status_code: 200
+    follow_redirects: none
+  register: dashboard_password_login
+  when: zelab_password_dir is defined and dashboard_password_input.stat.exists | default(false)
+  no_log: true
+
+- name: Verify the new native login session can access protected dashboard profiles
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8640/api/profiles
+    headers:
+      Cookie: "{{ dashboard_password_login.cookies_string }}"
+    status_code: 200
+    follow_redirects: none
+  when: zelab_password_dir is defined and dashboard_password_input.stat.exists | default(false)
+  no_log: true

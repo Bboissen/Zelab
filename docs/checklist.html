@@ -4,47 +4,60 @@
 <title>Zelab setup</title>
 <style>
 * { box-sizing: border-box; }
-body { max-width: 54rem; margin: 1.5rem auto; padding: 0 1.2rem; font: 15px/1.4 system-ui,sans-serif; color: #172b3a; background: #fff; }
-h1 { font-size: 1.5rem; margin: 0 0 .6rem; }
-h3 { font-size: 1rem; margin: 0; display: inline-flex; gap: .4rem; align-items: center; }
-.step { margin: .55rem 0; } .step p { display: inline; margin: 0; }
-p { margin: .15rem 0 .5rem; }
-a { color: #00667d; overflow-wrap: anywhere; }
-pre, code { background: #edf2f7; border-radius: 4px; }
-code { padding: .1rem .2rem; overflow-wrap: anywhere; }
-pre { padding: .65rem; overflow-x: auto; margin: .5rem 0; }
+:root { --fg: #172b3a; --muted: #5b6f7d; --bg: #f5f7f9; --card: #fff; --line: #dde4ea; --accent: #00758a;
+  --code: #edf2f7; --ok: #c8edda; --todo: #ffe8a3; --bad: #ffd0d0; --grey: #e0e7ed; }
+body { max-width: 46rem; margin: 2rem auto; padding: 0 1rem; font: 15px/1.5 system-ui, sans-serif;
+  color: var(--fg); background: var(--bg); }
+h1 { font-size: 1.4rem; margin: 0; }
+h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 1.6rem 0 .5rem; }
+p { margin: .2rem 0; } li p { margin: 0; } ul { margin: .3rem 0; padding-left: 1.2rem; } li { margin: .15rem 0; }
+a { color: var(--accent); overflow-wrap: anywhere; }
+code { background: var(--code); border-radius: 4px; padding: .05rem .25rem; font-size: .88em; overflow-wrap: anywhere; }
+pre { background: var(--code); border-radius: 6px; padding: .6rem; overflow-x: auto; margin: .4rem 0; }
 pre code { padding: 0; }
-.summary { background: #eaf6f8; border-left: 3px solid #00758a; padding: .6rem; margin-bottom: .6rem; }
-.status { font-size: .75rem; border-radius: 4px; padding: .1rem .4rem; color: #172b3a; }
-.PASS { background: #c8edda; } .PENDING, .WARN { background: #ffe8a3; }
-.FAIL { background: #ffd0d0; } .MANUAL, .UNKNOWN { background: #e0e7ed; }
-input { accent-color: #00758a; }
-.failure { color: #a22121; }
-.applications { border-top: 1px solid #91a8b6; margin-top: .7rem; padding-top: .5rem; }
-.application { margin: .35rem 0; }
-.application small { display: block; overflow-wrap: anywhere; }
+.intro { color: var(--muted); margin: .4rem 0 0; }
+.progress { display: flex; align-items: center; gap: .6rem; margin-top: .8rem; font-size: .85rem; color: var(--muted); }
+.bar { flex: 1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--accent); }
+.apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .5rem; }
+.app { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .6rem .75rem; }
+.app small { display: block; color: var(--muted); overflow-wrap: anywhere; }
+.todo { list-style: none; padding: 0; margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+.step { display: flex; gap: .7rem; padding: .7rem .9rem; margin: 0; border-top: 1px solid var(--line); }
+.step:first-child { border-top: 0; }
+.step.next { box-shadow: inset 3px 0 var(--accent); }
+.step input { margin-top: .3rem; accent-color: var(--accent); width: 1rem; height: 1rem; flex: none; }
+.step > div { flex: 1; min-width: 0; }
+.head { display: flex; align-items: center; gap: .5rem; }
+.head label { font-weight: 600; }
+.PASS .head label { color: var(--muted); text-decoration: line-through; }
+.desc { color: var(--muted); }
+.hint { font-size: .88rem; border-radius: 4px; padding: .25rem .5rem; margin: .35rem 0; background: var(--todo); }
+.hint.FAIL { background: var(--bad); } .hint.WARN { background: var(--grey); }
+details { margin-top: .3rem; font-size: .92rem; }
+summary { cursor: pointer; color: var(--accent); font-size: .85rem; }
+.more { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .5rem .9rem; }
+.status { font-size: .72rem; border-radius: 4px; padding: .05rem .4rem; color: #172b3a; }
+.status.PASS { background: var(--ok); } .status.PENDING, .status.WARN { background: var(--todo); }
+.status.FAIL { background: var(--bad); } .status.MANUAL, .status.UNKNOWN { background: var(--grey); }
 @media (prefers-color-scheme: dark) {
-  body { color: #edf3fa; background: #172431; }
-  pre, code { background: #243646; } a { color: #85e3f1; }
-  .summary { background: #183c46; } .failure { color: #ffabab; }
+  :root { --fg: #edf3fa; --muted: #9fb2c1; --bg: #121c25; --card: #1a2733; --line: #2c3d4c; --accent: #5fd0e0;
+    --code: #243646; --todo: #5a4a14; --bad: #5c2626; --grey: #2c3d4c; }
+  .hint { color: var(--fg); }
 }
-@media print { body { font-size: 10pt; margin: 0; } }
+@media print { body { background: #fff; margin: 0; } details { display: block; } }
 </style></head><body>
-<h1 id="guide-top">Zelab setup</h1>
-<p>On the Linux server, from the checkout: <code>rtk proxy make</code>. From a Mac/Linux laptop (checkout already on the server):</p>
-<pre><code>rtk proxy make REMOTE_HOST=user@server REMOTE_DIR=/absolute/path/to/Zelab</code></pre>
-<div class="step"><h3 id="host"><input type="checkbox" id="step-host"><label for="step-host">Server</label></h3> <p>x86-64 Debian/Ubuntu, KVM, Docker Compose, SSH, Python 3.12+, Make and <a href="https://github.com/rtk-ai/rtk">RTK</a>; 24 GiB disk, 4 GiB available RAM. Laptop: Python 3.9+, Make, RTK and SSH. Bash/zsh work.</p></div>
-<div class="step"><h3 id="admin"><input type="checkbox" id="step-admin"><label for="step-admin">Administrator</label></h3> <p>Enter your sudo password when prompted. Configuration is created automatically.</p></div>
-<div class="step"><h3 id="tailscale"><input type="checkbox" id="step-tailscale"><label for="step-tailscale">Tailscale</label></h3> <p>Enroll server and devices; enable MagicDNS and HTTPS certificates.</p></div>
-<div class="step"><h3 id="harness"><input type="checkbox" id="step-harness"><label for="step-harness">Worker harness</label></h3> <p>Setup offers <strong>Codex</strong>, <strong>Claude Code</strong>, <strong>both</strong>, or <strong>skip</strong> and saves <code>worker_harness</code> in <code>config/site.yaml</code>. Every interactive run asks again; Enter retains the saved choice, or skips when no choice exists. Only the selected CLIs are installed. Noninteractive setup skips unless the file selects <code>codex</code>, <code>claude</code> or <code>both</code>. Change <code>none</code> later and rerun <code>rtk proxy make</code> to configure the paused placeholder workers.</p></div>
-<p>With <code>both</code>, new workers stay paused until you choose each worker's <strong>Codex</strong> or <strong>Claude Code</strong> adapter in Paperclip. Use the CLI engine and its installed command (<code>/usr/local/bin/zelab-codex</code> or <code>/usr/local/bin/zelab-claude</code>), and select the declared SSH environment (<code>Zelab Operations host</code> or <code>Zelab Coding host</code>). Inert placeholders have no execution environment; select the SSH environment when choosing the adapter. Claude Operations uses <code>CLAUDE_CONFIG_DIR</code> set to its account's <code>.claude</code> directory and <code>DISABLE_UPDATES=1</code>, <code>DISABLE_AUTOUPDATER=1</code>. After signing in and testing, enable wake on demand and resume Operations; keep Coding paused.</p>
-<p>For Codex, on the server as the operator: <code>rtk proxy /usr/local/bin/zelab-codex login --device-auth</code>, then rerun make. For Claude Code, sign in as the Operations worker (default account shown): <code>rtk proxy sudo -u zelab-ops -H /usr/local/bin/zelab-claude auth login --claudeai</code>. In Paperclip, use <strong>Test Environment</strong> before submitting a worker task. Choose models in Paperclip; Coding stays paused until sandbox execution is supported.</p>
-<p><strong>UI passwords</strong></p>
-<p>On a fresh install, choose three separate UI passwords in the terminal: Hermes, Paperclip and Obsidian. Input is hidden and each new password is entered twice; paste unique passwords of at least 16 characters from your password manager. Hermes retains only a scrypt hash. Paperclip's provisioning copy is temporary; reapply asks for its current owner password. Obsidian needs a persistent native root-owned password file for container startup. No password is printed or logged.</p>
-<p>Existing sites reuse current password files without rotation. After a successful apply, the terminal offers to remove redundant deployment copies once you confirm the UI passwords are saved in your password manager. The required Obsidian runtime file and machine keys remain. Old backups or snapshots may retain earlier copies.</p>
-<div class="step"><h3 id="hermes"><input type="checkbox" id="step-hermes"><label for="step-hermes">Hermes</label></h3> <p>Open the printed Hermes URL, use your saved password, and sign in to your chosen provider and model on the default Operations profile using native setup.</p></div>
-<div class="step"><h3 id="discord"><input type="checkbox" id="step-discord"><label for="step-discord">Discord</label></h3> <p><a href="https://discord.com/developers/applications">Create and invite a bot</a>, enable Message Content Intent, then paste its token in Hermes → Channels → Discord. Set <code>discord_owner_id</code> and <code>discord_channel_id</code> in <code>config/site.yaml</code>.</p></div>
-<div class="step"><h3 id="proof"><input type="checkbox" id="step-proof"><label for="step-proof">Test</label></h3> <p>After choosing and signing in to a worker harness, rerun the install command. Ask Operations in Discord to report the host's CPU, memory and Docker containers through Paperclip, returning its task ID.</p></div>
-<p>Failed? Fix the cause and rerun <code>rtk proxy make</code>; it resumes and refreshes the guide. <code>make clean</code> clears local deployment choices and generated files, retaining host connections and resource locations. <code>make fclean</code> previews/confirms a project reset and then clears those local choices; <code>make re</code> resets and reinstalls (<strong>deletes Zelab data</strong>). <code>make backup</code> saves encrypted state; <code>make restore</code> selects/verifies/restores it. <code>make help</code> lists the seven commands.</p>
-<p>Fresh installs temporarily use up to 70% of spare CPU/RAM, keep host headroom, then restart at normal limits. Running VMs stay unchanged. Disable with <code>vm_install_resource_fraction: 0</code> in <code>config/site.yaml</code>. Timings stay in private logs.</p>
+<header><h1>Zelab setup</h1><p class="intro">Run <code>rtk proxy make</code> on the server, then rerun it after each step below; it resumes where it stopped and refreshes this guide. From a laptop: <code>rtk proxy make REMOTE_HOST=user@server REMOTE_DIR=/absolute/path/to/Zelab</code>.</p></header>
+<h2>To do</h2>
+<ol class="todo">
+<li class="step " id="host"><input type="checkbox" id="step-host"><div><div class="head"><label for="step-host">Server</label></div><p class="desc">x86-64 Debian/Ubuntu with KVM, Docker Compose, SSH, Python 3.12+, Make and <a href="https://github.com/rtk-ai/rtk">RTK</a>.</p><details><summary>Details</summary><ul><li><p>24 GiB free disk and 4 GiB available RAM.</p></li><li><p>Laptop (optional): Python 3.9+, Make, RTK and SSH.</p></li><li><p>Fresh installs briefly use up to 70% of spare CPU/RAM; set <code>vm_install_resource_fraction: 0</code> in <code>config/site.yaml</code> to disable.</p></li></ul></details></div></li>
+<li class="step " id="admin"><input type="checkbox" id="step-admin"><div><div class="head"><label for="step-admin">Administrator</label></div><p class="desc">Enter your sudo password, then three UI passwords (Hermes, Paperclip, Obsidian) when make asks.</p><details><summary>Details</summary><ul><li><p>Paste unique passwords of 16+ characters from your password manager. Input is hidden and nothing is printed or logged.</p></li><li><p>Reapply reuses them; Paperclip asks for its current owner password.</p></li><li><p>After a successful run, make offers to delete spare copies once you confirm they are saved. Obsidian keeps its runtime password file.</p></li></ul></details></div></li>
+<li class="step " id="tailscale"><input type="checkbox" id="step-tailscale"><div><div class="head"><label for="step-tailscale">Tailscale</label></div><p class="desc">Join the server and your devices to one tailnet; enable MagicDNS and HTTPS certificates.</p></div></li>
+<li class="step " id="harness"><input type="checkbox" id="step-harness"><div><div class="head"><label for="step-harness">Worker harness</label></div><p class="desc">Pick <strong>Codex</strong>, <strong>Claude Code</strong> or <strong>skip</strong> when make asks. A harness creates one Paperclip worker, <strong>Operations</strong>, fully configured except its model; skip creates none.</p><details><summary>Details</summary><ul><li><p>Codex: sign in, then rerun make: <code>rtk proxy /usr/local/bin/zelab-codex login --device-auth</code>. Claude Code: sign in after make, as the worker: <code>rtk proxy sudo -u zelab-ops -H /usr/local/bin/zelab-claude auth login --claudeai</code></p></li><li><p>In Paperclip, open Operations and choose its model. A name missing from the list (for example <code>gpt-6.1-sol</code>) can be typed and kept with <strong>Use manual model</strong>.</p></li><li><p>Then move <strong>Prove Operations host access and sudo</strong> from Backlog to Todo. It runs a non-interactive <code>top</code> and <code>sudo -n</code> checks and reports the output. Start it only by moving the task: the agent's <strong>Run now</strong> button starts a run with no task, which logs <code>Connection requests require a task-bound heartbeat run</code> and ends with "No assigned Paperclip task was available". That run is harmless.</p></li><li><p>Operations runs as <code>zelab-ops</code>, which may run any command as root without a password (<code>/etc/sudoers.d/zelab-worker-operations</code>); agents use <code>sudo -n</code>, which fails instead of prompting. Narrowing that grant is your decision.</p></li><li><p>The choice is saved as <code>worker_harness</code> in <code>config/site.yaml</code>; Enter keeps it. Keep Operations on <code>Zelab Operations host</code>: without it the adapter runs as Paperclip's own account, and make refuses to continue.</p></li></ul></details></div></li>
+<li class="step " id="hermes"><input type="checkbox" id="step-hermes"><div><div class="head"><label for="step-hermes">Hermes</label></div><p class="desc">Open Hermes with your saved password and connect a model provider.</p><details><summary>Details</summary><ul><li><p>make offers the native picker in the terminal. For a ChatGPT plan choose <strong>OpenAI Codex</strong> and approve the printed code on any device.</p></li><li><p>Skipped it? Run the picker on the server, then reload the dashboard. Default paths below; the generated guide shows your site's command.</p></li></ul>
+<pre><code>rtk proxy ssh -t -F /dev/null -i ~/.local/state/zelab-deployment/deploy_ed25519 -o UserKnownHostsFile=~/.local/state/zelab-deployment/guest_known_hosts -p 12921 zelab-deploy@127.0.0.1 sudo -u zelab-hermes env HERMES_HOME=/var/lib/zelab/hermes/home TMPDIR=/var/lib/zelab/hermes/tmp /opt/hermes/agent/.hermes/bin/hermes model --no-browser</code></pre></details></div></li>
+<li class="step " id="discord"><input type="checkbox" id="step-discord"><div><div class="head"><label for="step-discord">Discord</label></div><p class="desc"><a href="https://discord.com/developers/applications">Create and invite a bot</a> and paste its token in Hermes → Channels → Discord.</p><details><summary>Details</summary><ul><li><p>Enable <strong>Message Content Intent</strong> for the bot.</p></li><li><p>Set <code>discord_owner_id</code> and <code>discord_channel_id</code> in <code>config/site.yaml</code>, then rerun make.</p></li></ul></details></div></li>
+<li class="step " id="proof"><input type="checkbox" id="step-proof"><div><div class="head"><label for="step-proof">Test</label></div><p class="desc">In Discord, ask Operations for the host's CPU, memory and Docker containers through Paperclip, with its task ID.</p></div></li>
+</ol>
+<h2>Commands</h2><div class="more"><ul><li><p><code>rtk proxy make</code>: install or resume; keeps existing state.</p></li><li><p><code>make clean</code>: clear local choices and generated files.</p></li><li><p><code>make fclean</code>: preview, confirm and reset this site.</p></li><li><p><code>make re</code>: reset and reinstall (<strong>deletes Zelab data</strong>).</p></li><li><p><code>make backup</code> / <code>make restore</code>: encrypted backup and restore.</p></li><li><p><code>make help</code>: list all seven commands.</p></li></ul></div>
 </body></html>

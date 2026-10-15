@@ -12,6 +12,7 @@ import sys
 
 import controller
 from console import heading, mark
+import shell
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -85,14 +86,9 @@ def choice_reset(root, site_config):
 
 
 def privileged_python(python, script, *args):
-    command = ['rtk', 'proxy', 'sudo']
-    if not sys.stdin.isatty():
-        command.append('-n')
-    command += ['/usr/local/bin/rtk', 'proxy']
     terminal_env = [f'{name}={os.environ[name]}' for name in ('NO_COLOR', 'CLICOLOR_FORCE') if name in os.environ]
-    if terminal_env:
-        command += ['env', *terminal_env]
-    return [*command, str(python), '-B', str(script), *args]
+    return shell.rtk(*shell.as_root(*(['env', *terminal_env] if terminal_env else []),
+                                    python, '-B', script, *args, prompt=sys.stdin.isatty()))
 
 
 def clean(root=ROOT, site_config=Path('config/site.yaml')):

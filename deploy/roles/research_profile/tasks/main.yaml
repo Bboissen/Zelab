@@ -11,7 +11,7 @@
 - name: Require an intact deployed slot or an unused destination
   ansible.builtin.assert:
     that:
-      - research_seed.stat.exists == research_existing.stat.exists
+      - research_seed.stat.exists == research_existing.stat.exists or (research_profile_precreated | bool and not research_seed.stat.exists)
       - not research_existing.stat.exists or research_existing.stat.isdir
     fail_msg: "Profile {{ hermes_profile_name }} was independently created, renamed or removed. Reconcile its saved state before provisioning; stable slot identities are not recreated automatically."
 
@@ -75,10 +75,9 @@
     argv: ["{{ hermes_install_dir }}/.hermes/bin/hermes", pm, install, --extra, ddgs]
     creates: "{{ hermes_install_dir }}/.hermes/zelab-ddgs-ready-{{ hermes_dependency_revision }}"
   become_user: zelab-hermes
-  environment:
-    HOME: /home/zelab-hermes
-    HERMES_HOME: /var/lib/zelab/hermes/home
+  environment: "{{ hermes_cli_environment }}"
   register: research_search_dependency
+  when: research_install_shared | bool
 
 - name: Record native locked search dependency preparation
   ansible.builtin.copy:
@@ -87,6 +86,7 @@
     owner: zelab-hermes
     group: zelab-hermes
     mode: '0600'
+  when: research_install_shared | bool
 
 - name: Create a blank native profile without cloning Operations state or channels
   ansible.builtin.command:
@@ -101,9 +101,7 @@
       - "{{ research_profile_description }}"
     creates: "{{ research_profile_dir }}"
   become_user: zelab-hermes
-  environment:
-    HOME: /home/zelab-hermes
-    HERMES_HOME: /var/lib/zelab/hermes/home
+  environment: "{{ hermes_cli_environment }}"
   register: research_created
 
 - name: Park a new restricted profile without overriding later lifecycle choices
@@ -151,11 +149,13 @@
     owner: zelab-hermes
     group: zelab-hermes
     mode: '0700'
+  when: research_install_shared | bool
 
 - name: Read the trusted guest SSH host public key locally
   ansible.builtin.slurp:
     src: /etc/ssh/ssh_host_ed25519_key.pub
   register: research_host_key
+  when: research_install_shared | bool
 
 - name: Pin the guest-local native SSH tool server key
   ansible.builtin.lineinfile:
@@ -165,6 +165,7 @@
     owner: zelab-hermes
     group: zelab-hermes
     mode: '0600'
+  when: research_install_shared | bool
 
 - name: Seed only the new profile's native configuration
   ansible.builtin.template:
@@ -217,32 +218,13 @@
     mode: '0600'
 
 - name: Seed owner-only Discord audience without copying a bot token
-  ansible.builtin.command:
-    argv:
-      - python3
-      - -c
-      - |
-        from pathlib import Path
-        import os, sys
-        user, channel, profile_dir = sys.argv[1:]
-        if (user and not user.isdecimal()) or (channel and not channel.isdecimal()):
-            raise SystemExit('Initial owner Discord IDs must be decimal IDs.')
-        path = Path(profile_dir) / '.env'
-        text = path.read_text()
-        keys = {line.partition('=')[0].strip() for line in text.splitlines()
-                if '=' in line and not line.lstrip().startswith('#')}
-        # Unknown IDs stay absent: an empty allowlist admits nobody.
-        initial = {'DISCORD_ALLOWED_USERS': user, 'DISCORD_ALLOWED_CHANNELS': channel,
-                   'DISCORD_ALLOW_ALL_USERS': 'false', 'GATEWAY_ALLOW_ALL_USERS': 'false',
-                   'DISCORD_ALLOW_BOTS': 'false'}
-        additions = [key + '=' + value for key, value in initial.items() if value and key not in keys]
-        if additions:
-            path.write_text(text.rstrip() + '\n' + '\n'.join(additions) + '\n')
-        path.chmod(0o600)
-        os.chown(path, 61102, 61102)
-      - "{{ research_initial_allowed_user }}"
-      - "{{ research_initial_allowed_channel }}"
-      - "{{ research_profile_dir }}"
+  ansible.builtin.script:
+    cmd: >-
+      seed_dotenv.py {{ (research_profile_dir + '/.env') | quote }}
+      DISCORD_ALLOWED_USERS={{ research_initial_allowed_user | quote }}
+      DISCORD_ALLOWED_CHANNELS={{ research_initial_allowed_channel | quote }}
+      DISCORD_ALLOW_ALL_USERS=false GATEWAY_ALLOW_ALL_USERS=false DISCORD_ALLOW_BOTS=false
+    executable: /usr/bin/python3
     creates: /var/lib/zelab/hermes/{{ hermes_profile_name }}-audience-seeded
   no_log: true
 
@@ -252,6 +234,7 @@
   vars:
     checked_profile_home: "{{ research_profile_dir }}"
     checked_tool_user: "{{ research_tool_user }}"
+  when: not research_defer_admission_check | bool
 
 - name: Record the one-time audience seed
   ansible.builtin.copy:
@@ -300,4 +283,4 @@
   ansible.builtin.systemd_service:
     name: hermes-dashboard.service
     state: restarted
-  when: research_search_dependency.changed
+  when: research_search_dependency is changed

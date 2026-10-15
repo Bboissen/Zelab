@@ -15,21 +15,14 @@
       ansible.builtin.set_fact:
         gateway_workers: "{{ lookup('ansible.builtin.file', private_dir + '/paperclip-worker-ids.json') | from_json }}"
 
-    - name: Authenticate through the native owner API
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ paperclip_port }}/api/auth/sign-in/email"
-        method: POST
-        body_format: json
-        body:
-          email: "{{ paperclip_owner_email }}"
-          password: "{{ lookup('ansible.builtin.file', (zelab_password_dir | default(private_dir)) + '/paperclip-owner.password') }}"
-        headers: {Origin: "http://127.0.0.1:{{ paperclip_port }}"}
-      register: gateway_owner
+    - name: Sign in as the configured local owner
+      ansible.builtin.include_role:
+        name: paperclip_owner_session
 
     - name: Read native secret metadata
       ansible.builtin.uri:
         url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ gateway_workers.company_id }}/secrets"
-        headers: {Cookie: "{{ gateway_owner.cookies_string }}"}
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
       register: gateway_secrets
 
     - name: Reject ambiguous native API secret names
@@ -46,7 +39,7 @@
           key: ZELAB_HERMES_API
           provider: local_encrypted
           value: "{{ lookup('ansible.builtin.file', private_dir + '/hermes-api.key') }}"
-        headers: {Cookie: "{{ gateway_owner.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
         status_code: 201
       when: gateway_secrets.json | selectattr('name', 'equalto', 'Zelab Hermes API') | list | length == 0
       register: gateway_secret_created
@@ -59,7 +52,7 @@
     - name: Read the existing native agent definitions
       ansible.builtin.uri:
         url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ gateway_workers.company_id }}/agents"
-        headers: {Cookie: "{{ gateway_owner.cookies_string }}"}
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
       register: gateway_agents
 
     - name: Reject ambiguous native remote agent names
@@ -102,7 +95,7 @@
           runtimeConfig:
             heartbeat: {enabled: false, wakeOnDemand: true, maxConcurrentRuns: 1}
           permissions: {canCreateAgents: false, canCreateSkills: false, canAssignTasks: true, trustPreset: standard}
-        headers: {Cookie: "{{ gateway_owner.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
         status_code: 201
       when: gateway_agents.json | selectattr('name', 'equalto', 'Hermes Operations') | list | length == 0
       register: gateway_agent_created
@@ -118,49 +111,16 @@
           - gateway_agent | zelab_gateway_contract(gateway_workers.company_id, 'http://127.0.0.1:' + (guest_api_port | string), 'http://10.0.2.2:' + (paperclip_port | string), gateway_secret.id)
         fail_msg: Native Hermes adapter identity, destinations, API secret reference or permissions drifted; reconcile before dispatching work.
 
-    - name: Inspect the retained remote task credential
-      ansible.builtin.stat:
-        path: "{{ private_dir }}/paperclip-hermes-gateway.key"
-      register: gateway_task_credential
-
-    - name: Read native remote agent key metadata
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ paperclip_port }}/api/agents/{{ gateway_agent.id }}/keys"
-        headers: {Cookie: "{{ gateway_owner.cookies_string }}"}
-      register: gateway_task_keys
-
-    - name: Resolve the declared native remote task key
-      ansible.builtin.set_fact:
-        gateway_task_active_keys: "{{ gateway_task_keys.json | selectattr('name', 'equalto', 'Zelab Hermes gateway tasks') | rejectattr('revokedAt') | list }}"
-
-    - name: Refuse accidental remote credential rotation or duplication
-      ansible.builtin.assert:
-        that:
-          - gateway_task_active_keys | length <= 1
-          - gateway_task_credential.stat.exists == (gateway_task_active_keys | length == 1)
-          - gateway_task_active_keys | length == 0 or (gateway_task_active_keys[0].scope | zelab_exact_bridge_scope(gateway_workers.workers.ops.project_id))
-
-    - name: Create a project-scoped key under the actual remote task identity
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ paperclip_port }}/api/agents/{{ gateway_agent.id }}/keys"
-        method: POST
-        body_format: json
-        body:
-          name: Zelab Hermes gateway tasks
-          scope: {kind: task_bridge, projectIds: ["{{ gateway_workers.workers.ops.project_id }}"]}
-        headers: {Cookie: "{{ gateway_owner.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
-        status_code: 201
-      when: not gateway_task_credential.stat.exists
-      register: gateway_task_created
-      changed_when: true
-
-    - name: Retain the native remote task key privately
-      ansible.builtin.copy:
-        dest: "{{ private_dir }}/paperclip-hermes-gateway.key"
-        content: "{{ gateway_task_created.json.token }}\n"
-        owner: "{{ operator_user }}"
-        mode: '0600'
-      when: gateway_task_created is not skipped
+    - name: Provision and prove the remote agent's task key
+      ansible.builtin.include_role:
+        name: paperclip_task_key
+      vars:
+        task_key_agent_id: "{{ gateway_agent.id }}"
+        task_key_name: Zelab Hermes gateway tasks
+        task_key_file: "{{ private_dir }}/paperclip-hermes-gateway.key"
+        task_key_company_id: "{{ gateway_workers.company_id }}"
+        task_key_project_id: "{{ gateway_workers.workers.ops.project_id }}"
+        task_key_owner_cookie: "{{ paperclip_owner_session.cookies_string }}"
 
     - name: Supply remote task credentials separately from host-worker submission
       ansible.builtin.copy:
@@ -175,20 +135,6 @@
         mode: '0600'
         force: false
       delegate_to: zelab_guest
-
-    - name: Authenticate the actual callback credential
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ paperclip_port }}/api/agents/me"
-        headers:
-          Authorization: "Bearer {{ lookup('ansible.builtin.file', private_dir + '/paperclip-hermes-gateway.key') }}"
-        follow_redirects: none
-      register: gateway_actual_identity
-
-    - name: Require the callback credential identity and complete effective scope
-      ansible.builtin.assert:
-        that:
-          - gateway_actual_identity.json | zelab_bridge_identity(gateway_workers.company_id, gateway_agent.id, gateway_workers.workers.ops.project_id)
-        fail_msg: The retained callback credential authenticates as an unexpected identity or scope.
 
     - name: Validate retained guest callback fields using the native parser
       ansible.builtin.include_tasks:

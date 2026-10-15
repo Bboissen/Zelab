@@ -29,9 +29,10 @@ rtk proxy make REMOTE_HOST=user@server REMOTE_DIR=/absolute/path/to/Zelab
 Plain `make` installs, reapplies or resumes. It asks for your sudo password
 once, writes `config/site.yaml` from what it discovers on the host, keeps tool
 output in a private log, and ends with the URLs, password-file locations and
-the account steps still waiting for you. Setup offers Codex, Claude Code, both or
-skip; only the selected worker CLIs are installed. With both, choose each
-worker's adapter in Paperclip. Skipping leaves new workers paused.
+the account steps still waiting for you. Setup offers Codex, Claude Code or skip.
+Codex or Claude Code creates one Paperclip Operations worker, fully configured
+except its model, with a waiting task that proves host access and sudo. Skip
+creates no worker.
 Rerunning keeps all data and existing native agent settings.
 
 Follow the [setup checklist](docs/SETUP.md). Server requirements: x86-64

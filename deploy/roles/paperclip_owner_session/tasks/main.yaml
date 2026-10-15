@@ -1,0 +1,13 @@
+# Registers paperclip_owner_session; use its cookies_string for owner API calls.
+- name: Sign in as the configured local owner
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ paperclip_port }}/api/auth/sign-in/email"
+    method: POST
+    body_format: json
+    body:
+      email: "{{ paperclip_owner_email }}"
+      password: "{{ lookup('ansible.builtin.file', (zelab_password_dir | default(private_dir)) + '/paperclip-owner.password') }}"
+    headers: {Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+  delegate_to: zelab_host
+  register: paperclip_owner_session
+  no_log: true

@@ -5,4 +5,6 @@
   vars_files:
     - ../versions.yaml
   roles:
-    - hermes_bridge
+    # Discord host tasks need the Operations worker as their only assignee.
+    - role: hermes_bridge
+      when: worker_harness in ['codex', 'claude']

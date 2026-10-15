@@ -1,0 +1,9 @@
+# Environment for running the native Hermes CLI as its service account.
+hermes_cli_environment:
+  HOME: /home/zelab-hermes
+  HERMES_HOME: /var/lib/zelab/hermes/home
+  TMPDIR: /var/lib/zelab/hermes/tmp
+# Reach the zelab-hermes user service manager (systemctl --user).
+hermes_session_environment:
+  XDG_RUNTIME_DIR: /run/user/61102
+  DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/61102/bus
