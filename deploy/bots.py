@@ -407,7 +407,7 @@ PRESET_TEXT = {
     'full-sudo': 'unrestricted sudo: you are root on this host',
 }
 TEAM_DIR = ROOT / 'config/team'
-# Runs use the hiring owner's own Claude sign-in; Paperclip asks for one on the first task if missing.
+# Without a company-shared Claude connection, runs use the hiring owner's personal default.
 TEAM_CONNECTION = {'provider': 'anthropic', 'method': 'subscription', 'mode': 'responsible_user'}
 # The team's first ticket: map the server into the vault. Filed once per site, for the lead.
 ONBOARDING_KEY = 'zelab-team-onboarding'
@@ -427,6 +427,16 @@ def team_agents(site, agents, ids):
         elif agent.get('defaultEnvironmentId') in tiers:
             others.append(agent)
     return members, others
+
+
+def team_binding(connections):
+    """The team's AI binding: the connected company-shared Claude subscription (make bot, option 4), if any."""
+    for connection in connections:
+        if (connection.get('provider'), connection.get('method'), connection.get('ownership'), connection.get('status')) \
+                == ('anthropic', 'subscription', 'shared', 'connected'):
+            return {'provider': 'anthropic', 'method': 'subscription', 'mode': 'shared',
+                    'connectionId': connection['id'], 'grantId': connection['grantId']}
+    return TEAM_CONNECTION
 
 
 def team_lead(site):
@@ -767,6 +777,7 @@ class Bots:
         lead = team_lead(self.site)
         team = self.site['zelab_team']
         projects = self.site.get('zelab_projects', {})
+        binding = team_binding(self.paperclip.ai_connections())
         print(f'  Hiring the team in Paperclip ({", ".join(missing)}) ...', end=' ', flush=True)
         for name in missing:
             member = declared[name]
@@ -782,14 +793,29 @@ class Bots:
                 'adapterConfig': {'engine': 'cli', 'model': team['model'], 'effort': team['effort']},
                 'instructionsBundle': {'entryFile': 'AGENTS.md',
                                        'files': {'AGENTS.md': team_instructions(self.site, name, projects)}},
-                'runtimeConfig': {'aiConnection': TEAM_CONNECTION,
+                'runtimeConfig': {'aiConnection': binding,
                                   'heartbeat': {'enabled': False, 'wakeOnDemand': True, 'maxConcurrentRuns': 1}},
                 'metadata': {'zelab_team': name}})
         print('done')
-        connected = [c for c in self.paperclip.ai_connections() if c.get('provider') == 'anthropic']
-        if not connected:
+        if binding is TEAM_CONNECTION:
             print('  The team runs on your Claude subscription: sign in once with rtk proxy make bot, option 4,')
-            print('  or when Paperclip asks on its first task.')
+            print('  then quit it; the team is switched to that connection.')
+
+    def bind_team(self):
+        """Point every team member at the company-shared Claude connection once it exists."""
+        binding = team_binding(self.paperclip.ai_connections())
+        if binding is TEAM_CONNECTION:
+            return
+        members, _ = self.team()
+        moved = []
+        for name, agent in sorted(members.items()):
+            runtime = agent.get('runtimeConfig') or {}
+            if runtime.get('aiConnection') != binding:
+                self.paperclip.call('PATCH', f"/agents/{agent['id']}", {'runtimeConfig': {**runtime, 'aiConnection': binding}})
+                moved.append(name)
+        if moved:
+            print(f'  The team now runs on the shared Claude connection ({", ".join(moved)}).')
+            print('  A task that failed for want of a connection: open it in Paperclip and press Retry.')
 
     def onboard(self):
         """File the team's first ticket once, for the lead: map the server into the vault."""
@@ -811,6 +837,7 @@ class Bots:
         bot and the team lead."""
         profiles, agents = self.state()
         self.hire_team(agents)
+        self.bind_team()
         self.onboard()
         projects, (members, others) = self.paperclip.projects(), self.team()
         for name in profiles:
@@ -882,6 +909,8 @@ class Bots:
             return
         self.paperclip.call('POST', path, {**intent, 'localSessionId': attempt['sessionId']})
         print('  Host agent sign-in saved in Paperclip.')
+        if provider == 'anthropic':
+            self.bind_team()
 
     def finish(self):
         self.refresh()

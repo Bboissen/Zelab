@@ -109,6 +109,15 @@ class BotTest(unittest.TestCase):
         self.assertIn('--assignee-agent-id h1', text)
         self.assertIn('--unassigned', bots.skill(site, 'marvin', {}, []))
 
+    def test_team_prefers_the_connected_shared_claude_connection(self):
+        personal = {'id': 'c1', 'grantId': 'g1', 'provider': 'anthropic', 'method': 'subscription',
+                    'ownership': 'personal', 'status': 'connected'}
+        shared = {**personal, 'id': 'c2', 'grantId': 'g2', 'ownership': 'shared'}
+        self.assertIs(bots.team_binding([personal, {**shared, 'status': 'needs_attention'}]), bots.TEAM_CONNECTION)
+        self.assertEqual(bots.team_binding([personal, shared]),
+                         {'provider': 'anthropic', 'method': 'subscription', 'mode': 'shared',
+                          'connectionId': 'c2', 'grantId': 'g2'})
+
     def test_onboarding_ticket_is_filed_once_for_the_lead(self):
         calls = []
 
