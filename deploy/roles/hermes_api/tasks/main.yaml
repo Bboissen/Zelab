@@ -28,6 +28,15 @@
         path: /var/lib/zelab/hermes/api-config-seeded
       register: hermes_api_seed
 
+    - name: Create the default profile's native secrets file when absent
+      ansible.builtin.copy:
+        dest: /var/lib/zelab/hermes/home/.env
+        content: ''
+        force: false
+        owner: zelab-hermes
+        group: zelab-hermes
+        mode: '0600'
+
     - name: Inspect existing native configuration before initial API seed
       ansible.builtin.slurp:
         src: /var/lib/zelab/hermes/home/.env
