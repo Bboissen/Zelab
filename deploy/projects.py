@@ -5,8 +5,9 @@ Each project gets a Paperclip project and a vault folder Projects/<slug>/.
 A project with a host_preset other than none also gets the host account
 zelab-p-<slug>, its SSH key and the Paperclip SSH environment "<slug> host",
 where the owner hires a Codex or Claude Code agent. Presets are a fixed
-catalogue: groups, a sudoers fragment and owned paths. make applies the file
-on each run; nothing watches it in between.
+catalogue: groups, a sudoers fragment and owned paths. host_tickets says who
+assigns host tickets: the owner (default) or the bots holding a key for the
+project. make applies the file on each run; nothing watches it in between.
 """
 
 import argparse
@@ -34,6 +35,8 @@ PRESETS = {
     'repo-dev': {'account': True, 'groups': [], 'sudo': None, 'paths': 'rwx'},
     'full-sudo': {'account': True, 'groups': ['systemd-journal', 'adm'], 'sudo': ('ALL',), 'paths': 'rwx'},
 }
+# Who assigns tickets to the project's host agents.
+HOST_TICKETS = ('owner', 'bots')
 
 
 def account(slug):
@@ -41,7 +44,7 @@ def account(slug):
 
 
 def validate(data):
-    """Normalized {slug: {name, host_preset, paths}}; raises ValueError on anything unclear."""
+    """Normalized {slug: {name, host_preset, paths, host_tickets}}; raises ValueError on anything unclear."""
     if data in (None, {}):
         return {}
     if not isinstance(data, dict) or set(data) != {'projects'}:
@@ -54,8 +57,8 @@ def validate(data):
         if not isinstance(slug, str) or not SLUG.fullmatch(slug):
             raise ValueError(f'Project slug {slug!r} must be lowercase letters, digits and dashes (max 24)')
         settings = settings or {}
-        if not isinstance(settings, dict) or set(settings) - {'name', 'host_preset', 'paths'}:
-            raise ValueError(f'{slug}: only name, host_preset and paths are allowed')
+        if not isinstance(settings, dict) or set(settings) - {'name', 'host_preset', 'paths', 'host_tickets'}:
+            raise ValueError(f'{slug}: only name, host_preset, paths and host_tickets are allowed')
         name = settings.get('name', slug)
         if not isinstance(name, str) or not re.fullmatch(r'[^\x00-\x1f]{1,80}', name) or name != name.strip():
             raise ValueError(f'{slug}: name must be one line of at most 80 characters')
@@ -72,7 +75,12 @@ def validate(data):
                 raise ValueError(f'{slug}: {path} is a system tree; name a dedicated directory')
         if paths and preset == 'none':
             raise ValueError(f'{slug}: paths need a host_preset other than none')
-        result[slug] = {'name': name, 'host_preset': preset, 'paths': sorted(set(paths))}
+        host_tickets = settings.get('host_tickets', 'owner')
+        if host_tickets not in HOST_TICKETS:
+            raise ValueError(f'{slug}: host_tickets must be owner or bots')
+        if host_tickets == 'bots' and preset == 'none':
+            raise ValueError(f'{slug}: host_tickets: bots needs a host_preset other than none')
+        result[slug] = {'name': name, 'host_preset': preset, 'paths': sorted(set(paths)), 'host_tickets': host_tickets}
     names = [project['name'].casefold() for project in result.values()]
     if len(names) != len(set(names)):
         raise ValueError('Two projects use the same name')

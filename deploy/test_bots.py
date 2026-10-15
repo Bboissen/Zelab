@@ -87,6 +87,24 @@ class BotTest(unittest.TestCase):
         self.assertIn('/profiles/scout/skills/paperclip/paperclip-task-bridge/paperclip-task.mjs', text)
         self.assertNotIn('pcp_', text)
 
+    def test_host_agents_follow_the_project_environment_and_host_tickets(self):
+        site = {**SITE, 'zelab_projects': {'media': {'host_tickets': 'bots'}, 'lab': {'host_tickets': 'owner'},
+                                            'research': {'host_tickets': 'owner'}}}
+        ids = {'projects': {'media': 'pm', 'lab': 'pl', 'research': 'pr'}, 'environments': {'media host': 'em', 'lab host': 'el'}}
+        agents = [{'id': 'h1', 'adapterType': 'codex_local', 'status': 'idle', 'defaultEnvironmentId': 'em'},
+                  {'id': 'h2', 'adapterType': 'claude_local', 'status': 'terminated', 'defaultEnvironmentId': 'em'},
+                  {'id': 'h3', 'adapterType': 'codex_local', 'status': 'idle', 'defaultEnvironmentId': 'el'},
+                  {'id': 'b1', 'adapterType': 'hermes_gateway', 'status': 'idle', 'defaultEnvironmentId': 'em'}]
+        hosts = bots.host_agents(site, agents, ids)
+        self.assertEqual({slug: [a['id'] for a in found] for slug, found in hosts.items()}, {'media': ['h1'], 'lab': ['h3']})
+        team = {'marvin': {'id': 'b1'}}
+        self.assertEqual(bots.assignees(site, team, hosts, ids, ['pm', 'pl']), ['b1', 'h1'])
+        self.assertEqual(bots.assignees(site, team, hosts, ids, ['pl']), ['b1'])
+        text = bots.skill(site, 'marvin', team, [], hosts)
+        self.assertIn('| media |  |  | `h1` | you |', text)
+        self.assertIn('| lab |  |  | `h3` | the owner |', text)
+        self.assertIn('none hired yet', bots.skill(site, 'marvin', team, []))
+
     def test_starter_persona_names_the_bot_and_its_team(self):
         text = bots.starter('jarvis', 'Chief of Staff', {'scout': 'finds sources', 'writer': ''},
                             'You are Hermes Agent, built by Nous Research. Be direct.')

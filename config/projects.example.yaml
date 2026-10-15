@@ -10,6 +10,10 @@
 #   repo-dev          owns `paths` (read/write ACL), no sudo
 #   full-sudo         unrestricted sudo: root on the host
 # paths: directories the account owns (read-only for monitor-readonly).
+# host_tickets: owner | bots (default owner)
+#   owner  bots file host work unassigned; you assign it to a host agent
+#   bots   bots holding a key for this project assign its host agents directly;
+#          Paperclip runs the agent at once, without you (see docs/TRUST_MODEL.md)
 #
 # For each project with a preset other than none, make creates the account
 # zelab-p-<slug>, its SSH key and the Paperclip SSH environment "<slug> host".

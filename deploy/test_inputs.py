@@ -92,11 +92,12 @@ class PrivateInputsTest(unittest.TestCase):
                             '    paths: [/srv/homelab]\n  research: {}\n')
         loaded = read_inputs(self.site, self.env)['zelab_projects']
         self.assertEqual(loaded['homelab'], {'name': 'Homelab', 'host_preset': 'repo-dev', 'paths': ['/srv/homelab'],
-                                             'account': True, 'groups': [], 'sudo': [], 'paths_rights': 'rwx'})
+                                             'host_tickets': 'owner', 'account': True, 'groups': [], 'sudo': [], 'paths_rights': 'rwx'})
         self.assertEqual((loaded['research']['name'], loaded['research']['account']), ('research', False))
         for text in ('projects:\n  Bad_Slug: {}\n', 'projects:\n  web:\n    host_preset: root\n',
                      'projects:\n  web:\n    paths: [/srv/web]\n', 'projects:\n  web:\n    host_preset: repo-dev\n    paths: [/etc]\n',
-                     'projects:\n  a:\n    name: Same\n  b:\n    name: same\n', 'other: 1\n'):
+                     'projects:\n  a:\n    name: Same\n  b:\n    name: same\n', 'other: 1\n',
+                     'projects:\n  web:\n    host_tickets: bots\n', 'projects:\n  web:\n    host_preset: docker\n    host_tickets: yes\n'):
             with self.subTest(text=text):
                 projects.write_text(text)
                 with self.assertRaises(ValueError):

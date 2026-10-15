@@ -62,6 +62,9 @@ In Paperclip, hire a Codex or Claude Code agent on a project's SSH environment, 
 - make offers Paperclip's own subscription sign-in for host agents (option 4
   in `rtk proxy make bot`); Paperclip keeps the login and shares it with agents.
 - Bots file host work as unassigned tickets; you assign them to a host agent.
+  With `host_tickets: bots` on a project, bots assign its host agents
+  themselves and answer in the chat when the work is done.
+- After hiring a host agent, run `rtk proxy make` again so the bots know it.
 - A `full-sudo` project's agent is root on the host. Choose the narrowest preset.
 
 ### Discord

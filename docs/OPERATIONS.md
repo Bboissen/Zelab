@@ -92,6 +92,15 @@ SSH environment `<slug> host`. Hire a Codex or Claude Code agent in Paperclip on
 that environment; both pinned CLIs are installed as `codex` and `claude` when
 those names are free.
 
+`host_tickets` says who assigns tickets to a project's host agents: `owner`
+(default; bots file them unassigned) or `bots`. With `bots`, every task key that
+covers the project may assign its host agents, and the `zelab` skill lists them
+with a three-step recipe: the bot files a ticket for itself noting the chat to
+answer in, delegates child tickets to host agents when Paperclip runs it, and
+answers the chat with Hermes' `send_message` tool when Paperclip wakes it after
+the children are done. After hiring or removing a host agent, run `make` (or
+quit `make bot`) so the skills and keys pick it up.
+
 Removing a project from the file removes its account, grants and environment on
 the next `make`; its Paperclip project, tickets and notes stay. Nothing watches
 the file between runs.

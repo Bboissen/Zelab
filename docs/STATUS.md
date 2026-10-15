@@ -35,6 +35,7 @@ Record PASS, FAIL or NOT RUN with timestamp, steps and sanitized evidence.
 | --- | --- | --- |
 | G1 | In a project's Discord channel, "@bot do research on X" ends with a Paperclip ticket and notes with sources under `Projects/<slug>/` in Obsidian | NOT RUN |
 | G2 | A bot files a host ticket; the owner assigns it to a host agent; the agent does the work and the result returns on the ticket and in the channel | NOT RUN |
+| G2b | In a `host_tickets: bots` project, a bot delegates a chat question to a host agent by child ticket, is woken when it is done and answers in the same channel without the owner | NOT RUN |
 | G3 | A ticket the owner assigns to a bot in Paperclip is done by that bot and answered on the ticket | NOT RUN |
 | G4 | Two bots hand work over by chat @mention and by ticket | NOT RUN |
 | B1 | `make bot` adds a bot, signs it in to a model and a chat app through Hermes' menus and hires it in Paperclip, without restarting the guest | NOT RUN |

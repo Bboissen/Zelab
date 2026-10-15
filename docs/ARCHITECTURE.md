@@ -58,6 +58,10 @@ host account stay on the host.
 2. **Host work (G2).** A bot files an unassigned ticket; the owner assigns it in
    Paperclip to a host agent. Paperclip opens the project's SSH environment and
    runs Codex or Claude Code as `zelab-p-<slug>`; the result lands on the ticket.
+   In a project with `host_tickets: bots`, the bot assigns the host agent itself
+   with a child ticket of its own; when the children are done, Paperclip wakes
+   the bot (`issue_children_completed`, with each child's summary) and the bot
+   answers the chat it noted on its ticket.
 3. **Owner to bot (G3).** A ticket the owner assigns to a bot in Paperclip is
    dispatched to `/p/<bot>/v1/runs` of the shared gateway.
 4. **Bot to bot (G4).** By chat, a bot that allows bots (`DISCORD_ALLOW_BOTS`)
