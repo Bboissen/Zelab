@@ -82,16 +82,6 @@ class ProvisioningTest(unittest.TestCase):
             })
         self.assertIn('changed=0', result.stdout)
 
-    def test_skip_provisions_no_worker_account_or_cli(self):
-        # The real role entry from the site playbook; skip must not enter it.
-        roles = [yaml.safe_load((ROOT / 'deploy/host-workers.yaml').read_text())[0]['roles'][0]]
-        with tempfile.TemporaryDirectory() as directory:
-            result = self.run_play(directory, roles=roles, variables={'worker_harness': 'none'})
-        self.assertIn('ok=0', result.stdout)
-        self.assertIn('changed=0', result.stdout)
-        grant, = role_tasks('deploy/roles/notes_host/tasks/main.yaml', 'Grant the designated host worker the vault')
-        self.assertEqual(grant['when'], "worker_harness in ['codex', 'claude']")
-
     def test_serve_routes_never_replace_other_handlers_or_public_routes(self):
         task, = role_tasks('deploy/roles/private_ui/tasks/check.yaml', 'Preserve existing routes and reject public Funnel on owned endpoints')
         endpoint = 'host.example.ts.net:443'

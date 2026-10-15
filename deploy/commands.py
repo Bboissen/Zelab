@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The seven supported Make commands."""
+"""The eight supported Make commands."""
 
 from console import heading
 
@@ -14,10 +14,11 @@ def main():
     print('  make help     Show these commands')
     print('  make backup   Create and verify an encrypted application backup')
     print('  make restore  Select, verify and restore an encrypted backup, with confirmation')
-    print('\n  clean/fclean reset local harness, model, resource, app and profile choices.')
+    print('  make bot      Add, set up or remove Hermes bots (terminal only)')
+    print('\n  clean/fclean reset local resource and app choices.')
     print('  Host connections and installed resource names/locations are kept.')
     print('  fclean/re also delete Zelab notes, tasks and application logins. Backups,')
-    print('  personal harness logins, SSH/Tailscale and unrelated services are kept.')
+    print('  config/projects.yaml, SSH/Tailscale and unrelated services are kept.')
     print('  Restore a file: make restore RESTORE_ARCHIVE=/absolute/path/backup.tar.gpg')
     print('  Restore needs an installed compatible site; run make first after fclean.')
     print('  On a laptop: make REMOTE_HOST=user@server REMOTE_DIR=/absolute/checkout')

@@ -275,33 +275,40 @@ def tailscale_checks(site):
     return checks
 
 
+def bot_facts(site):
+    """Each bot's sign-in and chat state from the running guest (names and booleans); None when unreachable."""
+    if (command_output(["systemctl", "is-active", site["vm_service"] + ".service"]) or "").strip() != "active":
+        return None
+    import bots
+    try:
+        return bots.Guest(site).bots()
+    except (bots.Stop, ValueError, OSError):
+        return None
+
+
 def connection_checks(site, elevated):
-    harness = site.get('worker_harness', 'none')
-    if harness == 'codex':
-        auth = Path(site['worker_codex_auth_source'])
-        try:
-            info = auth.lstat()
-            login = stat.S_ISREG(info.st_mode) and not info.st_mode & 0o077 and info.st_size > 0
-        except OSError:
-            login = False
-        checks = [Check('Codex subscription login', login,
-                        f'Run `/usr/local/bin/zelab-codex login --device-auth` so {auth} exists (mode 0600), then rerun: rtk proxy make',
-                        pending=True, phase=phase_of('harness'))]
-    elif harness == 'claude':
-        login = command_succeeds(['sudo', '-n', '-u', site['worker_ops_user'], '-H',
-                                 '/usr/local/bin/zelab-claude', 'auth', 'status']) if elevated else False
-        checks = [Check('Claude Code subscription login', login,
-                        f'Run `rtk proxy sudo -u {site["worker_ops_user"]} -H /usr/local/bin/zelab-claude auth login --claudeai`; use Paperclip Test Environment before a worker task',
-                        pending=True, phase=phase_of('harness'))]
+    phase = phase_of("bots")
+    facts = bot_facts(site) if Path(site["deploy_key"]).exists() else None
+    if facts is None:
+        checks = [Check("Hermes bots", False, "Available after installation", pending=True, phase=phase)]
+    elif not facts:
+        checks = [Check("Hermes bots", False, "Add one: rtk proxy make bot", pending=True, phase=phase)]
     else:
-        checks = [Check('Worker harness skipped', True,
-                        'No Paperclip worker or Discord host tasks. Rerun make in a terminal and choose Codex or Claude Code when ready.',
-                        phase=phase_of('harness'))]
-    if harness in ('codex', 'claude'):
-        checks.append(Check('Operations proof task', False,
-                            'In Paperclip, choose the Operations model, then move "Prove Operations host access and sudo" from Backlog to Todo',
-                            pending=True, phase=phase_of('harness')))
-    checks.append(Check("First Discord → host task", False,
+        checks = [Check("Hermes bots", True, f"{len(facts)} bot(s)", phase=phase)]
+    for bot in facts or []:
+        name = bot["name"]
+        checks.append(Check(f"{name}: model sign-in", bot["signed_in"],
+                            f"rtk proxy make bot, then set up {name} (a)", pending=True, phase=phase))
+        checks.append(Check(f"{name}: chat app", bool(bot["chats"]),
+                            f"rtk proxy make bot, then set up {name} (b)", pending=True, phase=phase))
+        checks.append(Check(f"{name}: task key", bot["task_key"],
+                            f"rtk proxy make bot, then set up {name} (d)", pending=True, phase=phase))
+    hosts = sorted(slug for slug, project in site.get("zelab_projects", {}).items() if project["account"])
+    checks.append(Check("Host projects", bool(hosts),
+                        "SSH environments: " + ", ".join(f"{slug} host" for slug in hosts) if hosts else
+                        "Optional: declare host projects in config/projects.yaml, then rerun make",
+                        pending=True, phase=phase_of("hosts")))
+    checks.append(Check("First Discord request", False,
                         "Not provable by automation; follow the Test step in docs/SETUP.md",
                         pending=True, phase=phase_of("proof")))
     return checks

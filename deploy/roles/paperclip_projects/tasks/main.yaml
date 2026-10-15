@@ -1,0 +1,144 @@
+- name: Seed the native company, projects and SSH environments without exposing credentials
+  no_log: true
+  block:
+    - name: Sign in as the configured local owner
+      ansible.builtin.include_role:
+        name: paperclip_owner_session
+
+    - name: Reuse an existing native company
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies"
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
+      register: projects_companies
+
+    - name: Reject ambiguous company names
+      ansible.builtin.assert:
+        that: projects_companies.json | selectattr('name', 'equalto', paperclip_company_name) | list | length <= 1
+
+    - name: Create the declared native company once
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies"
+        method: POST
+        body_format: json
+        body: {name: "{{ paperclip_company_name }}", description: Private server bots and host agents}
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+        status_code: 201
+      when: projects_companies.json | selectattr('name', 'equalto', paperclip_company_name) | list | length == 0
+      register: projects_company_created
+      changed_when: true
+
+    - name: Resolve native company identity
+      ansible.builtin.set_fact:
+        projects_company: "{{ projects_company_created.json if projects_company_created is not skipped else (projects_companies.json | selectattr('name', 'equalto', paperclip_company_name) | first) }}"
+
+    - name: Read native projects
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ projects_company.id }}/projects"
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
+      register: projects_native
+
+    - name: Create each declared project once, matched by name
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ projects_company.id }}/projects"
+        method: POST
+        body_format: json
+        body: {name: "{{ item.value.name }}", status: in_progress, description: "Vault folder: Projects/{{ item.key }}/"}
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+        status_code: 201
+      loop: "{{ zelab_projects | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      when: projects_native.json | selectattr('name', 'equalto', item.value.name) | list | length == 0
+      changed_when: true
+
+    - name: Read native projects after creation
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ projects_company.id }}/projects"
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
+      register: projects_native
+
+    - name: Read native SSH environments
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ projects_company.id }}/environments"
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
+      register: projects_environments
+
+    - name: Declare each host project's SSH environment
+      ansible.builtin.set_fact:
+        projects_wanted_environments: >-
+          {{ projects_wanted_environments | default({}) | combine({item.key: {
+               'name': item.key + ' host', 'driver': 'ssh',
+               'description': 'Zelab host project ' + item.key + ': account zelab-p-' + item.key,
+               'config': {'host': worker_ssh_host, 'port': worker_ssh_port | int, 'username': 'zelab-p-' + item.key,
+                          'remoteWorkspacePath': projects_dir + '/' + item.key + '/workspace',
+                          'privateKey': lookup('ansible.builtin.file', private_dir + '/projects/' + item.key + '.key'),
+                          'knownHosts': lookup('ansible.builtin.file', private_dir + '/worker_known_hosts'),
+                          'strictHostKeyChecking': true},
+               'envVars': {'PATH': '/opt/zelab-tools/node-v' + node_version + '-linux-x64/bin:/usr/local/bin:/usr/bin:/bin'}}}) }}
+      loop: "{{ zelab_projects | dict2items | selectattr('value.account') | list }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Create each missing SSH environment
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ projects_company.id }}/environments"
+        method: POST
+        body_format: json
+        body: "{{ item.value }}"
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+        status_code: 201
+      loop: "{{ projects_wanted_environments | default({}) | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      when: projects_environments.json | selectattr('name', 'equalto', item.value.name) | list | length == 0
+      changed_when: true
+
+    - name: Point a changed SSH environment back at its declared account
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/environments/{{ current.id }}"
+        method: PATCH
+        body_format: json
+        body: {config: "{{ item.value.config }}", envVars: "{{ item.value.envVars }}"}
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+      loop: "{{ projects_wanted_environments | default({}) | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      vars:
+        current: "{{ projects_environments.json | selectattr('name', 'equalto', item.value.name) | first | default({}) }}"
+      when:
+        - current
+        - (current.config.host, current.config.port | int, current.config.username, current.config.remoteWorkspacePath)
+          != (item.value.config.host, item.value.config.port, item.value.config.username, item.value.config.remoteWorkspacePath)
+      changed_when: true
+
+    # Projects stay (tickets and notes are kept); only the host access goes.
+    - name: Remove the SSH environment of a project no longer declared as a host project
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/environments/{{ item.id }}"
+        method: DELETE
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
+        status_code: [200, 204, 404, 409]
+      loop: "{{ projects_environments.json | selectattr('description', 'defined') | selectattr('description', 'match', '^Zelab host project ') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: (item.description.split(':')[0] | replace('Zelab host project ', '')) not in (projects_wanted_environments | default({}))
+      changed_when: true
+
+    - name: Read native SSH environments after changes
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ projects_company.id }}/environments"
+        headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
+      register: projects_environments
+
+    - name: Save native resource IDs privately for make bot and checks
+      ansible.builtin.copy:
+        dest: "{{ private_dir }}/paperclip-ids.json"
+        content: >-
+          {{ {'company_id': projects_company.id,
+              'projects': dict(zelab_projects | dict2items | map(attribute='key') | zip(zelab_projects | dict2items | map(attribute='value') | map(attribute='name')
+                               | map('extract', dict(projects_native.json | map(attribute='name') | zip(projects_native.json | map(attribute='id')))))),
+              'environments': dict(projects_environments.json | selectattr('description', 'defined') | selectattr('description', 'match', '^Zelab host project ')
+                                   | map(attribute='name') | zip(projects_environments.json | selectattr('description', 'defined') | selectattr('description', 'match', '^Zelab host project ') | map(attribute='id')))}
+             | to_nice_json }}
+        owner: "{{ operator_user }}"
+        mode: '0600'

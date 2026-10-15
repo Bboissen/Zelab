@@ -20,11 +20,11 @@ from runtime import (maintenance_lock, private_directory, recover_on_interrupt,
                      require_idle_workers, run, service_active, stopped_writers)
 
 ROOT = Path(__file__).resolve().parents[1]
-STATE_FIELDS = ('vm_data', 'vm_root', 'paperclip_home', 'worker_ops_home',
-                'worker_code_home', 'notes_vault_dir', 'obsidian_state_dir', 'private_dir')
-# Skip creates no worker home, and only sites from the earlier two-worker layout
-# have a Coding home; backup.py archives a worker home only when it exists.
-WORKER_HOMES = frozenset({'worker_ops_home', 'worker_code_home'})
+STATE_FIELDS = ('vm_data', 'vm_root', 'paperclip_home', 'projects_dir', 'notes_vault_dir',
+                'vault_history_dir', 'obsidian_state_dir', 'private_dir')
+# A site without host projects may have no projects_dir; backup.py archives it
+# only when it exists.
+WORKER_HOMES = frozenset({'projects_dir'})
 PAPERCLIP_ENV = Path('/etc/zelab-paperclip.env')
 
 
@@ -135,7 +135,7 @@ def supervised_mounts(site):
             or bound.get('/config') != site['obsidian_state_dir'] + '/config'):
         raise ValueError('Obsidian does not mount this site vault/state')
     exports = site.get('notes_sftp_root', '/var/lib/zelab-notes-sftp')
-    sources = {site['notes_vault_dir'], site['notes_vault_dir'] + '/Shared'}
+    sources = {site['notes_vault_dir']}
     mounts = []
     for path in systemd.glob('*.mount'):
         text = path.read_text()

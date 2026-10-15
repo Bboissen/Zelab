@@ -17,8 +17,8 @@ class RecoverySafetyTest(unittest.TestCase):
     def test_inventory_includes_custom_vm_unit_and_reserved_optional_state(self):
         with tempfile.TemporaryDirectory() as directory:
             site = {name: str(Path(directory) / name) for name in (
-                'vm_data', 'vm_root', 'paperclip_home', 'worker_ops_home',
-                'worker_code_home', 'notes_vault_dir', 'obsidian_state_dir',
+                'vm_data', 'vm_root', 'paperclip_home', 'projects_dir',
+                'notes_vault_dir', 'vault_history_dir', 'obsidian_state_dir',
                 'private_dir', 'vm_bootstrap_dir')}
             site['vm_service'] = 'research-guest'
             paths = selected_paths(site, Path(directory) / 'repository', require_existing=False)

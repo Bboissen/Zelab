@@ -30,8 +30,8 @@ class ResourceBudgetTest(unittest.TestCase):
 
     def test_busy_hosts_do_not_lose_the_normal_vm_allocation(self):
         plan = resources.plan_resources(self.site, 3 * resources.GIB, 0.1)
-        self.assertEqual(plan, {'cpu': 1, 'memory_mb': 2048,
-                                'cpu_quota': '50%', 'memory_max': '2304M'})
+        self.assertEqual(plan, {'cpu': self.site['vm_cpu'], 'memory_mb': self.site['vm_memory_mb'],
+                                'cpu_quota': self.site['vm_cpu_quota'], 'memory_max': self.site['vm_memory_max']})
 
     def test_disabled_boost_preserves_explicit_native_limits(self):
         self.site['vm_install_resource_fraction'] = 0
@@ -63,6 +63,8 @@ class ResourceRecoveryTest(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         self.site = yaml.safe_load(Path('config/defaults.yaml').read_text())
+        # A throttled one-vCPU guest exercises the whole-vCPU startup quota.
+        self.site.update(vm_cpu=1, vm_memory_mb=2048, vm_cpu_quota='50%', vm_memory_max='2304M')
         self.budget = resources.InstallationResources(
             self.site, unit_directory=self.root / 'etc',
             runtime_directory=self.root / 'run', receipt_directory=self.root / 'receipt',

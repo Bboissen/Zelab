@@ -1,0 +1,31 @@
+# Host agents run Codex or Claude Code over Paperclip's SSH environments; both
+# pinned CLIs are installed once and published as `codex` and `claude` when
+# those names are free, so Paperclip's default commands find them.
+- name: Install pinned host agent CLIs
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - codex
+    - claude
+  tasks:
+    - name: Inspect the default command names
+      ansible.builtin.stat:
+        path: "/usr/local/bin/{{ item }}"
+        follow: false
+      loop: [codex, claude]
+      register: host_tool_names
+
+    - name: Publish the pinned CLIs under their default names when free or already ours
+      ansible.builtin.file:
+        src: "/usr/local/bin/zelab-{{ item.item }}"
+        dest: "/usr/local/bin/{{ item.item }}"
+        state: link
+        owner: root
+        group: root
+      loop: "{{ host_tool_names.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: not item.stat.exists or (item.stat.islnk and item.stat.lnk_target == '/usr/local/bin/zelab-' + item.item)

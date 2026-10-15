@@ -52,7 +52,7 @@ class InstallerTest(unittest.TestCase):
             return 0, []
 
         with ExitStack() as stack, redirect_stdout(io.StringIO()):
-            for method in ('host', 'administration', 'configuration', 'controller', 'worker_harness', 'open_log', 'single_run', 'services'):
+            for method in ('host', 'administration', 'configuration', 'controller', 'open_log', 'single_run', 'services', 'bots'):
                 stack.enter_context(patch.object(runner, method))
             stack.enter_context(patch.object(runner, 'ui_passwords', side_effect=passwords))
             stack.enter_context(patch.object(runner, 'deploy', side_effect=lambda: stages.append('deploy')))
@@ -92,7 +92,7 @@ class InstallerTest(unittest.TestCase):
         lines = ["PLAY [Install pinned native Paperclip on the host] ***\n",
                  "TASK [paperclip : Install the service] ***\n", "changed: [zelab_host]\n",
                  "TASK [paperclip : Start it] ***\n", "changed: [zelab_host]\n",
-                 "PLAY [Provision native host worker identities and SSH access] ***\n",
+                 "PLAY [Install pinned host agent CLIs] ***\n",
                  "TASK [codex : Download] ***\n", "ok: [zelab_host]\n", "PLAY RECAP ***\n"]
         runner = self.installer()
 
@@ -101,7 +101,7 @@ class InstallerTest(unittest.TestCase):
             runner.deploy()
         output = runner.screen.stream.getvalue()
         self.assertRegex(output, r"✓ Paperclip +2 changes")
-        self.assertRegex(output, r"✓ Host workers +no changes")
+        self.assertRegex(output, r"✓ Host agent CLIs +no changes")
         self.assertNotIn("ok: [", output)
 
     def test_failed_deployment_names_the_step_and_cause_only(self):
@@ -124,8 +124,8 @@ class InstallerTest(unittest.TestCase):
                  "TASK [paperclip : Install the service] ***\n", "changed: [zelab_host]\n",
                  '    "msg": "private task output"\n',
                  "TASK [paperclip : Start it] ***\n", "ok: [zelab_host]\n",
-                 "PLAY [Provision native host worker identities and SSH access] ***\n",
-                 "TASK [host_workers : Create account] ***\n", "ok: [zelab_host]\n", "PLAY RECAP ***\n"]
+                 "PLAY [Provision per-project host accounts and SSH access] ***\n",
+                 "TASK [host_projects : Create account] ***\n", "ok: [zelab_host]\n", "PLAY RECAP ***\n"]
         runner = self.installer()
 
         def capture(argv, on_line=None, env=None):
@@ -140,7 +140,7 @@ class InstallerTest(unittest.TestCase):
         self.assertEqual([(record["play"], record["task"]) for record in records], [
             ("Install pinned native Paperclip on the host", "paperclip : Install the service"),
             ("Install pinned native Paperclip on the host", "paperclip : Start it"),
-            ("Provision native host worker identities and SSH access", "host_workers : Create account")])
+            ("Provision per-project host accounts and SSH access", "host_projects : Create account")])
         self.assertTrue(all(set(record) == {"play", "task", "seconds"} and record["seconds"] >= 0 for record in records))
         self.assertNotIn("TASK_TIMING", runner.screen.stream.getvalue())
 

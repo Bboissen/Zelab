@@ -1,8 +1,8 @@
-- name: Configure native Paperclip host worker environments and agents
+- name: Provision per-project host accounts and SSH access
   hosts: host
   gather_facts: false
   become: true
   vars_files:
     - ../versions.yaml
   roles:
-    - paperclip_workers
+    - host_projects

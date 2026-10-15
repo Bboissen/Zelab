@@ -37,12 +37,8 @@ def container_running(name):
 
 
 def require_idle_workers(site):
-    uids = set()
-    for name in ['worker_ops_user', 'worker_code_user']:
-        try:
-            uids.add(pwd.getpwnam(site[name]).pw_uid)
-        except KeyError:
-            pass  # Skipped worker, or no legacy Coding account.
+    # Host project accounts (zelab-p-<slug>) run Paperclip's host agents.
+    uids = {entry.pw_uid for entry in pwd.getpwall() if entry.pw_name.startswith('zelab-p-')}
     for path in Path('/proc').glob('[0-9]*'):
         try:
             if path.stat().st_uid in uids:

@@ -29,13 +29,6 @@
     system: true
     create_home: false
 
-- name: Grant the designated host worker the vault
-  ansible.builtin.user:
-    name: "{{ worker_ops_user }}"
-    groups: "{{ notes_owner_group }}"
-    append: true
-  when: worker_harness in ['codex', 'claude']
-
 # The mode's group bits are the ACL mask: 2770 keeps the mask rwx set below.
 - name: Prepare the vault root and its Projects folder without changing existing notes
   ansible.builtin.file:
@@ -45,6 +38,16 @@
     group: "{{ notes_owner_group }}"
     mode: '2770'
   loop: ["{{ notes_vault_dir }}", "{{ notes_vault_dir }}/Projects"]
+
+# Folders only: a removed project keeps its notes.
+- name: Create a vault folder for each declared project
+  ansible.builtin.file:
+    path: "{{ notes_vault_dir }}/Projects/{{ item }}"
+    state: directory
+    owner: "{{ notes_container_user }}"
+    group: "{{ notes_owner_group }}"
+    mode: '2770'
+  loop: "{{ zelab_projects | default({}) | list }}"
 
 - name: Read the local owner editor identity
   ansible.builtin.command:

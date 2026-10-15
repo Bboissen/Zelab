@@ -2,8 +2,7 @@
 """Create config/site.yaml once from facts discovered on this host.
 
 Only values that differ per host are written; everything else comes from
-config/defaults.yaml. Existing site inputs are retained; interactive harness
-selection updates only worker_harness when the installer invokes --select-harness.
+config/defaults.yaml. Existing site inputs are retained.
 """
 
 import argparse
@@ -12,9 +11,7 @@ import ipaddress
 import os
 from pathlib import Path
 import pwd
-import sys
 
-from console import heading, paint
 import shell
 
 
@@ -66,7 +63,7 @@ def choose_tail_ports(serve, owned_backends):
 
 
 def ssh_listener(effective):
-    """Choose the existing host SSH listener that local workers will use."""
+    """Choose the existing host SSH listener that project host accounts will use."""
     ports, addresses = [], []
     for line in (effective or "").splitlines():
         key, _, value = line.partition(" ")
@@ -113,7 +110,7 @@ def render(facts, today):
         "",
         f"operator_user: {facts['operator_user']}",
         "",
-        "# Existing host SSH listener used by local Paperclip workers.",
+        "# Existing host SSH listener Paperclip uses to reach project host accounts.",
         f"worker_ssh_host: {facts['worker_ssh_host']}",
         f"worker_ssh_port: {facts['worker_ssh_port']}",
         "",
@@ -131,59 +128,11 @@ def render(facts, today):
     return "\n".join(lines)
 
 
-def select_harness(site_path):
-    """Offer the saved choice on each terminal run; retain unattended inputs."""
-    import yaml
-    from run import load_yaml
-    site = load_yaml(site_path)
-    saved = site.get('worker_harness', 'none')
-    # 'both' was removed with the single-worker layout; a terminal run replaces it.
-    if saved not in ('codex', 'claude', 'none') and not (saved == 'both' and sys.stdin.isatty()):
-        raise ValueError('worker_harness must be codex, claude or none')
-    choice = saved
-    labels = {'codex': 'Codex', 'claude': 'Claude Code', 'none': 'skipped', 'both': 'both (no longer offered)'}
-    if sys.stdin.isatty():
-        heading('Optional Paperclip worker')
-        print('  1. Codex\n  2. Claude Code\n  3. Skip for now')
-        print('  Codex or Claude Code creates one Operations worker, fully configured except')
-        print('  its model, with a waiting task that proves host access and sudo.')
-        print('  Skip creates no worker, no worker account and no Discord host tasks.')
-        print(f'  Current selection: {labels[saved]}')
-        choices = {'1': 'codex', 'codex': 'codex', '2': 'claude', 'claude': 'claude',
-                   'claude code': 'claude', '3': 'none', 'none': 'none', 'skip': 'none'}
-        default = {'codex': 1, 'claude': 2, 'none': 3}.get(saved)
-        if default:
-            choices[''] = saved
-        while True:
-            answer = input(f'  Choose [1/2/3{f", default {default}" if default else ""}]: ').strip().lower()
-            if answer in choices:
-                choice = choices[answer]
-                break
-            print('  Enter 1 (Codex), 2 (Claude Code) or 3 (skip).')
-    # Replace only the value, keeping comments, permissions and unrelated inputs.
-    if 'worker_harness' not in site:
-        with site_path.open('a') as output:
-            output.write(f'\n# Optional Paperclip worker harness: codex, claude or none.\nworker_harness: {choice}\n')
-    elif choice != saved:
-        original = site_path.read_text()
-        document = yaml.compose(original)
-        value = next(value for key, value in document.value if key.value == 'worker_harness')
-        start, end = value.start_mark.index, value.end_mark.index
-        if original[start:end] not in (saved, f"'{saved}'", f'"{saved}"'):
-            raise ValueError('Use a direct worker_harness scalar in the site file before changing this selection')
-        site_path.write_text(original[:start] + choice + original[end:])
-    print(f'  Paperclip worker harness: {paint(labels[choice], "bold")} (saved in {site_path})')
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site-config", type=Path, default=ROOT / "config/site.yaml")
     parser.add_argument("--env-file", type=Path, default=ROOT / ".env")
-    parser.add_argument('--select-harness', action='store_true')
     args = parser.parse_args(argv)
-    if args.select_harness:
-        select_harness(args.site_config)
-        return 0
     if args.site_config.exists() or args.site_config.is_symlink():
         return 0
     facts = discover(operator())
@@ -193,7 +142,7 @@ def main(argv=None):
         output.write(text)
     print(f"Created {args.site_config} from this host:")
     print(f"  operator: {facts['operator_user']}")
-    print(f"  worker SSH listener: {facts['worker_ssh_host']}:{facts['worker_ssh_port']}"
+    print(f"  host SSH listener: {facts['worker_ssh_host']}:{facts['worker_ssh_port']}"
           + ("" if facts["_ssh_discovered"] else " (default; sshd settings were not readable)"))
     if facts["ui_tailscale_enabled"]:
         urls = ", ".join(str(facts[name]) for name in TAIL_ROUTES)

@@ -44,9 +44,12 @@ STAGES = (
     ("Build pinned upstream Hermes", "Hermes build"),
     ("Install pinned unmodified Hermes", "Hermes"),
     ("Install pinned native Paperclip", "Paperclip"),
-    ("Provision native host worker", "Host workers"),
+    ("Install pinned host agent CLIs", "Host agent CLIs"),
+    ("Provision per-project host accounts", "Host projects"),
     ("Finish pinned Hermes", "Hermes dashboard"),
-    ("Configure native Paperclip host worker", "Paperclip agents"),
+    ("Configure native Paperclip projects", "Paperclip projects"),
+    ("Publish Paperclip's bundled task-bridge", "Paperclip projects"),
+    ("Install the task-bridge skill", "Paperclip projects"),
     ("Supervise the native shared Hermes gateway", "Hermes gateway"),
     ("Seed the native Hermes API", "Hermes API"),
     ("Prepare the host vault", "Vault"),
@@ -58,8 +61,9 @@ APPLICATION = re.compile(r'(\w+) [\w ]+?: (HTTP \d+ ready|HTTP \d+ needs attenti
 SECTIONS = (
     ("Prepare the host", {"Host packages"}),
     ("Build the Hermes VM and runtime", {"Hermes VM", "Downloads", "VM firewall", "Hermes build", "Hermes"}),
-    ("Install applications, workers and Hermes", {"Paperclip", "Host workers", "Hermes dashboard",
-                                                "Paperclip agents", "Hermes gateway", "Hermes API"}),
+    ("Install Paperclip, host projects and Hermes", {"Paperclip", "Host agent CLIs", "Host projects",
+                                                    "Hermes dashboard", "Paperclip projects",
+                                                    "Hermes gateway", "Hermes API"}),
     ("Connect the vault and Obsidian", {"Vault", "Obsidian"}),
     ("Verify services and prepare your guide", {"Cleanup"}),
 )
@@ -301,14 +305,6 @@ class Installer:
             self.tool_failed("Ansible could not be installed", tail)
         self.screen.finish("PASS", "Ansible installed")
 
-    def worker_harness(self):
-        # Native input/output must reach the terminal: capture() hides prompts.
-        command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/configure.py',
-                   '--site-config', str(self.site_config), '--select-harness']
-        if subprocess.run(command, cwd=ROOT).returncode:
-            self.screen.start('Worker harness')
-            self.fail('selection could not be saved')
-
     def open_log(self):
         """The log lives in the site's private directory once the inputs can be read."""
         code = ("import sys,json; sys.path.insert(0, 'deploy'); from pathlib import Path; from run import read_inputs; "
@@ -320,6 +316,14 @@ class Installer:
         if not settings.get("obsidian_enabled", True):
             self.applications.discard("Obsidian")
         self.log.open(settings.get("private_dir", DEFAULT_PRIVATE_DIR))
+
+    def bots(self):
+        # Hermes' wizards need the terminal: capture() would hide them.
+        command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/bots.py', 'installer', *self.inputs(),
+                   '--runtime-dir', self.password_dir]
+        if subprocess.run(command, cwd=ROOT).returncode:
+            self.screen.start('Hermes bots')
+            self.fail('bot setup stopped; finish it with: rtk proxy make bot')
 
     def ui_passwords(self, action):
         # Inherit the terminal; neither input nor credential values enter capture/logs.
@@ -479,7 +483,6 @@ class Installer:
             self.administration()
             self.configuration()
             self.controller()
-            self.worker_harness()
             self.open_log()
             self.single_run()
             # Linux RAM filesystem: plaintext inputs are never retained in Git,
@@ -491,6 +494,7 @@ class Installer:
                 self.deploy()
                 self.screen.section(4)
                 self.services()
+                self.bots()
                 self.ui_passwords('finish')
                 self.summary()
             self.password_dir = None

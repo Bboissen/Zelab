@@ -4,13 +4,9 @@
 
 # operator_user is discovered from the account running the installer.
 
-# Existing host SSH listener used by local Paperclip workers.
+# Existing host SSH listener that Paperclip uses to reach project host accounts.
 worker_ssh_host: 127.0.0.1
 worker_ssh_port: 22
-
-# Optional Paperclip worker. Plain make offers Codex, Claude Code or skip.
-worker_harness: none      # codex, claude or none
-# worker_model: ''        # native default; choose models in Paperclip later
 
 # Private HTTPS through Tailscale Serve; requires MagicDNS and HTTPS in the tailnet.
 # Plain make discovers an enrolled tailnet. A copied example remains private
@@ -22,6 +18,6 @@ ui_tail_paperclip_port: 8443
 ui_tail_obsidian_port: 9443
 
 # Common optional overrides (defaults shown in config/defaults.yaml):
-# private_dir, backup_dir and worker_codex_auth_source follow the operator's
-# account home/environment. Override only with actual absolute paths.
-# vm_disk_gib: 16
+# private_dir and backup_dir follow the operator's account home/environment.
+# Override only with actual absolute paths.
+# vm_disk_gib: 20

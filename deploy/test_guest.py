@@ -48,6 +48,15 @@ class VmUnit(unittest.TestCase):
                                     'hostfwd=tcp:127.0.0.1:18642-:8642'])
 
 
+class GuestSize(unittest.TestCase):
+    def test_default_guest_is_two_vcpu_four_gib_twenty_gib(self):
+        self.assertEqual((DEFAULTS['vm_cpu'], DEFAULTS['vm_memory_mb'], DEFAULTS['vm_disk_gib']), (2, 4096, 20))
+        unit = render('deploy/roles/vm/templates/zelab-vm.service.j2')
+        self.assertIn('-smp 2 -m 4096 ', unit)
+        self.assertIn('CPUQuota=200%', unit)
+        self.assertIn('MemoryMax=4352M', unit)
+
+
 class FakeQmp:
     """Unix-socket QMP server holding one virtio disk."""
 

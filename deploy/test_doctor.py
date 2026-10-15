@@ -20,23 +20,29 @@ import runtime
 
 
 class HostReadinessTest(unittest.TestCase):
-    def test_skipped_harness_has_no_provider_login_probe(self):
-        site = {'worker_harness': 'none', 'deploy_key': '/fixture/key'}
-        with patch.object(doctor, 'command_succeeds') as probe:
-            checks = doctor.connection_checks(site, elevated=True)
-        probe.assert_not_called()
-        self.assertEqual(checks[0].name, 'Worker harness skipped')
-        self.assertEqual(checks[0].label, 'PASS')
+    def site(self):
+        return {'deploy_key': '/fixture/key', 'zelab_projects': {
+            'homelab': {'account': True}, 'research': {'account': False}}}
 
-    def test_claude_login_checks_the_actual_operations_account(self):
-        site = {'worker_harness': 'claude', 'worker_ops_user': 'fixture-ops',
-                'deploy_key': '/fixture/key'}
-        with patch.object(doctor, 'command_succeeds', return_value=True) as probe:
-            checks = doctor.connection_checks(site, elevated=True)
-        self.assertEqual(probe.call_args.args[0], ['sudo', '-n', '-u', 'fixture-ops', '-H',
-                                                '/usr/local/bin/zelab-claude', 'auth', 'status'])
-        self.assertEqual(checks[0].name, 'Claude Code subscription login')
-        self.assertEqual(checks[0].label, 'PASS')
+    def test_each_bot_reports_its_own_pending_setup_steps(self):
+        facts = [{'name': 'scout', 'signed_in': True, 'chats': ['Discord'], 'task_key': False},
+                 {'name': 'writer', 'signed_in': False, 'chats': [], 'task_key': True}]
+        with patch.object(doctor, 'bot_facts', return_value=facts), patch.object(Path, 'exists', return_value=True):
+            checks = {check.name: check.label for check in doctor.connection_checks(self.site(), elevated=True)}
+        self.assertEqual(checks['Hermes bots'], 'PASS')
+        self.assertEqual((checks['scout: model sign-in'], checks['scout: chat app'], checks['scout: task key']),
+                         ('PASS', 'PASS', 'PENDING'))
+        self.assertEqual((checks['writer: model sign-in'], checks['writer: chat app'], checks['writer: task key']),
+                         ('PENDING', 'PENDING', 'PASS'))
+        self.assertEqual(checks['Host projects'], 'PASS')
+
+    def test_no_bots_or_no_guest_is_a_pending_step_not_a_blocker(self):
+        for facts, detail in (([], 'make bot'), (None, 'after installation')):
+            with self.subTest(facts=facts), patch.object(doctor, 'bot_facts', return_value=facts), \
+                    patch.object(Path, 'exists', return_value=True):
+                check = doctor.connection_checks(self.site(), elevated=True)[0]
+            self.assertEqual((check.name, check.label), ('Hermes bots', 'PENDING'))
+            self.assertIn(detail, check.detail)
 
     def test_allowlisted_release_expires_at_its_maintenance_boundary(self):
         for (family, version), expiry in doctor.SUPPORTED_OS.items():

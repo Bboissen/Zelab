@@ -82,18 +82,25 @@ class PrivateInputsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'another guest'):
             read_inputs(self.site, self.env)
 
-    def test_legacy_coding_worker_inputs_are_optional_and_still_validated(self):
+    def test_projects_file_is_validated_and_carries_its_preset(self):
+        projects = self.root / 'projects.yaml'
         site = yaml.safe_load(self.site.read_text())
-        for name in ('worker_code_user', 'worker_code_home'):
-            site.pop(name)
+        site['projects_config'] = str(projects)
         self.site.write_text(yaml.safe_dump(site))
-        loaded = read_inputs(self.site, self.env, defaults_path=None)
-        self.assertEqual((loaded['worker_code_user'], loaded['worker_code_home']),
-                         ('zelab-code', '/var/lib/zelab-code'))
-        site['worker_code_user'] = site['worker_ops_user']
-        self.site.write_text(yaml.safe_dump(site))
-        with self.assertRaisesRegex(ValueError, 'distinct'):
-            read_inputs(self.site, self.env, defaults_path=None)
+        self.assertEqual(read_inputs(self.site, self.env)['zelab_projects'], {})
+        projects.write_text('projects:\n  homelab:\n    name: Homelab\n    host_preset: repo-dev\n'
+                            '    paths: [/srv/homelab]\n  research: {}\n')
+        loaded = read_inputs(self.site, self.env)['zelab_projects']
+        self.assertEqual(loaded['homelab'], {'name': 'Homelab', 'host_preset': 'repo-dev', 'paths': ['/srv/homelab'],
+                                             'account': True, 'groups': [], 'sudo': [], 'paths_rights': 'rwx'})
+        self.assertEqual((loaded['research']['name'], loaded['research']['account']), ('research', False))
+        for text in ('projects:\n  Bad_Slug: {}\n', 'projects:\n  web:\n    host_preset: root\n',
+                     'projects:\n  web:\n    paths: [/srv/web]\n', 'projects:\n  web:\n    host_preset: repo-dev\n    paths: [/etc]\n',
+                     'projects:\n  a:\n    name: Same\n  b:\n    name: same\n', 'other: 1\n'):
+            with self.subTest(text=text):
+                projects.write_text(text)
+                with self.assertRaises(ValueError):
+                    read_inputs(self.site, self.env)
 
     def test_duplicate_or_unknown_inputs_are_rejected(self):
         # .env accepts only path names, so it cannot hold a credential.
@@ -152,9 +159,7 @@ class PrivateInputsTest(unittest.TestCase):
         site = yaml.safe_load(original)
         for key, value in [('notes_enabled', 'false'), ('vm_cpu', True),
                            ('operator_user', 'root'), ('vm_service', 'unit;touch'),
-                           ('worker_harness', 'claude;touch'), ('worker_harness', None),
-                           ('worker_model', 'model\nINJECT=true'),
-                           ('worker_codex_model', 'model\nINJECT=true')]:
+                           ('hermes_initial_model', 'model\nINJECT=true'), ('projects_dir', 'relative/path')]:
             with self.subTest(key=key):
                 self.site.write_text(yaml.safe_dump({**site, key: value}))
                 with self.assertRaises(ValueError):
@@ -163,7 +168,7 @@ class PrivateInputsTest(unittest.TestCase):
     def test_state_and_private_path_aliases_are_rejected(self):
         site = yaml.safe_load(self.site.read_text())
         for updates in [{'paperclip_home': '/'},
-                        {'worker_code_home': site['worker_ops_home'] + '/nested'},
+                        {'projects_dir': site['paperclip_home'] + '/nested'},
                         {'backup_dir': site['paperclip_home'] + '/archive'},
                         {'private_dir': site['paperclip_home']},
                         {'deploy_key': '/tmp/unmanaged-key'},
@@ -194,7 +199,6 @@ class PrivateInputsTest(unittest.TestCase):
         site = read_inputs(self.site, None)
         self.assertEqual(site['private_dir'], '/home/operator/.local/state/zelab-deployment')
         self.assertEqual(site['deploy_key'], site['private_dir'] + '/deploy_ed25519')
-        self.assertEqual(site['worker_codex_auth_source'], '/home/operator/.codex/auth.json')
         self.assertEqual(site['vm_disk'], site['vm_data'] + '/disk.qcow2')
         self.assertEqual(site['paperclip_allowed_hosts'], ['127.0.0.1', '10.0.2.2', 'box.example.ts.net'])
         self.assertEqual(site['paperclip_owner_email'], 'operator@zelab.local')
@@ -218,11 +222,9 @@ class PrivateInputsTest(unittest.TestCase):
         self.assertEqual(site['operator_user'], 'fixture')
         self.assertEqual(site['private_dir'], '/srv/state/fixture/zelab-deployment')
         self.assertEqual(site['backup_dir'], '/srv/users/fixture/backups/Zelab')
-        self.assertEqual(site['worker_codex_auth_source'], '/srv/auth/fixture/auth.json')
         self.assertEqual(site['dashboard_username'], 'fixture')
         self.assertFalse(site['ui_tailscale_enabled'])
         self.assertEqual(empty['private_dir'], '/srv/users/fixture/.local/state/zelab-deployment')
-        self.assertEqual(empty['worker_codex_auth_source'], '/srv/users/fixture/.codex/auth.json')
 
     def test_separate_guest_examples_derive_distinct_private_state(self):
         baseline = read_inputs(self.site, None)

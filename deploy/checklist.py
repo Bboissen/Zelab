@@ -29,8 +29,8 @@ ITEMS = (
     Item("host", "Before provisioning", "Server"),
     Item("admin", "Before privileged changes", "Administrator"),
     Item("tailscale", "Before private remote access", "Tailscale"),
-    Item("harness", "Before active worker tasks", "Worker harness"),
-    Item("hermes", "After Hermes exists", "Hermes"),
+    Item("bots", "After installation", "Hermes bots"),
+    Item("hosts", "Before host work", "Host agents"),
     Item("discord", "Before the first Discord test", "Discord"),
     Item("proof", "Before declaring success", "Test"),
 )

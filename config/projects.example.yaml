@@ -1,0 +1,25 @@
+# Projects make creates, and their host rights. Copy to config/projects.yaml
+# (kept out of Git), edit, then run `rtk proxy make`. The key is the project's
+# slug: its vault folder Projects/<slug>/ and its host account zelab-p-<slug>.
+#
+# name: the Paperclip project name (default: the slug).
+# host_preset: none | monitor-readonly | docker | repo-dev | full-sudo
+#   none              no host account and no SSH environment (research only)
+#   monitor-readonly  journal and logs; systemctl/journalctl/docker read commands through sudo
+#   docker            monitor-readonly plus the docker group (root-equivalent on most hosts)
+#   repo-dev          owns `paths` (read/write ACL), no sudo
+#   full-sudo         unrestricted sudo: root on the host
+# paths: directories the account owns (read-only for monitor-readonly).
+#
+# For each project with a preset other than none, make creates the account
+# zelab-p-<slug>, its SSH key and the Paperclip SSH environment "<slug> host".
+# Hire a Codex or Claude Code agent in Paperclip and pick that environment.
+# Removing a project here removes its account and environment on the next
+# make; its Paperclip project, tickets and vault folder are kept.
+projects:
+  homelab:
+    name: Homelab
+    host_preset: full-sudo
+    paths: [/srv/homelab]
+  research:
+    host_preset: none
