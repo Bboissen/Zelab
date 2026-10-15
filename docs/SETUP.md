@@ -40,7 +40,8 @@ At the end of a fresh install, make asks how many bots to set up and opens Herme
     ChatGPT plan choose **OpenAI Codex** and approve the printed code.
   - **Chat app**: Hermes' platform menu (`hermes gateway setup`): Discord,
     Telegram, Slack and others. Paste the bot token there; it prints the
-    invite link. Allow your own user ID when it asks.
+    invite link. Allow your own user ID when it asks. For Discord, prepare
+    each bot's application first (see Discord below).
   - **Persona**: the bot's `SOUL.md`, edited in nano or pasted.
   - **Task key**: pick the Paperclip projects this bot may file tickets in.
 - Add, change or remove bots later with `rtk proxy make bot`. Removing one
@@ -63,9 +64,18 @@ In Paperclip, hire a Codex or Claude Code agent on a project's SSH environment, 
 
 Create one channel per project, named after its slug, and invite the bots that work on it.
 
-- Create the bot applications in the [Discord developer portal](https://discord.com/developers/applications)
-  and enable **Message Content Intent** for each.
-- Who can see a channel is set in Discord; Zelab does not manage channels.
+- Before the chat app step, create one application per bot in the
+  [Discord developer portal](https://discord.com/developers/applications). On
+  its **Bot** page: **Public Bot** on and **Requires OAuth2 Code Grant** off;
+  under Privileged Gateway Intents, **Server Members Intent** and **Message
+  Content Intent** on (without the latter Discord refuses the bot), then Save
+  Changes; **Reset Token** and copy the token for Hermes' wizard.
+- Open the invite link Hermes prints, pick your server and keep the
+  permissions it ticks: View Channels, Send Messages, Send Messages in
+  Threads, Create Public Threads, Embed Links, Attach Files, Read Message
+  History, Add Reactions, Connect and Speak. Then Authorize.
+- Who can see a channel is set in Discord; Zelab does not manage channels. Add
+  each bot to the private project channels it should answer in.
 
 ### Test
 

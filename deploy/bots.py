@@ -45,6 +45,20 @@ TASK_ENV = ('PAPERCLIP_API_URL', 'PAPERCLIP_BRIDGE_API_KEY', 'PAPERCLIP_COMPANY_
 CHAT_TOKENS = {'DISCORD_BOT_TOKEN': 'Discord', 'TELEGRAM_BOT_TOKEN': 'Telegram', 'SLACK_BOT_TOKEN': 'Slack',
                'MATTERMOST_TOKEN': 'Mattermost', 'MATRIX_ACCESS_TOKEN': 'Matrix', 'SIGNAL_ACCOUNT': 'Signal',
                'WHATSAPP_ENABLED': 'WhatsApp', 'EMAIL_ADDRESS': 'Email'}
+# Hermes' wizard checks the token and prints the invite link; the portal steps before it are by hand.
+DISCORD_HINT = '''
+  Discord: one application per bot, at https://discord.com/developers/applications
+    1. New Application, named like the bot.
+    2. Bot page: Public Bot ON (Hermes' invite link needs it), Requires OAuth2 Code Grant OFF.
+    3. Bot page, Privileged Gateway Intents: Server Members Intent ON and Message Content
+       Intent ON (without it Discord refuses the bot), then Save Changes.
+    4. Bot page: Reset Token and copy it; paste it into Hermes below (hidden input).
+    5. Open the invite link Hermes prints, pick your server and keep every permission it
+       ticks (View Channels, Send Messages, threads, Embed Links, Attach Files, Read Message
+       History, Add Reactions, Connect, Speak), then Authorize.
+    6. Private channels: add the bot to each project channel it should answer in.
+  Telegram and other apps: Hermes' wizard explains its own steps.
+'''
 
 
 class Stop(Exception):
@@ -455,6 +469,7 @@ class Bots:
             self.guest.wizard(name, 'setup', 'model')
             self.restart_needed = True
         if 'b' in steps:
+            print(DISCORD_HINT)
             self.guest.wizard(name, 'gateway', 'setup')
             self.restart_needed = True
             bot = next((b for b in self.guest.bots() if b['name'] == name), {})
