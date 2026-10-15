@@ -442,6 +442,10 @@ class Bots:
         code, _ = self.guest.hermes(name, 'config', 'set', 'terminal.env_passthrough', json.dumps(list(TASK_ENV)))
         if code:
             raise Stop('Could not let the task-bridge skill see its credentials.')
+        if not profiles:
+            # A gateway started with only the default profile does not serve new ones until restarted;
+            # without this, Hermes' chat wizard reports the first bot as having no gateway.
+            self.guest.root_python(RESTART)
         print('done')
         print(f'  Registering {name} in Paperclip (hire + approval) ...', end=' ', flush=True)
         secret = self.paperclip.secret(f'Hermes {name} API', f'HERMES_{name.upper().replace("-", "_")}_API', api_key)
@@ -698,6 +702,8 @@ def main(argv=None):
     parser.add_argument('--env-file', type=Path, default=ROOT / '.env')
     parser.add_argument('--runtime-dir', help='RAM directory holding the owner password during make')
     args = parser.parse_args(argv)
+    # rtk proxy hands us a pipe, not the terminal: flush each line so it lands before the wizards' output.
+    sys.stdout.reconfigure(line_buffering=True)
     if args.action != 'refresh' and not (sys.stdin.isatty() and os.isatty(0)):
         print('  make bot needs your terminal: it opens Hermes\' sign-in and chat wizards.', file=sys.stderr)
         return 0 if args.action == 'installer' else 1
