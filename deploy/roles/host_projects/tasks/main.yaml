@@ -1,4 +1,4 @@
-# Per-project host accounts from config/projects.yaml. Paperclip reaches each
+# The team's tier accounts from config/team.yaml. Paperclip reaches each
 # through the existing host SSH listener, with a key restricted to this host.
 - name: Inspect the native SSH runner Node prerequisite
   ansible.builtin.stat:
@@ -18,7 +18,7 @@
     owner: root
     group: root
 
-- name: Keep project keys in a private directory
+- name: Keep tier keys in a private directory
   ansible.builtin.file:
     path: "{{ private_dir }}/projects"
     state: directory
@@ -26,19 +26,20 @@
     mode: '0700'
   become: false
 
-- name: Generate one SSH key per host project outside Git
+- name: Generate one SSH key per tier outside Git
   ansible.builtin.command:
-    argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -C, "zelab-p-{{ item }}", -f, "{{ private_dir }}/projects/{{ item }}.key"]
-    creates: "{{ private_dir }}/projects/{{ item }}.key"
-  loop: "{{ zelab_projects | dict2items | selectattr('value.account') | map(attribute='key') | list }}"
+    argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -C, "zelab-team-{{ item }}", -f, "{{ private_dir }}/projects/team-{{ item }}.key"]
+    creates: "{{ private_dir }}/projects/team-{{ item }}.key"
+  loop: "{{ zelab_tiers | list }}"
   become: false
   no_log: true
 
-- name: Apply project accounts, sudo grants, path rights and SSH access
+- name: Apply tier accounts, sudo grants, path and vault rights and SSH access
   ansible.builtin.script:
     cmd: >-
-      host_projects.py {{ {'projects': zelab_projects, 'projects_dir': projects_dir,
-                           'keys_dir': private_dir + '/projects', 'ssh_host': worker_ssh_host} | to_json | quote }}
+      host_projects.py {{ {'tiers': zelab_tiers, 'projects_dir': projects_dir,
+                           'keys_dir': private_dir + '/projects', 'ssh_host': worker_ssh_host,
+                           'vault_dir': notes_vault_dir if notes_enabled | bool else None} | to_json | quote }}
     executable: /usr/bin/python3
   register: host_projects_applied
   changed_when: (host_projects_applied.stdout | from_json).changed > 0

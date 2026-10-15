@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Apply per-project host accounts from config/projects.yaml (run as root by make).
+"""Apply the team's tier accounts from config/team.yaml (run as root by make).
 
-For each project whose preset has an account: group and account zelab-p-<slug>
-(home <projects_dir>/<slug>, its workspace), the preset's groups, its sudoers
-fragment, read or write ACLs on its paths and an SSH key restricted to the
-host's own address. Accounts of projects no longer declared lose their grants
-and are removed. Prints {"changed": N}; never prints key material.
+For each tier: group and account zelab-team-<tier> (home <projects_dir>/<tier>,
+its workspace), the preset's groups, its sudoers fragment, read or write ACLs
+on its paths, read/write on the notes vault, and an SSH key restricted to the
+host's own address. Accounts of tiers no longer declared, and the per-project
+accounts zelab-p-<slug> of earlier versions, lose their grants and are removed.
+Prints {"changed": N}; never prints key material.
 """
 
 import json
@@ -17,21 +18,23 @@ import re
 import subprocess
 import sys
 
-COMMENT = 'Zelab host project {slug}'
+COMMENT = 'Zelab team tier {tier}'
+# Per-project accounts of earlier versions; removed on the next run.
+LEGACY_COMMENT = 'Zelab host project {slug}'
 SUDOERS = Path('/etc/sudoers.d')
 SSHD_DROPIN = Path('/etc/ssh/sshd_config.d/05-zelab-projects.conf')
 OPTIONAL_GROUPS = ('systemd-journal', 'adm', 'docker')
 
 
-def account(slug):
-    return f'zelab-p-{slug}'
+def account(tier):
+    return f'zelab-team-{tier}'
 
 
-def sudoers_fragment(slug, commands):
+def sudoers_fragment(tier, commands):
     if not commands:
         return None
-    user = account(slug)
-    return (f'# Zelab host project {slug}. Managed by make.\n'
+    user = account(tier)
+    return (f'# Zelab team tier {tier}. Managed by make.\n'
             f'Defaults:{user} !requiretty, env_reset, use_pty\n'
             f'{user} ALL=(root) NOPASSWD: {", ".join(commands)}\n')
 
@@ -40,9 +43,9 @@ def authorized_keys(ssh_host, public_key):
     return f'from="{ssh_host}",restrict {" ".join(public_key.split()[:2])}\n'
 
 
-def allowusers(slugs, ssh_host):
-    return '# Project host accounts; managed by make.\n' + ''.join(
-        f'AllowUsers {account(slug)}@{ssh_host}\n' for slug in sorted(slugs))
+def allowusers(tiers, ssh_host):
+    return '# Team tier accounts; managed by make.\n' + ''.join(
+        f'AllowUsers {account(tier)}@{ssh_host}\n' for tier in sorted(tiers))
 
 
 def acl_entries(user, perms):
@@ -83,17 +86,21 @@ def ensure_dir(path, mode, uid, gid):
 
 
 def zelab_accounts():
-    """{slug: user} of accounts this file created (matched by name and comment)."""
+    """{user: state key} of accounts this file created (matched by name and comment), legacy ones included."""
     found = {}
     for entry in pwd.getpwall():
+        match = re.fullmatch(r'zelab-team-([a-z0-9]+)', entry.pw_name)
+        if match and entry.pw_gecos == COMMENT.format(tier=match.group(1)):
+            found[entry.pw_name] = entry.pw_name
         match = re.fullmatch(r'zelab-p-([a-z0-9-]+)', entry.pw_name)
-        if match and entry.pw_gecos == COMMENT.format(slug=match.group(1)):
-            found[match.group(1)] = entry.pw_name
+        if match and entry.pw_gecos == LEGACY_COMMENT.format(slug=match.group(1)):
+            # Earlier versions keyed their grants by project slug.
+            found[entry.pw_name] = match.group(1)
     return found
 
 
-def ensure_account(slug, home):
-    user, changed = account(slug), 0
+def ensure_account(tier, home):
+    user, changed = account(tier), 0
     try:
         grp.getgrnam(user)
     except KeyError:
@@ -103,10 +110,10 @@ def ensure_account(slug, home):
         entry = pwd.getpwnam(user)
     except KeyError:
         run('useradd', '--system', '--gid', user, '--home-dir', home, '--shell', '/bin/bash',
-            '--comment', COMMENT.format(slug=slug), '--no-create-home', user)
+            '--comment', COMMENT.format(tier=tier), '--no-create-home', user)
         return 1 + changed
-    if entry.pw_gecos != COMMENT.format(slug=slug) or entry.pw_dir != home:
-        raise SystemExit(f'{user} exists but was not created by Zelab for this project; rename the project or remove it')
+    if entry.pw_gecos != COMMENT.format(tier=tier) or entry.pw_dir != home:
+        raise SystemExit(f'{user} exists but was not created by Zelab for this tier; rename the tier or remove it')
     return changed
 
 
@@ -137,9 +144,8 @@ def revoke(path, user):
         run('setfacl', '-R', '-x', f'u:{user},d:u:{user}', path, check=False)
 
 
-def remove_account(slug, state):
-    user = account(slug)
-    for path in state.get('paths', {}).pop(slug, []):
+def remove_account(user, key, state):
+    for path in state.get('paths', {}).pop(key, []):
         revoke(path, user)
     (SUDOERS / user).unlink(missing_ok=True)
     run('pkill', '-KILL', '-u', user, check=False)
@@ -158,25 +164,26 @@ def host_uses_allowusers():
 
 
 def apply(config):
-    projects, projects_dir = config['projects'], config['projects_dir']
+    tiers, projects_dir = config['tiers'], config['projects_dir']
     state_file = Path(projects_dir) / '.zelab-grants.json'
     changed = ensure_dir(projects_dir, 0o755, 0, 0)
     state = json.loads(state_file.read_text()) if state_file.is_file() else {}
     state['projects_dir'] = projects_dir
     state.setdefault('paths', {})
-    wanted = {slug: cfg for slug, cfg in projects.items() if cfg['account']}
-    for slug, cfg in sorted(wanted.items()):
-        user, home = account(slug), f'{projects_dir}/{slug}'
-        changed += ensure_account(slug, home)
+    wanted = dict(tiers)
+    vault = config.get('vault_dir')
+    for tier, cfg in sorted(wanted.items()):
+        user, home = account(tier), f'{projects_dir}/{tier}'
+        changed += ensure_account(tier, home)
         entry = pwd.getpwnam(user)
         changed += ensure_groups(user, cfg['groups'])
         changed += ensure_dir(home, 0o750, entry.pw_uid, entry.pw_gid)
         changed += ensure_dir(f'{home}/.ssh', 0o700, entry.pw_uid, entry.pw_gid)
         changed += ensure_dir(f'{home}/workspace', 0o750, entry.pw_uid, entry.pw_gid)
-        public = Path(config['keys_dir'], f'{slug}.key.pub').read_text()
+        public = Path(config['keys_dir'], f'team-{tier}.key.pub').read_text()
         changed += write(f'{home}/.ssh/authorized_keys', authorized_keys(config['ssh_host'], public),
                          0o600, entry.pw_uid, entry.pw_gid)
-        fragment, target = sudoers_fragment(slug, cfg['sudo']), SUDOERS / user
+        fragment, target = sudoers_fragment(tier, cfg['sudo']), SUDOERS / user
         if fragment:
             if fragment != (target.read_text() if target.is_file() else None):
                 temporary = SUDOERS / f'.{user}.zelab'
@@ -184,21 +191,27 @@ def apply(config):
                 temporary.chmod(0o440)
                 if run('visudo', '-cf', temporary, check=False).returncode:
                     temporary.unlink()
-                    raise SystemExit(f'sudoers fragment for {slug} does not validate')
+                    raise SystemExit(f'sudoers fragment for {tier} does not validate')
                 temporary.replace(target)
                 changed += 1
         elif target.exists():
             target.unlink()
             changed += 1
-        previous = state['paths'].get(slug, [])
-        for path in sorted(set(previous) - set(cfg['paths'])):
+        granted = sorted(set(cfg['paths']) | ({vault} if vault else set()))
+        previous = state['paths'].get(user, [])
+        for path in sorted(set(previous) - set(granted)):
             revoke(path, user)
             changed += 1
         for path in cfg['paths']:
             changed += grant(path, user, cfg['paths_rights'])
-        state['paths'][slug] = cfg['paths']
-    for slug in sorted(set(zelab_accounts()) - set(wanted)):
-        changed += remove_account(slug, state)
+        if vault:
+            # Notes are shared work: every tier reads and writes the vault.
+            changed += grant(vault, user, 'rwx')
+        state['paths'][user] = granted
+    keep = {account(tier) for tier in wanted}
+    for user, key in sorted(zelab_accounts().items()):
+        if user not in keep:
+            changed += remove_account(user, key, state)
     # Extend an existing SSH allowlist; an open host stays open.
     ssh_changed = 0
     if host_uses_allowusers() and wanted:

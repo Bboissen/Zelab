@@ -15,7 +15,7 @@ flowchart LR
     UIs[Tailscale Serve] --> Paperclip
     UIs --> Obsidian[Obsidian container]
     UIs --> HermesUI
-    Paperclip[Paperclip + embedded PostgreSQL] -->|SSH environment per host project| Accounts[zelab-p-&lt;slug&gt; accounts: Codex / Claude Code]
+    Paperclip[Paperclip + embedded PostgreSQL] -->|SSH environment per tier| Accounts[zelab-team-&lt;tier&gt; accounts: the Claude Code team]
     Vault[(Vault: Projects/&lt;slug&gt;/)] <--> Obsidian
     History[(Root-only git history)] -. every 5 min .- Vault
   end
@@ -40,8 +40,9 @@ host account stay on the host.
 | Paperclip bot agents | One `hermes_gateway` agent per bot, hired with `/agent-hires` and approved by `make bot`; `apiBaseUrl` is `http://127.0.0.1:<guest_api_port>/p/<bot>` |
 | Task bridge | Paperclip's bundled `paperclip-task-bridge` skill, copied unchanged into each profile; its `task_bridge` key, scoped to the projects the owner picks, is in the profile's `.env` and reaches the terminal tool through Hermes' `terminal.env_passthrough` |
 | Zelab skill | A generated `zelab` skill per profile listing projects (Paperclip IDs, vault folders) and the other bots (agent IDs); no secrets |
-| Host projects | `config/projects.yaml`: a Paperclip project and a vault folder each; host presets add an account `zelab-p-<slug>` (home below `/var/lib/zelab-projects`) and the Paperclip SSH environment `<slug> host` |
-| Host agents | Codex or Claude Code agents the owner hires in Paperclip on a project's SSH environment; both pinned CLIs are installed as `codex` and `claude`; Paperclip's AI connection holds the subscription login |
+| Projects | `config/projects.yaml`: a Paperclip project and a vault folder each; no host rights |
+| Team tiers | `config/team.yaml`: one account `zelab-team-<tier>` per tier (`dev` repo-dev, `ops` docker, `root` full-sudo; home below `/var/lib/zelab-projects`), read/write on the vault, and the Paperclip SSH environment `<tier> host`; site paths in `config/projects.yaml` |
+| Team | Claude Code agents make hires once from `config/team.yaml` (PM as lead; frontend, backend, mobile, game, data on `dev`; devops on `ops`; sysadmin on `root`): Claude CLI engine, Opus 5.5, persona `config/team/<member>.md` plus `TEAM.md` as the first `AGENTS.md`; runs use the owner's Claude sign-in. Both pinned CLIs are installed as `codex` and `claude` |
 | Notes | Host vault `/var/lib/zelab-vault` with `Projects/<slug>/`; one notes-only SFTP listener on loopback exports the whole vault; the guest mounts it with SSHFS as the Hermes account |
 | Vault history | `/var/lib/zelab-vault-history`, a root-only git directory outside the vault, snapshotted by `zelab-vault-history.timer` every 5 minutes |
 | Obsidian | linuxserver.io container pinned by digest, loopback-published, password from a file, vault bind-mounted |
@@ -55,13 +56,13 @@ host account stay on the host.
    assigned to the bot itself, so Paperclip runs it through the bot's
    `hermes_gateway` agent; inside that run the bot comments and closes it,
    passing the run ID Paperclip gives it.
-2. **Host work (G2).** A bot files an unassigned ticket; the owner assigns it in
-   Paperclip to a host agent. Paperclip opens the project's SSH environment and
-   runs Codex or Claude Code as `zelab-p-<slug>`; the result lands on the ticket.
-   In a project with `host_tickets: bots`, the bot assigns the host agent itself
-   with a child ticket of its own; when the children are done, Paperclip wakes
-   the bot (`issue_children_completed`, with each child's summary) and the bot
-   answers the chat it noted on its ticket.
+2. **Team work (G2).** From chat, a bot files a ticket for itself; when
+   Paperclip runs it, the bot opens a child ticket for the PM, the only team
+   member its key may assign. The PM splits it into tickets for the team, which
+   Paperclip runs as Claude Code over SSH on each member's tier account. When
+   children are done, Paperclip wakes their parent's owner
+   (`issue_children_completed`, with each child's summary): the PM closes its
+   ticket, then the bot answers the chat it noted on its own.
 3. **Owner to bot (G3).** A ticket the owner assigns to a bot in Paperclip is
    dispatched to `/p/<bot>/v1/runs` of the shared gateway.
 4. **Bot to bot (G4).** By chat, a bot that allows bots (`DISCORD_ALLOW_BOTS`)
@@ -76,7 +77,7 @@ host account stay on the host.
 | Hermes profiles: logins, chat tokens, SOUL, memory, sessions, task key | `/var/lib/zelab/hermes/home/profiles/<bot>` inside the guest |
 | Archived profiles (no logins or tokens) | `/var/lib/zelab/hermes/home/profile-exports` inside the guest |
 | Paperclip database, uploads, secrets key, AI connections | `paperclip_home` (default `/var/lib/zelab-paperclip`) |
-| Host project homes and workspaces | `projects_dir` (default `/var/lib/zelab-projects/<slug>`) |
+| Team tier homes and workspaces | `projects_dir` (default `/var/lib/zelab-projects/<tier>`) |
 | Notes vault, its history, Obsidian configuration | `/var/lib/zelab-vault`, `/var/lib/zelab-vault-history`, `/var/lib/zelab-obsidian` |
 | Deployment keys, project keys, Hermes password hash, resource IDs | `private_dir` (default `~/.local/state/zelab-deployment`) |
 | UI password working copies | Private temporary `/dev/shm/zelab-passwords-*` directory during `make`; removed on exit, and stale ones at the next start |

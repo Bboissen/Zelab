@@ -37,8 +37,8 @@ def container_running(name):
 
 
 def require_idle_workers(site):
-    # Host project accounts (zelab-p-<slug>) run Paperclip's host agents.
-    uids = {entry.pw_uid for entry in pwd.getpwall() if entry.pw_name.startswith('zelab-p-')}
+    # Team tier accounts (zelab-team-<tier>, earlier zelab-p-<slug>) run Paperclip's host agents.
+    uids = {entry.pw_uid for entry in pwd.getpwall() if entry.pw_name.startswith(('zelab-team-', 'zelab-p-'))}
     for path in Path('/proc').glob('[0-9]*'):
         try:
             if path.stat().st_uid in uids:

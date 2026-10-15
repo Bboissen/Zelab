@@ -87,23 +87,41 @@ class BotTest(unittest.TestCase):
         self.assertIn('/profiles/scout/skills/paperclip/paperclip-task-bridge/paperclip-task.mjs', text)
         self.assertNotIn('pcp_', text)
 
-    def test_host_agents_follow_the_project_environment_and_host_tickets(self):
-        site = {**SITE, 'zelab_projects': {'media': {'host_tickets': 'bots'}, 'lab': {'host_tickets': 'owner'},
-                                            'research': {'host_tickets': 'owner'}}}
-        ids = {'projects': {'media': 'pm', 'lab': 'pl', 'research': 'pr'}, 'environments': {'media host': 'em', 'lab host': 'el'}}
-        agents = [{'id': 'h1', 'adapterType': 'codex_local', 'status': 'idle', 'defaultEnvironmentId': 'em'},
-                  {'id': 'h2', 'adapterType': 'claude_local', 'status': 'terminated', 'defaultEnvironmentId': 'em'},
-                  {'id': 'h3', 'adapterType': 'codex_local', 'status': 'idle', 'defaultEnvironmentId': 'el'},
-                  {'id': 'b1', 'adapterType': 'hermes_gateway', 'status': 'idle', 'defaultEnvironmentId': 'em'}]
-        hosts = bots.host_agents(site, agents, ids)
-        self.assertEqual({slug: [a['id'] for a in found] for slug, found in hosts.items()}, {'media': ['h1'], 'lab': ['h3']})
-        team = {'marvin': {'id': 'b1'}}
-        self.assertEqual(bots.assignees(site, team, hosts, ids, ['pm', 'pl']), ['b1', 'h1'])
-        self.assertEqual(bots.assignees(site, team, hosts, ids, ['pl']), ['b1'])
-        text = bots.skill(site, 'marvin', team, [], hosts)
-        self.assertIn('| media |  |  | `h1` | you |', text)
-        self.assertIn('| lab |  |  | `h3` | the owner |', text)
-        self.assertIn('none hired yet', bots.skill(site, 'marvin', team, []))
+    def test_team_is_matched_by_metadata_and_only_the_lead_is_assignable(self):
+        team = {'model': 'claude-opus-5-5', 'effort': 'high', 'tiers': {},
+                'members': {'pm': {'title': 'Product Manager', 'role': 'pm', 'tier': 'dev', 'lead': True},
+                            'backend': {'title': 'Backend Engineer', 'role': 'engineer', 'tier': 'dev', 'lead': False}}}
+        site = {**SITE, 'zelab_team': team}
+        ids = {'environments': {'dev host': 'ed', 'root host': 'er'}}
+        agents = [{'id': 'h1', 'name': 'pm', 'adapterType': 'claude_local', 'status': 'idle', 'metadata': {'zelab_team': 'pm'}},
+                  {'id': 'h2', 'name': 'backend', 'adapterType': 'claude_local', 'status': 'terminated',
+                   'metadata': {'zelab_team': 'backend'}},
+                  {'id': 'h3', 'name': 'helper', 'adapterType': 'codex_local', 'status': 'idle', 'defaultEnvironmentId': 'er'},
+                  {'id': 'h4', 'name': 'elsewhere', 'adapterType': 'codex_local', 'status': 'idle'},
+                  {'id': 'b1', 'adapterType': 'hermes_gateway', 'status': 'idle', 'defaultEnvironmentId': 'ed'}]
+        members, others = bots.team_agents(site, agents, ids)
+        self.assertEqual(({m: a['id'] for m, a in members.items()}, [a['id'] for a in others]), ({'pm': 'h1'}, ['h3']))
+        self.assertEqual(bots.assignees(site, {'marvin': {'id': 'b1'}}, members), ['b1', 'h1'])
+        self.assertEqual(bots.assignees(site, {'marvin': {'id': 'b1'}}, {}), ['b1'])
+        text = bots.skill(site, 'marvin', {'marvin': {'id': 'b1'}}, [], members, others)
+        self.assertIn('| pm | Product Manager (lead) | `h1` | yes |', text)
+        self.assertIn('| helper |  | `h3` | no |', text)
+        self.assertIn('--assignee-agent-id h1', text)
+        self.assertIn('--unassigned', bots.skill(site, 'marvin', {}, []))
+
+    def test_member_instructions_join_persona_team_rules_and_this_server(self):
+        site = {**SITE, 'zelab_projects': {'media': {'name': 'Media Center'}},
+                'zelab_tiers': {'root': {'account': 'zelab-team-root', 'preset': 'full-sudo', 'paths': []}},
+                'zelab_team': {'members': {'pm': {'title': 'Product Manager', 'tier': 'root', 'lead': True},
+                                           'sysadmin': {'title': 'Linux Sysadmin', 'tier': 'root', 'lead': False}}}}
+        text = bots.team_instructions(site, 'sysadmin', {})
+        persona = (bots.TEAM_DIR / 'sysadmin.md').read_text().strip()
+        self.assertTrue(text.startswith(persona))
+        self.assertIn((bots.TEAM_DIR / 'TEAM.md').read_text().strip(), text)
+        self.assertIn('as `zelab-team-root`: unrestricted sudo', text)
+        self.assertIn('Projects/media/`: Media Center', text)
+        self.assertIn('You report to **pm**', text)
+        self.assertIn('You lead the team', bots.team_instructions(site, 'pm', {}))
 
     def test_starter_persona_names_the_bot_and_its_team(self):
         text = bots.starter('jarvis', 'Chief of Staff', {'scout': 'finds sources', 'writer': ''},
@@ -133,17 +151,17 @@ class HostProjectsTest(unittest.TestCase):
     def test_sudo_fragment_follows_the_preset(self):
         module = host_projects()
         self.assertIsNone(module.sudoers_fragment('web', []))
-        fragment = module.sudoers_fragment('homelab', ['ALL'])
-        self.assertIn('zelab-p-homelab ALL=(root) NOPASSWD: ALL', fragment)
-        self.assertTrue(fragment.startswith('# Zelab host project homelab.'))
+        fragment = module.sudoers_fragment('root', ['ALL'])
+        self.assertIn('zelab-team-root ALL=(root) NOPASSWD: ALL', fragment)
+        self.assertTrue(fragment.startswith('# Zelab team tier root.'))
 
     def test_ssh_key_is_restricted_to_the_host_address(self):
         module = host_projects()
         self.assertEqual(module.authorized_keys('127.0.0.1', 'ssh-ed25519 AAAA zelab-p-x\n'),
                          'from="127.0.0.1",restrict ssh-ed25519 AAAA\n')
         self.assertEqual(module.allowusers({'b': {}, 'a': {}}, '127.0.0.1'),
-                         '# Project host accounts; managed by make.\n'
-                         'AllowUsers zelab-p-a@127.0.0.1\nAllowUsers zelab-p-b@127.0.0.1\n')
+                         '# Team tier accounts; managed by make.\n'
+                         'AllowUsers zelab-team-a@127.0.0.1\nAllowUsers zelab-team-b@127.0.0.1\n')
 
 
 if __name__ == '__main__':

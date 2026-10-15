@@ -123,7 +123,7 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
     resource_fraction(site.get('vm_install_resource_fraction', 0.7))
     check_private_inputs(site)
     check_identities(site)
-    site["zelab_projects"] = read_projects(site)
+    site["zelab_projects"], site["zelab_tiers"], site["zelab_team"] = read_projects(site)
     state_paths = ["vm_data", "vm_root", "paperclip_home", "projects_dir", *check_applications(site)]
     check_resources_and_names(site)
     state_paths.append("vm_bootstrap_dir")
@@ -137,15 +137,19 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
 
 
 def read_projects(site):
-    """config/projects.yaml (or projects_config), validated; absent means no projects."""
+    """Projects, tiers and team from projects_config and team_config, validated; absent means none."""
     import projects
-    name = site.get("projects_config", "config/projects.yaml")
-    if not isinstance(name, str) or not name:
-        raise ValueError("projects_config must name a file")
-    path = Path(name) if name.startswith("/") else ROOT / name
-    if path.is_symlink():
-        raise ValueError("projects_config cannot be a symlink")
-    return projects.with_presets(projects.read(path))
+    paths = []
+    for key, default in (("projects_config", "config/projects.yaml"), ("team_config", "config/team.yaml")):
+        name = site.get(key, default)
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"{key} must name a file")
+        path = Path(name) if name.startswith("/") else ROOT / name
+        if path.is_symlink():
+            raise ValueError(f"{key} cannot be a symlink")
+        paths.append(path)
+    local, team = projects.read(paths[0]), projects.read_team(paths[1])
+    return local["projects"], projects.tiers(team, local), team
 
 
 def read_env(env_path):

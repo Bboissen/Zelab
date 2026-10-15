@@ -1,8 +1,8 @@
 # Trust model
 
 The KVM guest is the only hard wall. A hijacked bot can reach everything inside
-the guest and the whole shared vault, but not the host. Host agents have the
-rights of their project's account, set in `config/projects.yaml`. Prompt text is
+the guest and the whole shared vault, but not the host. Team members (host
+agents) have the rights of their tier's account, set in `config/team.yaml`. Prompt text is
 advice to a model, never an access control: every boundary below is enforced by
 an OS account, a scoped key, a firewall rule or a native product setting.
 
@@ -13,7 +13,7 @@ an OS account, a scoped key, a firewall rule or a native product setting.
 | Read and change every bot's memory, sessions and logins in the guest | Reach the host: KVM guest boundary |
 | Read, change and delete any note in the shared vault | Erase note history: a root-only git snapshot on the host every 5 minutes, outside the share |
 | Create tickets in the projects of its own task key, assigned to itself, to another bot or unassigned | Create tickets elsewhere or read others' tickets: Paperclip's `task_bridge` key scope |
-| Assign host agents of projects with `host_tickets: bots` that its key covers, so they run at once with their account's rights | Assign host agents of `owner` projects, or act on the host itself: `allowedAssigneeAgentIds` of its key, the guest boundary |
+| Assign the team lead (the PM), which then runs at once on its tier account and can hand work to any team member | Assign any other team member, or act on the host itself: `allowedAssigneeAgentIds` of its key, the guest boundary |
 | Use the internet | Reach the LAN, the tailnet, other host ports or IPv6: guest nftables |
 
 ## Authority by role
@@ -23,14 +23,15 @@ an OS account, a scoped key, a firewall rule or a native product setting.
 | Deployment operator (you) | Provisioning, unattended sudo, all password files | `/etc/sudoers.d/zelab-agent-<user>`, `private_dir` mode 0700 |
 | Hermes bots (all profiles) | Everything the `zelab-hermes` account can do in the guest; the whole vault through SFTP; the Paperclip API with the bot's task key; the internet | One guest account for every profile; guest nftables; the notes-only SFTP listener |
 | A bot's Paperclip agent | Paperclip runs it for tickets assigned to it | Its `hermes_gateway` adapter reaches only `/p/<bot>` with that profile's own API key (other profiles' keys are refused) |
-| A bot's task key | Create tickets in the picked projects, assigned to itself, another bot, a host agent of a picked `host_tickets: bots` project, or nobody; comment on and update its own or assigned tickets inside a Paperclip run | `task_bridge` scope: `projectIds`, `allowedAssigneeAgentIds` |
-| Host agent of project `<slug>` | The account `zelab-p-<slug>`: its home and workspace, the preset's groups, sudo commands and path rights | OS account, `/etc/sudoers.d/zelab-p-<slug>`, POSIX ACLs on the project's paths, SSH key with `from=<host>` and `restrict` |
+| A bot's task key | Create tickets in the picked projects, assigned to itself, another bot, the team lead, or nobody; comment on and update its own or assigned tickets inside a Paperclip run | `task_bridge` scope: `projectIds`, `allowedAssigneeAgentIds` |
+| Team member on tier `<tier>` | The account `zelab-team-<tier>`: its home and workspace, the preset's groups, sudo commands and path rights, read/write on the whole vault; Paperclip's standard agent key | OS account, `/etc/sudoers.d/zelab-team-<tier>`, POSIX ACLs on the tier's paths and the vault, SSH key with `from=<host>` and `restrict` |
 | Chat users | Whatever each bot's own allowlist admits | Hermes' native allowlist, set in `hermes gateway setup` |
 
-Presets: `none` (no account), `monitor-readonly` (journal, logs and read-only
-`systemctl`/`journalctl`/`docker` through sudo), `docker` (plus the docker
-group, root-equivalent on most hosts), `repo-dev` (owns its paths, no sudo),
-`full-sudo` (root).
+Default tiers (`config/team.yaml`): `dev` is `repo-dev` (PM, frontend,
+backend, mobile, game, data: own paths, no sudo), `ops` is `docker` (devops:
+the docker group, root-equivalent on most hosts, and read-only
+`systemctl`/`journalctl`/`docker` through sudo), `root` is `full-sudo`
+(sysadmin). `monitor-readonly` is also available.
 
 ## Accepted risks
 
@@ -45,13 +46,17 @@ layer.
   rule relies on project leads.
 - **Host agents run with Paperclip's standard agent key and their account's
   rights.** A `full-sudo` host agent is root on the host.
-- **`host_tickets: bots` lets chat reach the host without the owner.** Anyone a
-  bot's chat allowlist admits, or text that steers the bot, can get a host agent
-  of that project to run with its account's rights; with `full-sudo` that is
-  root on the host. The key's assignee list is one list for all its projects, so
-  a ticket in another of the key's projects can also go to such a host agent
-  (it still runs on its own project's account). Use it with the narrowest
-  preset that answers the questions, and only on bots whose allowlist you trust.
+- **Chat reaches the team, and through the PM the root tier, without the owner.**
+  A bot's key may assign only the team lead, but every team member holds
+  Paperclip's standard agent key, which may assign any agent in the company
+  (Paperclip's default). So anyone a bot's chat allowlist admits, or text that
+  steers a bot or the PM, can get work to the `full-sudo` sysadmin. Routing to
+  root is the PM's judgment, written in its instructions, not a control.
+  Remove the root tier (or set it to a narrower preset) if that is too much.
+- **Claude Code runs with Paperclip's default `dangerouslySkipPermissions`.**
+  Members act without per-command approval; their tier account is the limit.
+- **Team members write the whole vault.** A mistaken or steered member can change
+  any note; the root-only history undoes it.
 - **A hijacked bot can steal any bot's subscription login.** Logins live in each
   profile under the same account; revoke a stolen one at the provider.
 - **Discord channels and who sees them are set up by hand in Discord.** A bot
@@ -95,13 +100,13 @@ Prompt injection is the realistic attack: text a bot reads from a web page, a
 note another bot wrote, a file or a ticket could steer it. The installer only
 tells each bot, in its Paperclip agent instructions, that such text is data.
 That is advice, not a control. The controls are the ones above: the guest wall,
-the key scopes and the project accounts. Give host projects the narrowest
-preset, and assign host tickets yourself unless the project sets
-`host_tickets: bots`.
+the key scopes and the tier accounts. Each team member's AGENTS.md carries the
+working rules (no destructive command without the owner's yes, and so on); that
+is advice too. Give tiers the narrowest preset that does the job.
 
 ## Known limitations
 
-- Paperclip stores the project SSH private keys in its database; the database
+- Paperclip stores the tier SSH private keys in its database; the database
   is reachable only by root, the operator and the service account.
 - Nothing here protects the host from the owner's own requests to a `full-sudo`
-  host agent.
+  team member.

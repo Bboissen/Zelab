@@ -47,10 +47,12 @@ paperclip_home: /var/lib/zelab-paperclip
 paperclip_company_name: Zelab
 
 # Projects from config/projects.yaml (see config/projects.example.yaml): one
-# Paperclip project and vault folder each, and for host presets an account
-# zelab-p-<slug> with its home below projects_dir and an SSH environment that
-# reaches it through the existing host SSH listener.
+# Paperclip project and vault folder each. The team from config/team.yaml: one
+# host account zelab-team-<tier> per rights tier, its home below projects_dir
+# and an SSH environment that reaches it through the existing host SSH
+# listener; make hires each member as a Claude Code agent on its tier.
 projects_config: config/projects.yaml
+team_config: config/team.yaml
 projects_dir: /var/lib/zelab-projects
 worker_ssh_host: 127.0.0.1
 worker_ssh_port: 22

@@ -72,7 +72,7 @@ Do not mutate the same state manually during maintenance.
 | Chat app | `hermes -p <name> gateway setup`: Hermes' platform menu; the token is typed there. For Discord, make bot then asks whether other bots may hand work over by @mention (`DISCORD_ALLOW_BOTS=mentions`) | Hermes |
 | Persona | The profile's `SOUL.md`, edited in nano or pasted | Hermes file |
 | Task key | A `task_bridge` key for the projects you pick, allowed to assign to every bot; replaces and revokes the previous key | Paperclip |
-| Sign host agents in | Paperclip's own local subscription sign-in for Codex or Claude, saved as a shared AI connection | Paperclip |
+| Sign the team in | Paperclip's own local subscription sign-in for Claude (or Codex), saved as an AI connection | Paperclip |
 | Remove a bot | After you type its name: terminate its Paperclip agent (its keys are revoked), `hermes profile export` (no logins or tokens) to `profile-exports/`, `hermes profile delete` | Hermes, Paperclip |
 
 On quit, make bot rewrites each bot's `zelab` skill (projects with their IDs and
@@ -80,30 +80,37 @@ vault folders, the other bots with their agent IDs) and widens task keys to
 every current bot; it restarts the shared gateway once when a bot was added,
 signed in, connected to a chat app or removed.
 
-## Projects and host agents
+## Projects and the team
 
 `config/projects.yaml` (copy `config/projects.example.yaml`; kept out of Git)
 declares projects by slug. Each `make` creates a missing Paperclip project with
-the declared name and the vault folder `Projects/<slug>/`. A `host_preset` other
-than `none` also creates the account `zelab-p-<slug>` (home and workspace below
-`projects_dir`), its sudoers fragment, group memberships and recursive ACLs on
-its `paths`, an SSH key restricted to the host's own address, and the Paperclip
-SSH environment `<slug> host`. Hire a Codex or Claude Code agent in Paperclip on
-that environment; both pinned CLIs are installed as `codex` and `claude` when
-those names are free.
+the declared name and the vault folder `Projects/<slug>/`. Projects grant no
+host rights; removing one keeps its Paperclip project, tickets and notes.
 
-`host_tickets` says who assigns tickets to a project's host agents: `owner`
-(default; bots file them unassigned) or `bots`. With `bots`, every task key that
-covers the project may assign its host agents, and the `zelab` skill lists them
-with a three-step recipe: the bot files a ticket for itself noting the chat to
-answer in, delegates child tickets to host agents when Paperclip runs it, and
-answers the chat with Hermes' `send_message` tool when Paperclip wakes it after
-the children are done. After hiring or removing a host agent, run `make` (or
-quit `make bot`) so the skills and keys pick it up.
+`config/team.yaml` declares the rights tiers and the default team. Each tier is
+an account `zelab-team-<tier>` (home and workspace below `projects_dir`) with
+its preset's sudoers fragment, groups and recursive ACLs on its `paths`,
+read/write on the vault, an SSH key restricted to the host's own address, and
+the Paperclip SSH environment `<tier> host`. A site sets a tier's `paths` (or
+`preset`) under `tiers:` in `config/projects.yaml`. A removed tier loses its
+account, grants and environment on the next `make`, and so do the per-project
+accounts `zelab-p-<slug>` of earlier versions.
 
-Removing a project from the file removes its account, grants and environment on
-the next `make`; its Paperclip project, tickets and notes stay. Nothing watches
-the file between runs.
+`make` hires each member once as a Claude Code agent (`claude_local`, Claude
+CLI engine, the file's `model` and `effort`) on its tier's environment, the lead
+first and the others reporting to it. Its first `AGENTS.md` is
+`config/team/<member>.md`, then `config/team/TEAM.md` (shared rules), then a
+generated section about this server; Paperclip versions it and `make` never
+rewrites it. Runs use the owner's Claude sign-in (`make bot`, option 4, or when
+Paperclip asks on the first task). Removing a member from the file does not
+fire it: terminate it in Paperclip.
+
+Bots may assign only the lead (the PM). The `zelab` skill lists the team and the
+recipe: the bot files a ticket for itself noting the chat to answer in, asks
+the lead with a child ticket when Paperclip runs it, and answers the chat with
+Hermes' `send_message` when Paperclip wakes it after the child is done
+(`issue_children_completed`). Agents you hire yourself on a `<tier> host`
+environment are listed too; run `make` afterwards so the skills know them.
 
 `config/defaults.yaml` holds public defaults. `config/site.yaml` (generated once
 by `make`, never overwritten) holds only host-specific values and any
@@ -125,7 +132,7 @@ explicitly choose an absent/empty override file for a separate guest test.
 | VM disk and cloud-init | `/var/lib/zelab-vm/{data,bootstrap}` |
 | Hermes native state inside VM (one profile per bot) | `/var/lib/zelab/hermes/home` |
 | Paperclip database, uploads, agent state, AI connections | `/var/lib/zelab-paperclip` |
-| Host project homes | `/var/lib/zelab-projects/<slug>` |
+| Team tier homes | `/var/lib/zelab-projects/<tier>` |
 | Durable notes | `/var/lib/zelab-vault/Projects/<slug>` |
 | Vault history (root only) | `/var/lib/zelab-vault-history` |
 | Obsidian desktop configuration | `/var/lib/zelab-obsidian` |

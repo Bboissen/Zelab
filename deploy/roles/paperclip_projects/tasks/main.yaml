@@ -63,19 +63,19 @@
         headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
       register: projects_environments
 
-    - name: Declare each host project's SSH environment
+    - name: Declare each team tier's SSH environment
       ansible.builtin.set_fact:
         projects_wanted_environments: >-
           {{ projects_wanted_environments | default({}) | combine({item.key: {
                'name': item.key + ' host', 'driver': 'ssh',
-               'description': 'Zelab host project ' + item.key + ': account zelab-p-' + item.key,
-               'config': {'host': worker_ssh_host, 'port': worker_ssh_port | int, 'username': 'zelab-p-' + item.key,
+               'description': 'Zelab team tier ' + item.key + ': account ' + item.value.account,
+               'config': {'host': worker_ssh_host, 'port': worker_ssh_port | int, 'username': item.value.account,
                           'remoteWorkspacePath': projects_dir + '/' + item.key + '/workspace',
-                          'privateKey': lookup('ansible.builtin.file', private_dir + '/projects/' + item.key + '.key'),
+                          'privateKey': lookup('ansible.builtin.file', private_dir + '/projects/team-' + item.key + '.key'),
                           'knownHosts': lookup('ansible.builtin.file', private_dir + '/worker_known_hosts'),
                           'strictHostKeyChecking': true},
                'envVars': {'PATH': '/opt/zelab-tools/node-v' + node_version + '-linux-x64/bin:/usr/local/bin:/usr/bin:/bin'}}}) }}
-      loop: "{{ zelab_projects | dict2items | selectattr('value.account') | list }}"
+      loop: "{{ zelab_tiers | dict2items }}"
       loop_control:
         label: "{{ item.key }}"
 
@@ -111,17 +111,20 @@
           != (item.value.config.host, item.value.config.port, item.value.config.username, item.value.config.remoteWorkspacePath)
       changed_when: true
 
-    # Projects stay (tickets and notes are kept); only the host access goes.
-    - name: Remove the SSH environment of a project no longer declared as a host project
+    # Agents on a removed environment stay hired in Paperclip; only the host access goes.
+    # Environments of earlier per-project host accounts go the same way.
+    - name: Remove the SSH environment of a tier no longer declared
       ansible.builtin.uri:
         url: "http://127.0.0.1:{{ paperclip_port }}/api/environments/{{ item.id }}"
         method: DELETE
         headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
         status_code: [200, 204, 404, 409]
-      loop: "{{ projects_environments.json | selectattr('description', 'string') | selectattr('description', 'match', '^Zelab host project ') | list }}"
+      loop: "{{ projects_environments.json | selectattr('description', 'string') | selectattr('description', 'match', '^Zelab (host project|team tier) ') | list }}"
       loop_control:
         label: "{{ item.name }}"
-      when: (item.description.split(':')[0] | replace('Zelab host project ', '')) not in (projects_wanted_environments | default({}))
+      when: >-
+        item.description.startswith('Zelab host project ')
+        or (item.description.split(':')[0] | replace('Zelab team tier ', '')) not in (projects_wanted_environments | default({}))
       changed_when: true
 
     - name: Read native SSH environments after changes
@@ -137,8 +140,8 @@
           {{ {'company_id': projects_company.id,
               'projects': dict(zelab_projects | dict2items | map(attribute='key') | zip(zelab_projects | dict2items | map(attribute='value') | map(attribute='name')
                                | map('extract', dict(projects_native.json | map(attribute='name') | zip(projects_native.json | map(attribute='id')))))),
-              'environments': dict(projects_environments.json | selectattr('description', 'string') | selectattr('description', 'match', '^Zelab host project ')
-                                   | map(attribute='name') | zip(projects_environments.json | selectattr('description', 'string') | selectattr('description', 'match', '^Zelab host project ') | map(attribute='id')))}
+              'environments': dict(projects_environments.json | selectattr('description', 'string') | selectattr('description', 'match', '^Zelab team tier ')
+                                   | map(attribute='name') | zip(projects_environments.json | selectattr('description', 'string') | selectattr('description', 'match', '^Zelab team tier ') | map(attribute='id')))}
              | to_nice_json }}
         owner: "{{ operator_user }}"
         mode: '0600'

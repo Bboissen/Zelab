@@ -1,0 +1,68 @@
+# The default team make hires in Paperclip: Claude Code agents that work on
+# this host through one SSH environment per rights tier. Public defaults: a
+# site changes a tier's preset or paths in config/projects.yaml ("tiers:").
+#
+# Tiers. Each is one host account zelab-team-<tier> (home below projects_dir,
+# a workspace, the preset's rights) and the Paperclip SSH environment
+# "<tier> host". Presets:
+#   monitor-readonly  journal and logs; systemctl/journalctl/docker read commands through sudo
+#   docker            monitor-readonly plus the docker group (root-equivalent on most hosts)
+#   repo-dev          owns its paths (read/write ACL), no sudo
+#   full-sudo         unrestricted sudo: root on the host
+# paths: directories the account may use (read-only for monitor-readonly).
+# Every tier also gets read/write on the notes vault when notes are enabled.
+#
+# Members. Each becomes a Claude Code agent (Claude CLI engine, `model`,
+# `effort`) on its tier's environment; config/team/TEAM.md followed by
+# config/team/<member>.md is its first AGENTS.md. make hires a member once and
+# never rewrites its instructions: edit them in Paperclip afterwards. The lead
+# is the only member bots may assign; the others report to it. Removing a
+# member here does not fire it: terminate it in Paperclip.
+#
+# make hires the team once Paperclip has a Claude subscription connection
+# (rtk proxy make bot, option 4, claude).
+model: claude-opus-5-5
+effort: high
+
+tiers:
+  dev:
+    preset: repo-dev
+  ops:
+    preset: docker
+  root:
+    preset: full-sudo
+
+members:
+  pm:
+    title: Product Manager
+    role: pm
+    tier: dev
+    lead: true
+  frontend:
+    title: Frontend Engineer
+    role: engineer
+    tier: dev
+  backend:
+    title: Backend Engineer
+    role: engineer
+    tier: dev
+  mobile:
+    title: Mobile Developer
+    role: engineer
+    tier: dev
+  game:
+    title: Game Developer
+    role: engineer
+    tier: dev
+  data:
+    title: Data Scientist
+    role: researcher
+    tier: dev
+  devops:
+    title: DevOps Engineer
+    role: devops
+    tier: ops
+  sysadmin:
+    title: Linux Sysadmin
+    role: devops
+    tier: root

@@ -306,10 +306,10 @@ def connection_checks(site, elevated):
                             pending=True, phase=phase))
         checks.append(Check(f"{name}: task key", bot["task_key"],
                             f"rtk proxy make bot, then set up {name} (d)", pending=True, phase=phase))
-    hosts = sorted(slug for slug, project in site.get("zelab_projects", {}).items() if project["account"])
-    checks.append(Check("Host projects", bool(hosts),
-                        "SSH environments: " + ", ".join(f"{slug} host" for slug in hosts) if hosts else
-                        "Optional: declare host projects in config/projects.yaml, then rerun make",
+    tiers = sorted(site.get("zelab_tiers", {}))
+    checks.append(Check("Team tiers", bool(tiers),
+                        "SSH environments: " + ", ".join(f"{tier} host" for tier in tiers) if tiers else
+                        "Optional: declare tiers and members in config/team.yaml, then rerun make",
                         pending=True, phase=phase_of("hosts")))
     checks.append(Check("First Discord request", False,
                         "Not provable by automation; follow the Test step in docs/SETUP.md",

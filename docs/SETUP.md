@@ -53,19 +53,22 @@ At the end of a fresh install, make asks how many bots to set up and opens Herme
   without logins or tokens before deleting it.
 - Every step can be skipped and run again from `rtk proxy make bot`.
 
-### Host agents
+### The team
 
-In Paperclip, hire a Codex or Claude Code agent on a project's SSH environment, named `<slug> host`.
+make hires a default team in Paperclip from `config/team.yaml`: a PM who leads,
+frontend, backend, mobile, game, data, devops and sysadmin. Each is a Claude
+Code agent (Opus 5.5, Claude CLI engine) with its own persona in
+`config/team/`.
 
-- Host projects come from `config/projects.yaml`: each one with a `host_preset`
-  other than `none` gets the account `zelab-p-<slug>` and that environment.
-- make offers Paperclip's own subscription sign-in for host agents (option 4
-  in `rtk proxy make bot`); Paperclip keeps the login and shares it with agents.
-- Bots file host work as unassigned tickets; you assign them to a host agent.
-  With `host_tickets: bots` on a project, bots assign its host agents
-  themselves and answer in the chat when the work is done.
-- After hiring a host agent, run `rtk proxy make` again so the bots know it.
-- A `full-sudo` project's agent is root on the host. Choose the narrowest preset.
+- Sign the team in to your Claude subscription once: option 4 in
+  `rtk proxy make bot`, then `claude` (Anthropic's own sign-in page). Paperclip
+  also asks on the team's first task.
+- Rights come from three tiers, one host account each: `dev` (no sudo), `ops`
+  (docker) and `root` (full sudo, the sysadmin). Give `ops` your Docker
+  folders under `tiers:` in `config/projects.yaml`.
+- Bots hand work only to the PM, who splits it across the team; the answer comes
+  back in the chat it was asked in.
+- Edit a member's instructions in Paperclip; make writes them only at hire.
 
 ### Discord
 

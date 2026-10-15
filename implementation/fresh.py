@@ -265,41 +265,54 @@ def discover_paperclip(plan, site):
         plan.directories.append(('/opt/paperclip', 'releases owned by the Paperclip account'))
 
 
-def discover_projects(plan, site):
-    """Per-project host accounts (zelab-p-<slug>), their grants, homes and path ACLs."""
-    projects_dir = Path(site['projects_dir'])
+def host_accounts():
+    """{user: (label, home folder name, grants key)} of team tier accounts and earlier per-project ones."""
+    found = {}
     for entry in pwd.getpwall():
+        tier = entry.pw_name.removeprefix('zelab-team-')
+        if entry.pw_name != tier and entry.pw_gecos == f'Zelab team tier {tier}':
+            found[entry.pw_name] = (f'team tier {tier}', tier, entry.pw_name)
         slug = entry.pw_name.removeprefix('zelab-p-')
-        if entry.pw_name == slug or entry.pw_gecos != f'Zelab host project {slug}':
-            continue
-        plan.accounts.append((entry.pw_name, f'host project {slug}'))
+        if entry.pw_name != slug and entry.pw_gecos == f'Zelab host project {slug}':
+            found[entry.pw_name] = (f'host project {slug}', slug, slug)
+    return found
+
+
+def discover_projects(plan, site):
+    """Team tier accounts (zelab-team-<tier>; earlier zelab-p-<slug>), their grants, homes and path ACLs."""
+    projects_dir = Path(site['projects_dir'])
+    accounts = host_accounts()
+    for user, (label, _, _) in sorted(accounts.items()):
+        plan.accounts.append((user, label))
         try:
-            group = grp.getgrnam(entry.pw_name)
-            if set(group.gr_mem) <= {entry.pw_name}:
-                plan.groups.append(entry.pw_name)
+            group = grp.getgrnam(user)
+            if set(group.gr_mem) <= {user}:
+                plan.groups.append(user)
         except KeyError:
             pass
-        sudoers = Path('/etc/sudoers.d') / entry.pw_name
+        sudoers = Path('/etc/sudoers.d') / user
         if sudoers.exists():
-            if sudoers.read_text().startswith(f'# Zelab host project {slug}.'):
-                plan.files.append((str(sudoers), f'host project {slug} sudo grant'))
+            if sudoers.read_text().startswith(f'# Zelab {label}.'):
+                plan.files.append((str(sudoers), f'{label} sudo grant'))
             else:
                 plan.refused.append((str(sudoers), 'unexpected content'))
     grants = projects_dir / '.zelab-grants.json'
     if grants.is_file():
-        for slug, paths in json.loads(grants.read_text()).get('paths', {}).items():
-            plan.acl_revocations.extend((path, f'zelab-p-{slug}') for path in paths if Path(path).exists())
+        by_key = {key: user for user, (_, _, key) in accounts.items()}
+        for key, paths in json.loads(grants.read_text()).get('paths', {}).items():
+            user = by_key.get(key, key if key.startswith('zelab-team-') else f'zelab-p-{key}')
+            plan.acl_revocations.extend((path, user) for path in paths if Path(path).exists())
     if projects_dir.is_dir():
-        owned = {user for user, _ in plan.accounts}
-        if all(entry.name == '.zelab-grants.json' or f'zelab-p-{entry.name}' in owned
-               for entry in projects_dir.iterdir()):
-            plan.directories.append((str(projects_dir), 'host project homes'))
+        homes = {home for _, home, _ in accounts.values()}
+        if all(entry.name == '.zelab-grants.json' or entry.name in homes for entry in projects_dir.iterdir()):
+            plan.directories.append((str(projects_dir), 'team tier homes'))
         else:
             plan.refused.append((str(projects_dir), 'contains folders of accounts this site did not create'))
     dropin = Path('/etc/ssh/sshd_config.d/05-zelab-projects.conf')
     if dropin.exists():
-        if dropin.read_text().startswith('# Project host accounts; managed by make.'):
-            plan.files.append((str(dropin), 'project SSH allowlist addition'))
+        if dropin.read_text().startswith(('# Team tier accounts; managed by make.',
+                                           '# Project host accounts; managed by make.')):
+            plan.files.append((str(dropin), 'team SSH allowlist addition'))
         else:
             plan.refused.append((str(dropin), 'unexpected content'))
 

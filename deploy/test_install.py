@@ -124,7 +124,7 @@ class InstallerTest(unittest.TestCase):
                  "TASK [paperclip : Install the service] ***\n", "changed: [zelab_host]\n",
                  '    "msg": "private task output"\n',
                  "TASK [paperclip : Start it] ***\n", "ok: [zelab_host]\n",
-                 "PLAY [Provision per-project host accounts and SSH access] ***\n",
+                 "PLAY [Provision the team tier accounts and SSH access] ***\n",
                  "TASK [host_projects : Create account] ***\n", "ok: [zelab_host]\n", "PLAY RECAP ***\n"]
         runner = self.installer()
 
@@ -140,7 +140,7 @@ class InstallerTest(unittest.TestCase):
         self.assertEqual([(record["play"], record["task"]) for record in records], [
             ("Install pinned native Paperclip on the host", "paperclip : Install the service"),
             ("Install pinned native Paperclip on the host", "paperclip : Start it"),
-            ("Provision per-project host accounts and SSH access", "host_projects : Create account")])
+            ("Provision the team tier accounts and SSH access", "host_projects : Create account")])
         self.assertTrue(all(set(record) == {"play", "task", "seconds"} and record["seconds"] >= 0 for record in records))
         self.assertNotIn("TASK_TIMING", runner.screen.stream.getvalue())
 

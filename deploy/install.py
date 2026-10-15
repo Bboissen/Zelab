@@ -45,7 +45,7 @@ STAGES = (
     ("Install pinned unmodified Hermes", "Hermes"),
     ("Install pinned native Paperclip", "Paperclip"),
     ("Install pinned host agent CLIs", "Host agent CLIs"),
-    ("Provision per-project host accounts", "Host projects"),
+    ("Provision the team tier accounts", "Team tiers"),
     ("Finish pinned Hermes", "Hermes dashboard"),
     ("Configure native Paperclip projects", "Paperclip projects"),
     ("Publish Paperclip's bundled task-bridge", "Paperclip projects"),
@@ -61,7 +61,7 @@ APPLICATION = re.compile(r'(\w+) [\w ]+?: (HTTP \d+ ready|HTTP \d+ needs attenti
 SECTIONS = (
     ("Prepare the host", {"Host packages"}),
     ("Build the Hermes VM and runtime", {"Hermes VM", "Downloads", "VM firewall", "Hermes build", "Hermes"}),
-    ("Install Paperclip, host projects and Hermes", {"Paperclip", "Host agent CLIs", "Host projects",
+    ("Install Paperclip, team tiers and Hermes", {"Paperclip", "Host agent CLIs", "Team tiers",
                                                     "Hermes dashboard", "Paperclip projects",
                                                     "Hermes gateway", "Hermes API"}),
     ("Connect the vault and Obsidian", {"Vault", "Obsidian"}),

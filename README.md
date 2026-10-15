@@ -4,13 +4,15 @@ Private chat agents for a home server, built from upstream parts:
 [Hermes](https://github.com/NousResearch/hermes-agent) runs in a KVM guest, one
 shared gateway serving one Hermes profile per bot, each on its own Discord (or
 Telegram, Slack...) identity; [Paperclip](https://github.com/paperclipai/paperclip)
-on the host tracks the work and dispatches it to the bots and to Codex or Claude
-Code host agents over SSH; one Obsidian vault holds the notes, one folder per
-project. Administration UIs are reachable only through Tailscale or localhost.
+on the host tracks the work and dispatches it to the bots and to a default team
+of Claude Code agents (PM, frontend, backend, mobile, game, data, devops,
+sysadmin) working on the host over SSH; one Obsidian vault holds the notes, one
+folder per project. Administration UIs are reachable only through Tailscale or localhost.
 
 In a project's channel you ask a bot to research something; it writes notes
-under `Projects/<slug>/` and files a Paperclip ticket. Host work becomes a ticket
-you assign to a host agent, which runs as that project's own account.
+under `Projects/<slug>/` and files a Paperclip ticket. Work on the server goes
+to the team's PM, who splits it across the team; each member runs on its rights
+tier's own account, and the answer comes back in the chat.
 
 ## Install
 

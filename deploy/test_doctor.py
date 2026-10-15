@@ -21,8 +21,8 @@ import runtime
 
 class HostReadinessTest(unittest.TestCase):
     def site(self):
-        return {'deploy_key': '/fixture/key', 'zelab_projects': {
-            'homelab': {'account': True}, 'research': {'account': False}}}
+        return {'deploy_key': '/fixture/key', 'zelab_projects': {'research': {'name': 'research'}},
+                'zelab_tiers': {'dev': {'account': 'zelab-team-dev'}}}
 
     def test_each_bot_reports_its_own_pending_setup_steps(self):
         facts = [{'name': 'scout', 'signed_in': True, 'chats': ['Discord'], 'task_key': False, 'soul': True},
@@ -35,7 +35,7 @@ class HostReadinessTest(unittest.TestCase):
         self.assertEqual((checks['writer: model sign-in'], checks['writer: chat app'], checks['writer: task key']),
                          ('PENDING', 'PENDING', 'PASS'))
         self.assertEqual((checks['scout: persona'], checks['writer: persona']), ('PASS', 'PENDING'))
-        self.assertEqual(checks['Host projects'], 'PASS')
+        self.assertEqual(checks['Team tiers'], 'PASS')
 
     def test_no_bots_or_no_guest_is_a_pending_step_not_a_blocker(self):
         for facts, detail in (([], 'make bot'), (None, 'after installation')):

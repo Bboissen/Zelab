@@ -1,4 +1,4 @@
-- name: Provision per-project host accounts and SSH access
+- name: Provision the team tier accounts and SSH access
   hosts: host
   gather_facts: false
   become: true

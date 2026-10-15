@@ -81,6 +81,30 @@
     mode: '2770'
   loop: "{{ zelab_projects | default({}) | list }}"
 
+# The team works in the vault too. host-projects.yaml grants the same on later
+# runs and revokes it when a tier goes; on a fresh site the vault exists only now.
+- name: Let the team tier accounts read and write the whole vault
+  ansible.builtin.command:
+    argv: "{{ ['rtk', 'proxy', 'python3', '-c', notes_team_acl_script, notes_vault_dir]
+              + (zelab_tiers | default({}) | dict2items | map(attribute='value.account') | list) }}"
+  vars:
+    notes_team_acl_script: |
+      import json, pwd, subprocess, sys
+      vault, *users = sys.argv[1:]
+      changed = False
+      for user in users:
+          try:
+              pwd.getpwnam(user)
+          except KeyError:
+              continue
+          current = subprocess.check_output(['rtk', 'proxy', 'getfacl', '-cp', vault], text=True).splitlines()
+          if not {f'user:{user}:rwx', f'default:user:{user}:rwx'} <= set(current):
+              subprocess.run(['rtk', 'proxy', 'setfacl', '-R', '-m', f'u:{user}:rwx,d:u:{user}:rwx', vault], check=True)
+              changed = True
+      print(json.dumps({'changed': changed}))
+  register: notes_team_acl
+  changed_when: (notes_team_acl.stdout | from_json).changed
+
 
 - name: Prepare root-owned chroot and authentication directories
   ansible.builtin.file:

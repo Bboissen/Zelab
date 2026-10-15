@@ -11,6 +11,7 @@ from unittest.mock import patch
 import yaml
 
 from run import read_inputs
+from projects import MONITOR_COMMANDS
 
 
 # Overrides for a second guest beside a full site.
@@ -88,20 +89,37 @@ class PrivateInputsTest(unittest.TestCase):
         site['projects_config'] = str(projects)
         self.site.write_text(yaml.safe_dump(site))
         self.assertEqual(read_inputs(self.site, self.env)['zelab_projects'], {})
-        projects.write_text('projects:\n  homelab:\n    name: Homelab\n    host_preset: repo-dev\n'
-                            '    paths: [/srv/homelab]\n  research: {}\n')
-        loaded = read_inputs(self.site, self.env)['zelab_projects']
-        self.assertEqual(loaded['homelab'], {'name': 'Homelab', 'host_preset': 'repo-dev', 'paths': ['/srv/homelab'],
-                                             'host_tickets': 'owner', 'account': True, 'groups': [], 'sudo': [], 'paths_rights': 'rwx'})
-        self.assertEqual((loaded['research']['name'], loaded['research']['account']), ('research', False))
-        for text in ('projects:\n  Bad_Slug: {}\n', 'projects:\n  web:\n    host_preset: root\n',
-                     'projects:\n  web:\n    paths: [/srv/web]\n', 'projects:\n  web:\n    host_preset: repo-dev\n    paths: [/etc]\n',
-                     'projects:\n  a:\n    name: Same\n  b:\n    name: same\n', 'other: 1\n',
-                     'projects:\n  web:\n    host_tickets: bots\n', 'projects:\n  web:\n    host_preset: docker\n    host_tickets: yes\n'):
+        projects.write_text('projects:\n  homelab:\n    name: Homelab\n  research: {}\n'
+                            'tiers:\n  ops:\n    paths: [/srv/homelab]\n')
+        loaded = read_inputs(self.site, self.env)
+        self.assertEqual(loaded['zelab_projects'], {'homelab': {'name': 'Homelab'}, 'research': {'name': 'research'}})
+        self.assertEqual(loaded['zelab_tiers']['ops'], {'preset': 'docker', 'paths': ['/srv/homelab'], 'account': 'zelab-team-ops',
+                                                        'groups': ['systemd-journal', 'adm', 'docker'],
+                                                        'sudo': list(MONITOR_COMMANDS), 'paths_rights': 'rwx'})
+        self.assertEqual(loaded['zelab_tiers']['root']['sudo'], ['ALL'])
+        self.assertEqual(loaded['zelab_team']['members']['pm']['lead'], True)
+        for text in ('projects:\n  Bad_Slug: {}\n', 'projects:\n  web:\n    host_preset: repo-dev\n',
+                     'projects:\n  web:\n    paths: [/srv/web]\n', 'tiers:\n  ops:\n    paths: [/etc]\n',
+                     'tiers:\n  nope:\n    preset: docker\n', 'tiers:\n  ops:\n    preset: root\n',
+                     'projects:\n  a:\n    name: Same\n  b:\n    name: same\n', 'other: 1\n'):
             with self.subTest(text=text):
                 projects.write_text(text)
                 with self.assertRaises(ValueError):
                     read_inputs(self.site, self.env)
+
+    def test_team_file_is_validated(self):
+        import projects
+        good = {'tiers': {'dev': {'preset': 'repo-dev'}},
+                'members': {'pm': {'title': 'PM', 'role': 'pm', 'tier': 'dev', 'lead': True}}}
+        self.assertEqual(projects.validate_team(good)['model'], 'claude-opus-5-5')
+        for bad in ({'tiers': {'dev': {}}}, {**good, 'members': {'pm': {'tier': 'ops'}}},
+                    {**good, 'members': {'a1': {'tier': 'dev', 'lead': True}, 'b1': {'tier': 'dev', 'lead': True}}},
+                    {**good, 'members': {'pm': {'tier': 'dev', 'role': 'wizard'}}}, {**good, 'effort': 'extreme'},
+                    {**good, 'other': 1}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                projects.validate_team(bad)
+        with self.assertRaises(ValueError):
+            projects.validate_team({**good, 'members': {'ghost': {'tier': 'dev'}}}, Path('config/team'))
 
     def test_duplicate_or_unknown_inputs_are_rejected(self):
         # .env accepts only path names, so it cannot hold a credential.
