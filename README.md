@@ -68,7 +68,7 @@ verified. This is experimental software.
 ## Documentation
 
 - [Setup](docs/SETUP.md) · [Operations](docs/OPERATIONS.md) · [Architecture](docs/ARCHITECTURE.md)
-- [Trust model](docs/TRUST_MODEL.md) · [Status](docs/STATUS.md) · [Bot pool](docs/BOT_POOL.md)
+- [Trust model](docs/TRUST_MODEL.md) · [Status](docs/STATUS.md)
 - [Security policy](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Releasing](docs/RELEASING.md)
 
 Zelab's own source is [MIT licensed](LICENSE). Hermes, Paperclip, Codex, Claude Code,

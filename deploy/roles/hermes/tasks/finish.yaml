@@ -62,35 +62,6 @@
     mode: '0600'
   when: not native_config.stat.exists
 
-- name: Initialize fresh messaging with owner-only admission before token entry
-  ansible.builtin.copy:
-    dest: /var/lib/zelab/hermes/home/.env
-    content: |
-      # Enter a bot token in the native Hermes Channels UI.
-      DISCORD_ALLOWED_USERS={{ research_initial_allowed_user }}
-      DISCORD_ALLOW_ALL_USERS=false
-      GATEWAY_ALLOW_ALL_USERS=false
-      DISCORD_ALLOW_BOTS=false
-    force: false
-    owner: zelab-hermes
-    group: zelab-hermes
-    mode: '0600'
-
-- name: Admit the declared owner once discord_owner_id is configured
-  ansible.builtin.script:
-    cmd: >-
-      seed_dotenv.py /var/lib/zelab/hermes/home/.env --fill-empty
-      DISCORD_ALLOWED_USERS={{ research_initial_allowed_user | quote }}
-    executable: /usr/bin/python3
-  register: hermes_owner_admission
-  changed_when: hermes_owner_admission.stdout | trim == 'changed'
-  when: research_initial_allowed_user | length > 0
-  no_log: true
-
-- name: Check retained owner admission before exposing the native dashboard
-  ansible.builtin.include_role:
-    name: hermes_config_check
-
 - name: Record the completed initial configuration seed
   ansible.builtin.copy:
     dest: /var/lib/zelab/hermes/native-config-migrated

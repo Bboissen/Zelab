@@ -4,7 +4,6 @@
 Only values that differ per host are written; everything else comes from
 config/defaults.yaml. Existing site inputs are retained; interactive harness
 selection updates only worker_harness when the installer invokes --select-harness.
---hermes-model offers the native Hermes model picker; it changes no site input.
 """
 
 import argparse
@@ -13,7 +12,6 @@ import ipaddress
 import os
 from pathlib import Path
 import pwd
-import subprocess
 import sys
 
 from console import heading, paint
@@ -129,14 +127,7 @@ def render(facts, today):
         lines += ["# Tailscale was not running. UIs stay on localhost until you enroll this",
                   "# host, then set ui_tailscale_enabled: true and ui_tailscale_hostname.",
                   "ui_tailscale_enabled: false"]
-    lines += [
-        "",
-        "# Discord: needed before the first Discord test, not for installation.",
-        "# Enable Developer Mode in Discord, then right-click to Copy ID.",
-        "discord_owner_id: ''      # your numeric Discord user ID",
-        "discord_channel_id: ''    # a private test channel for Research",
-        "",
-    ]
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -184,43 +175,12 @@ def select_harness(site_path):
     print(f'  Paperclip worker harness: {paint(labels[choice], "bold")} (saved in {site_path})')
 
 
-def select_hermes_model(site_path, env_path):
-    """Offer the native picker in a terminal once Hermes runs without a provider login."""
-    import doctor
-    from run import read_inputs
-    if not sys.stdin.isatty():
-        return
-    site = read_inputs(site_path, env_path)
-    guest = doctor.guest_facts(site)
-    if not guest or guest['hermes_auth']:
-        return
-    heading('Hermes model provider')
-    print('  Hermes answers only after you sign it in to a provider and choose a model.')
-    print('  For a ChatGPT plan, choose OpenAI Codex: it prints a link and a code to')
-    print('  approve on any device, then lists the models. Skip to do it later from the guide.')
-    while True:
-        answer = input('  Open the Hermes model picker now? [Y/n]: ').strip().lower()
-        if answer in ('', 'y', 'yes'):
-            break
-        if answer in ('n', 'no', 'skip'):
-            return
-        print('  Enter y to open the picker or n to skip.')
-    try:
-        subprocess.run(doctor.hermes_picker(site))
-    except KeyboardInterrupt:
-        print()
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site-config", type=Path, default=ROOT / "config/site.yaml")
     parser.add_argument("--env-file", type=Path, default=ROOT / ".env")
     parser.add_argument('--select-harness', action='store_true')
-    parser.add_argument('--hermes-model', action='store_true')
     args = parser.parse_args(argv)
-    if args.hermes_model:
-        select_hermes_model(args.site_config, args.env_file)
-        return 0
     if args.select_harness:
         select_harness(args.site_config)
         return 0
@@ -240,7 +200,6 @@ def main(argv=None):
         print(f"  tailnet: {facts['ui_tailscale_hostname']} (HTTPS ports {urls})")
     else:
         print("  tailnet: not running; UIs will be localhost-only for now")
-    print("  Discord IDs: pending (only needed before the first Discord test)")
     return 0
 
 

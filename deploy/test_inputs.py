@@ -13,6 +13,15 @@ import yaml
 from run import read_inputs
 
 
+# Overrides for a second guest beside a full site.
+SEPARATE_GUEST = {
+    'vm_instance': 'zelab-fresh', 'vm_service': 'zelab-fresh-vm', 'vm_user': 'zelab-fresh-vm', 'vm_disk_gib': 16,
+    'vm_root': '/var/lib/zelab-fresh-vm/root', 'vm_data': '/var/lib/zelab-fresh-vm/data',
+    'vm_bootstrap_dir': '/var/lib/zelab-fresh-vm/bootstrap', 'guest_ssh_port': 12931,
+    'guest_dashboard_port': 18650, 'guest_api_port': 18652,
+}
+
+
 class PrivateInputsTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -63,7 +72,7 @@ class PrivateInputsTest(unittest.TestCase):
 
     def test_create_cannot_overwrite_another_guests_ssh_pin(self):
         site = yaml.safe_load(self.site.read_text())
-        site.update(yaml.safe_load(Path('config/fresh.example.yaml').read_text()))
+        site.update(SEPARATE_GUEST)
         pin = self.root / 'existing_known_hosts'
         pin.write_text('[127.0.0.1]:12921 ssh-ed25519 preserved-key\n')
         site['guest_known_hosts'] = str(pin)
@@ -127,7 +136,7 @@ class PrivateInputsTest(unittest.TestCase):
                 else:
                     with self.assertRaises(ValueError):
                         read_inputs(self.site, self.env)
-        site.update(yaml.safe_load(Path('config/fresh.example.yaml').read_text()))
+        site.update(SEPARATE_GUEST)
         self.site.write_text(yaml.safe_dump(site))
         self.assertEqual(read_inputs(self.site, self.env)['vm_disk_gib'], 16)
         site['vm_service'] = 'unsafe/../unit'
@@ -193,23 +202,6 @@ class PrivateInputsTest(unittest.TestCase):
         with patch('run.operator', return_value='discovered'):
             self.assertEqual(read_inputs(self.site, None)['operator_user'], 'discovered')
 
-    def test_discord_ids_are_optional_until_used_and_validated_when_set(self):
-        site = yaml.safe_load(self.site.read_text())
-        self.assertEqual(read_inputs(self.site, None)['research_initial_allowed_user'], '')
-        owner, channel = '123456789012345678', 123456789012345679
-        site.update(discord_owner_id=owner, discord_channel_id=channel)
-        self.site.write_text(yaml.safe_dump(site))
-        loaded = read_inputs(self.site, None)
-        self.assertEqual(loaded['research_initial_allowed_user'], '123456789012345678')
-        self.assertEqual(loaded['research_initial_allowed_channel'], '123456789012345679')
-        self.assertNotIn('discord_owner_id', loaded)
-        for updates in [{'discord_owner_id': 'my-name'},
-                        {'research_initial_allowed_user': '223456789012345678'}]:
-            with self.subTest(updates=updates):
-                self.site.write_text(yaml.safe_dump({**site, **updates}))
-                with self.assertRaises(ValueError):
-                    read_inputs(self.site, None)
-
     def test_public_examples_follow_the_actual_account_and_environment(self):
         self.site.write_text(Path('config/site.example.yaml').read_text())
         self.write_env(Path('.env.example').read_text())
@@ -235,17 +227,17 @@ class PrivateInputsTest(unittest.TestCase):
     def test_separate_guest_examples_derive_distinct_private_state(self):
         baseline = read_inputs(self.site, None)
         values = yaml.safe_load(self.site.read_text())
-        values.update(yaml.safe_load(Path('config/fresh.example.yaml').read_text()))
+        values.update(SEPARATE_GUEST)
         self.site.write_text(yaml.safe_dump(values))
         separate = read_inputs(self.site, None)
         for key in ['private_dir', 'backup_dir', 'deploy_key', 'guest_known_hosts']:
             self.assertNotEqual(baseline[key], separate[key], key)
 
-    def test_optional_reserves_and_headroom_can_be_zero(self):
+    def test_optional_headroom_can_be_zero(self):
         site = yaml.safe_load(self.site.read_text())
-        site.update(hermes_reserve_count=0, host_disk_reserve_gib=0, host_memory_reserve_gib=0)
+        site.update(host_disk_reserve_gib=0, host_memory_reserve_gib=0)
         self.site.write_text(yaml.safe_dump(site))
-        self.assertEqual(read_inputs(self.site, None)['hermes_reserve_count'], 0)
+        self.assertEqual(read_inputs(self.site, None)['host_disk_reserve_gib'], 0)
 
 
 if __name__ == "__main__":

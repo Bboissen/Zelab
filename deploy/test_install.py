@@ -52,7 +52,7 @@ class InstallerTest(unittest.TestCase):
             return 0, []
 
         with ExitStack() as stack, redirect_stdout(io.StringIO()):
-            for method in ('host', 'administration', 'configuration', 'controller', 'worker_harness', 'open_log', 'services', 'hermes_model'):
+            for method in ('host', 'administration', 'configuration', 'controller', 'worker_harness', 'open_log', 'single_run', 'services'):
                 stack.enter_context(patch.object(runner, method))
             stack.enter_context(patch.object(runner, 'ui_passwords', side_effect=passwords))
             stack.enter_context(patch.object(runner, 'deploy', side_effect=lambda: stages.append('deploy')))
@@ -167,6 +167,18 @@ class InstallerTest(unittest.TestCase):
             self.assertEqual(log.path.stat().st_mode & 0o777, 0o600)
             self.assertEqual(log.path.read_text(), "before\nafter\n")
 
+    def test_one_run_at_a_time_and_stale_plaintext_copies_are_removed(self):
+        with tempfile.TemporaryDirectory() as shm:
+            stale = Path(shm, 'zelab-passwords-killed')
+            stale.mkdir(mode=0o700)
+            (stale / 'paperclip').write_text('plaintext')
+            runner = self.installer()
+            runner.single_run(Path(shm))
+            self.assertFalse(stale.exists())
+            with self.assertRaisesRegex(ValueError, 'Another make is running'):
+                self.installer().single_run(Path(shm))
+            runner.run_lock.close()
+
     def test_capture_hides_tool_output_and_preserves_it_in_the_private_log(self):
         runner = self.installer()
         with tempfile.TemporaryDirectory() as directory:
@@ -176,7 +188,8 @@ class InstallerTest(unittest.TestCase):
                                             "import sys; print('download detail'); print('tool error', file=sys.stderr); sys.exit(2)"])
             self.assertEqual(code, 2)
             self.assertEqual(terminal.getvalue(), "")
-            self.assertIn("download detail", tail)
+            # rtk relays stdout and stderr separately, so their lines may interleave.
+            self.assertIn("download detail", "".join(tail))
             self.assertIn("tool error", runner.log.path.read_text())
 
     def test_interrupted_capture_stops_the_tool_before_returning(self):

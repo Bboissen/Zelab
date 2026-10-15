@@ -5,5 +5,5 @@ obsidian_username: owner
 obsidian_timezone: Europe/Paris
 notes_vault_dir: /var/lib/zelab-vault
 notes_container_user: zelab-notes-owner
-notes_shared_group: zelab-vault-shared
+notes_owner_group: zelab-vault-owner
 obsidian_compose: [rtk, proxy, docker, compose, --project-name, zelab-notes, --env-file, "{{ obsidian_config_dir }}/compose.env", -f, "{{ obsidian_config_dir }}/compose.yaml"]

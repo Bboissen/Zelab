@@ -1,11 +1,9 @@
 """Verify advisory OS findings and blocking deployment prerequisites."""
 
-from contextlib import ExitStack, nullcontext, redirect_stderr, redirect_stdout
+from contextlib import nullcontext, redirect_stderr, redirect_stdout
 from datetime import date, timedelta
 import io
-import json
 import os
-import shlex
 from pathlib import Path
 import subprocess
 import tempfile
@@ -15,7 +13,6 @@ from unittest.mock import patch
 import yaml
 
 import doctor
-import bridge_check
 import run
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "implementation"))
@@ -23,28 +20,9 @@ import runtime
 
 
 class HostReadinessTest(unittest.TestCase):
-    def test_bridge_results_keep_pending_and_failure_distinct_and_receive_runtime_path(self):
-        site = {'vm_service': 'fixture-vm'}
-        for inspection, label in [(bridge_check.Inspection(True, 'verified'), 'PASS'),
-                                  (bridge_check.Inspection(False, 'needs owner login', pending=True), 'PENDING'),
-                                  (bridge_check.Inspection(False, 'scope drift'), 'FAIL')]:
-            with self.subTest(label=label), ExitStack() as stack:
-                for method in ('host_checks', 'resource_checks', 'port_checks', 'tailscale_checks', 'connection_checks'):
-                    stack.enter_context(patch.object(doctor, method, return_value=[]))
-                stack.enter_context(patch.object(doctor, 'admin_checks', return_value=([], True)))
-                stack.enter_context(patch.object(doctor, 'load_site', return_value=(site, None)))
-                stack.enter_context(patch.object(Path, 'exists', return_value=True))
-                stack.enter_context(patch.dict(os.environ, ZELAB_PASSWORD_DIR='/dev/shm/fixture-passwords'))
-                inspect = stack.enter_context(patch.object(bridge_check, 'inspect', return_value=inspection))
-                checks = doctor.readiness_checks(Path('fixture-site.yaml'))
-                inspect.assert_called_once_with(site, '/dev/shm/fixture-passwords')
-                self.assertEqual([(check.name, check.label) for check in checks], [('Native bridge contracts', label)])
-
     def test_skipped_harness_has_no_provider_login_probe(self):
-        site = {'worker_harness': 'none', 'deploy_key': '/fixture/key',
-                'research_initial_allowed_user': ''}
-        with patch.object(doctor, 'guest_facts', return_value=None), \
-             patch.object(doctor, 'command_succeeds') as probe:
+        site = {'worker_harness': 'none', 'deploy_key': '/fixture/key'}
+        with patch.object(doctor, 'command_succeeds') as probe:
             checks = doctor.connection_checks(site, elevated=True)
         probe.assert_not_called()
         self.assertEqual(checks[0].name, 'Worker harness skipped')
@@ -52,9 +30,8 @@ class HostReadinessTest(unittest.TestCase):
 
     def test_claude_login_checks_the_actual_operations_account(self):
         site = {'worker_harness': 'claude', 'worker_ops_user': 'fixture-ops',
-                'deploy_key': '/fixture/key', 'research_initial_allowed_user': ''}
-        with patch.object(doctor, 'guest_facts', return_value=None), \
-             patch.object(doctor, 'command_succeeds', return_value=True) as probe:
+                'deploy_key': '/fixture/key'}
+        with patch.object(doctor, 'command_succeeds', return_value=True) as probe:
             checks = doctor.connection_checks(site, elevated=True)
         self.assertEqual(probe.call_args.args[0], ['sudo', '-n', '-u', 'fixture-ops', '-H',
                                                 '/usr/local/bin/zelab-claude', 'auth', 'status'])
@@ -259,33 +236,6 @@ class HostReadinessTest(unittest.TestCase):
                 doctor.free_gib(private / "data")
             finally:
                 private.chmod(0o700)
-
-    def test_guest_probe_counts_pooled_device_code_logins(self):
-        site = {"vm_service": "zelab-vm", "deploy_key": "/k", "guest_known_hosts": "/h",
-                "guest_ssh_port": 12921, "guest_user": "zelab-deploy"}
-        with patch.object(doctor, "command_output", side_effect=["active\n", "{}"]) as probe:
-            doctor.guest_facts(site)
-        code = shlex.split(probe.call_args_list[1].args[0][-1])[-1]
-        cases = [({"version": 1, "providers": {}}, False),
-                 ({"version": 1, "providers": {}, "credential_pool": {"openai-codex": [{"id": "x"}]}}, True),
-                 ({"version": 1, "providers": {"nous": {"access_token": "x"}}}, True),
-                 ({"version": 1, "providers": {}, "credential_pool": []}, False)]
-        for store, expected in cases:
-            with self.subTest(store=store), tempfile.TemporaryDirectory() as home:
-                Path(home, "auth.json").write_text(json.dumps(store))
-                result = subprocess.run([sys.executable, "-c", code.replace("/var/lib/zelab/hermes/home", home)],
-                                        capture_output=True, text=True, check=True)
-                self.assertEqual(json.loads(result.stdout)["hermes_auth"], expected)
-
-    def test_guest_probe_is_shell_quoted(self):
-        site = {"vm_service": "zelab-vm", "deploy_key": "/k", "guest_known_hosts": "/h",
-                "guest_ssh_port": 12921, "guest_user": "zelab-deploy"}
-        replies = iter(["active\n", '{"hermes_auth": true, "discord_token": false}'])
-        with patch.object(doctor, "command_output", side_effect=lambda *a, **k: next(replies)) as probe:
-            self.assertEqual(doctor.guest_facts(site), {"hermes_auth": True, "discord_token": False})
-        remote = probe.call_args_list[1].args[0][-1]
-        self.assertTrue(remote.startswith("sudo -n python3 -c '"))
-        self.assertNotIn("\\n", remote)
 
     def test_probe_errors_do_not_reveal_command_output(self):
         with patch.object(doctor.subprocess, "run", side_effect=subprocess.TimeoutExpired(["private-value"], 15,

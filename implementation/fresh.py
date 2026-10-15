@@ -44,6 +44,7 @@ GENERATED_PRIVATE = [
     'paperclip-hermes-ids.json', 'hermes-dashboard.password', 'hermes-dashboard.password-hash', 'hermes-dashboard.session-secret',
     'hermes-api.key', 'obsidian.password', 'checklist.html', 'guide.html',
 ]
+LEGACY_NOTES_USER, LEGACY_NOTES_GROUP = 'zelab-notes-shared', 'zelab-vault-shared'
 SHARED_TOOLS = ['/usr/local/lib/zelab', '/opt/zelab-tools', '/var/cache/zelab']
 BOOTSTRAP_FILES = {'ssh_host_ed25519_key', 'ssh_host_ed25519_key.pub', 'user-data', 'meta-data', 'creating', 'created'}
 
@@ -290,13 +291,15 @@ def discover_workers(plan, site):
 
 
 def discover_notes(plan, site, notes):
-    """Notes share, its export units and the vault."""
+    """Notes share, its export units, the vault and its history."""
     notes_owner = owned_account(notes['notes_owner_user'], home='/vault')
-    for user in (notes['notes_owner_user'], notes['notes_shared_user']):
+    # Sites from the earlier Private/Shared layout also have a shared-notes account.
+    notes_users = (notes['notes_owner_user'], LEGACY_NOTES_USER)
+    for user in notes_users:
         if owned_account(user, home='/vault'):
             plan.accounts.append((user, 'notes-only account (home /vault)'))
-    zelab_users = {site['worker_ops_user'], site['worker_code_user'], notes['notes_owner_user'], notes['notes_shared_user']}
-    for name in (notes['notes_owner_group'], notes['notes_shared_group']):
+    zelab_users = {site['worker_ops_user'], site['worker_code_user'], *notes_users}
+    for name in (notes['notes_owner_group'], LEGACY_NOTES_GROUP):
         try:
             group = grp.getgrnam(name)
         except KeyError:
@@ -305,7 +308,7 @@ def discover_notes(plan, site, notes):
             plan.groups.append(name)
         else:
             plan.refused.append((f'group {name}', 'has members outside Zelab'))
-    for user in (notes['notes_owner_user'], notes['notes_shared_user']):
+    for user in notes_users:
         where = f"{notes['notes_sftp_root']}/{user}/vault"
         unit = command('systemd-escape', '--path', '--suffix=mount', where).stdout.strip()
         if (SYSTEMD / unit).exists():
@@ -327,7 +330,7 @@ def discover_notes(plan, site, notes):
         else:
             plan.refused.append((str(config_dir), 'does not configure this site\'s notes export'))
     if sftp_root.is_dir():
-        if {entry.name for entry in sftp_root.iterdir()} <= {notes['notes_owner_user'], notes['notes_shared_user']}:
+        if {entry.name for entry in sftp_root.iterdir()} <= set(notes_users):
             plan.directories.append((str(sftp_root), 'notes export chroots only'))
         else:
             plan.refused.append((str(sftp_root), 'contains entries other than the notes export chroots'))
@@ -338,6 +341,18 @@ def discover_notes(plan, site, notes):
                 plan.directories.append((path, f"{label} owned by {notes['notes_owner_user']}"))
             else:
                 plan.refused.append((path, f"{label} not owned by {notes['notes_owner_user']}"))
+    history = Path(notes['vault_history_dir'])
+    if history.is_dir():
+        if unit_mentions(history / 'config', f"worktree = {site['notes_vault_dir']}"):
+            plan.directories.append((str(history), 'root-only vault history'))
+        else:
+            plan.refused.append((str(history), 'is not this site\'s vault history'))
+    for name in ('zelab-vault-history.timer', 'zelab-vault-history.service'):
+        if (SYSTEMD / name).exists():
+            if unit_mentions(SYSTEMD / name, 'Zelab vault history'):
+                plan.units.append((name, 'Zelab vault history'))
+            else:
+                plan.refused.append((str(SYSTEMD / name), 'unit content does not match'))
     vault = Path(site['notes_vault_dir'])
     if any(path == str(vault) for path, _ in plan.directories):
         files = count_files(vault)

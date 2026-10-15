@@ -58,18 +58,15 @@ worker_harness: none
 # Empty leaves the model to you in Paperclip (the CLI default until chosen).
 worker_model: ''
 
-# Hermes. Reserves are parked native profiles; they need no Discord application
-# until one is deliberately assigned.
+# Hermes: one pinned checkout and one shared gateway; each bot is a native profile.
 hermes_install_dir: /opt/hermes/agent
 # Empty leaves provider/model selection to Hermes' native setup UI.
 hermes_initial_model: ''
-hermes_reserve_count: 5
 
-# Notes vault and Obsidian browser UI.
+# Notes vault (one shared vault, Projects/<slug>/) and Obsidian browser UI.
 notes_enabled: true
 notes_vault_dir: /var/lib/zelab-vault
 notes_guest_root: /var/lib/zelab-notes
-notes_shared_profiles: [research]
 obsidian_enabled: true
 obsidian_state_dir: /var/lib/zelab-obsidian
 obsidian_config_dir: /etc/zelab-obsidian

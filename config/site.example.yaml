@@ -21,12 +21,7 @@ ui_tail_hermes_port: 443
 ui_tail_paperclip_port: 8443
 ui_tail_obsidian_port: 9443
 
-# Discord: needed before the first Discord test, not for installation.
-discord_owner_id: ''      # your numeric Discord user ID (Developer Mode → Copy ID)
-discord_channel_id: ''    # a private test channel for Research
-
 # Common optional overrides (defaults shown in config/defaults.yaml):
 # private_dir, backup_dir and worker_codex_auth_source follow the operator's
 # account home/environment. Override only with actual absolute paths.
 # vm_disk_gib: 16
-# hermes_reserve_count: 5

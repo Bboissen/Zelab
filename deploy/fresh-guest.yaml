@@ -1,9 +1,0 @@
-# Guest component qualification; complete isolated-site acceptance is separate.
-- import_playbook: create-guest.yaml
-- import_playbook: guest-ready.yaml
-- import_playbook: guest-network.yaml
-- import_playbook: build-hermes.yaml
-- import_playbook: install-hermes.yaml
-- import_playbook: finish-hermes.yaml
-- import_playbook: research-profile.yaml
-- import_playbook: bot-pool.yaml

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Snapshot the vault into a root-only git history outside it. Restore with
+# git --git-dir={{ vault_history_dir }} --work-tree={{ notes_vault_dir }} checkout <commit> -- Projects/<slug>
+set -eu
+export GIT_DIR={{ vault_history_dir }} GIT_WORK_TREE={{ notes_vault_dir }}
+git add --all
+if ! git diff --cached --quiet; then
+  git commit --quiet --no-verify -m "vault snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fi

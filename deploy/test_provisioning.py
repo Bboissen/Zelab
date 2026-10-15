@@ -82,15 +82,14 @@ class ProvisioningTest(unittest.TestCase):
             })
         self.assertIn('changed=0', result.stdout)
 
-    def test_skip_provisions_no_worker_account_cli_or_task_bridge(self):
-        # Real role entries from the site playbooks; skip must not enter any of them.
-        roles = [yaml.safe_load((ROOT / 'deploy' / name).read_text())[0]['roles'][0]
-                 for name in ('host-workers.yaml', 'hermes-bridge.yaml')]
+    def test_skip_provisions_no_worker_account_or_cli(self):
+        # The real role entry from the site playbook; skip must not enter it.
+        roles = [yaml.safe_load((ROOT / 'deploy/host-workers.yaml').read_text())[0]['roles'][0]]
         with tempfile.TemporaryDirectory() as directory:
             result = self.run_play(directory, roles=roles, variables={'worker_harness': 'none'})
         self.assertIn('ok=0', result.stdout)
         self.assertIn('changed=0', result.stdout)
-        grant, = role_tasks('deploy/roles/notes_host/tasks/main.yaml', 'Grant designated host workers their explicit notes scope')
+        grant, = role_tasks('deploy/roles/notes_host/tasks/main.yaml', 'Grant the designated host worker the vault')
         self.assertEqual(grant['when'], "worker_harness in ['codex', 'claude']")
 
     def test_serve_routes_never_replace_other_handlers_or_public_routes(self):

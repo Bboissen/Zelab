@@ -1,0 +1,8 @@
+[Unit]
+Description=Zelab vault history snapshot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/zelab/vault-history.sh
+Nice=10
+IOSchedulingClass=idle

@@ -141,37 +141,4 @@ class ConfigureTest(unittest.TestCase):
                 configure.main(["--site-config", str(path)])
             self.assertEqual(path.read_text(), "operator_user: kept\n")
         self.assertEqual(site["ui_tail_hermes_port"], 8444)
-        self.assertEqual(site["research_initial_allowed_user"], "")
         self.assertIn("box.example.ts.net", site["paperclip_allowed_hosts"])
-
-
-class HermesModelPromptTest(unittest.TestCase):
-    site = {"deploy_key": "/k", "guest_known_hosts": "/h", "guest_ssh_port": 12921,
-            "guest_user": "zelab-deploy", "hermes_install_dir": "/opt/hermes/agent"}
-
-    def offer(self, answers, facts, tty=True):
-        with patch('sys.stdin.isatty', return_value=tty), \
-                patch('run.read_inputs', return_value=self.site), \
-                patch('doctor.guest_facts', return_value=facts), \
-                patch('builtins.input', side_effect=answers), \
-                patch('configure.subprocess.run') as execute, redirect_stdout(io.StringIO()):
-            configure.select_hermes_model(Path('site.yaml'), Path('.env'))
-        return execute
-
-    def test_terminal_owner_can_open_the_native_picker(self):
-        execute = self.offer([''], {'hermes_auth': False, 'discord_token': False})
-        argv = execute.call_args.args[0]
-        self.assertEqual(argv[:4], ['rtk', 'proxy', 'ssh', '-t'])
-        self.assertEqual(argv[-3:], ['/opt/hermes/agent/.hermes/bin/hermes', 'model', '--no-browser'])
-
-    def test_skip_signed_in_unreachable_and_unattended_runs_open_nothing(self):
-        for answers, facts, tty in [(['n'], {'hermes_auth': False}, True),
-                                    ([], {'hermes_auth': True}, True),
-                                    ([], None, True),
-                                    ([], {'hermes_auth': False}, False)]:
-            with self.subTest(facts=facts, tty=tty):
-                self.offer(answers, facts, tty).assert_not_called()
-
-
-if __name__ == "__main__":
-    unittest.main()

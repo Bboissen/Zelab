@@ -10,11 +10,13 @@ Python before the controller exists, so it needs only the standard library.
 import argparse
 import collections
 import datetime
+import fcntl
 import json
 import os
 from pathlib import Path
 import platform
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -44,15 +46,11 @@ STAGES = (
     ("Install pinned native Paperclip", "Paperclip"),
     ("Provision native host worker", "Host workers"),
     ("Finish pinned Hermes", "Hermes dashboard"),
-    ("Prepare a native Research profile", "Research profile"),
-    ("Prepare parked native bot", "Reserve bots"),
     ("Configure native Paperclip host worker", "Paperclip agents"),
-    ("Install the native Hermes to Paperclip", "Task bridge"),
     ("Supervise the native shared Hermes gateway", "Hermes gateway"),
     ("Seed the native Hermes API", "Hermes API"),
-    ("Configure the native Paperclip Hermes gateway", "Hermes API"),
-    ("Prepare the host vault", "Shared notes"),
-    ("Mount explicitly shared notes", "Shared notes"),
+    ("Prepare the host vault", "Vault"),
+    ("Mount the vault", "Vault"),
     ("Deploy the native Obsidian", "Obsidian"),
     ("Remove superseded", "Cleanup"),
 )
@@ -60,10 +58,9 @@ APPLICATION = re.compile(r'(\w+) [\w ]+?: (HTTP \d+ ready|HTTP \d+ needs attenti
 SECTIONS = (
     ("Prepare the host", {"Host packages"}),
     ("Build the Hermes VM and runtime", {"Hermes VM", "Downloads", "VM firewall", "Hermes build", "Hermes"}),
-    ("Install applications, workers and bots", {"Paperclip", "Host workers", "Hermes dashboard", "Research profile",
-                                              "Reserve bots", "Paperclip agents", "Task bridge",
-                                              "Hermes gateway", "Hermes API"}),
-    ("Connect shared notes and Obsidian", {"Shared notes", "Obsidian"}),
+    ("Install applications, workers and Hermes", {"Paperclip", "Host workers", "Hermes dashboard",
+                                                "Paperclip agents", "Hermes gateway", "Hermes API"}),
+    ("Connect the vault and Obsidian", {"Vault", "Obsidian"}),
     ("Verify services and prepare your guide", {"Cleanup"}),
 )
 
@@ -312,16 +309,6 @@ class Installer:
             self.screen.start('Worker harness')
             self.fail('selection could not be saved')
 
-    def hermes_model(self):
-        # Native picker and device-code login need the terminal; the guide covers a skip.
-        command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/configure.py', *self.inputs(), '--hermes-model']
-        # A handler, unlike SIG_IGN, is reset on exec, so Ctrl-C still reaches the picker.
-        previous = signal.signal(signal.SIGINT, lambda *_: None)
-        try:
-            subprocess.run(command, cwd=ROOT)
-        finally:
-            signal.signal(signal.SIGINT, previous)
-
     def open_log(self):
         """The log lives in the site's private directory once the inputs can be read."""
         code = ("import sys,json; sys.path.insert(0, 'deploy'); from pathlib import Path; from run import read_inputs; "
@@ -470,6 +457,17 @@ class Installer:
         if self.log.path:
             print(f"\n  Install log: {self.log.path}\n")
 
+    def single_run(self, shm=Path('/dev/shm')):
+        """One make at a time; then remove plaintext working copies a killed run left behind."""
+        self.run_lock = open(shm / f'zelab-make-{os.getuid()}.lock', 'a')
+        try:
+            fcntl.flock(self.run_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError('Another make is running for this operator; wait for it to finish.') from None
+        for stale in shm.glob('zelab-passwords-*'):
+            if stale.is_dir() and not stale.is_symlink() and stale.stat().st_uid == os.getuid():
+                shutil.rmtree(stale, ignore_errors=True)
+
     def run(self):
         host = platform.node() or "this host"
         heading("ZELAB INSTALLER")
@@ -483,6 +481,7 @@ class Installer:
             self.controller()
             self.worker_harness()
             self.open_log()
+            self.single_run()
             # Linux RAM filesystem: plaintext inputs are never retained in Git,
             # environment values, arguments, logs or the persistent deployment state.
             with tempfile.TemporaryDirectory(prefix='zelab-passwords-', dir='/dev/shm') as directory:
@@ -492,7 +491,6 @@ class Installer:
                 self.deploy()
                 self.screen.section(4)
                 self.services()
-                self.hermes_model()
                 self.ui_passwords('finish')
                 self.summary()
             self.password_dir = None

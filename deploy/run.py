@@ -64,11 +64,6 @@ def require_pattern(site, name, pattern):
 
 
 DEFAULTS = ROOT / "config/defaults.yaml"
-# Clear public names for the two Discord inputs; roles keep their original names.
-# (Internal name first keeps secret scanners from mistaking the pair for a credential.)
-DISCORD_ALIASES = {public: internal for internal, public in (
-    ("research_initial_allowed_user", "discord_owner_id"),
-    ("research_initial_allowed_channel", "discord_channel_id"))}
 # Systemd units for these paths use ProtectHome, so home directories cannot work.
 PROTECTED_HOME = (Path("/home"), Path("/root"), Path("/run/user"))
 
@@ -93,16 +88,6 @@ def derive_defaults(site):
     """Fill values that follow from other inputs; explicit site values win."""
     if 'operator_user' not in site:
         site['operator_user'] = operator()
-    for alias, name in DISCORD_ALIASES.items():
-        if alias in site:
-            if name in site and str(site[name]) != str(site[alias]):
-                raise ValueError(f"{alias} and {name} disagree; keep only {alias}")
-            site[name] = site.pop(alias)
-    for name in DISCORD_ALIASES.values():
-        if site.get(name) in (None, ""):
-            site[name] = ""
-        elif isinstance(site[name], int) and not isinstance(site[name], bool):
-            site[name] = str(site[name])
     user = site.get("operator_user")
     if isinstance(user, str) and re.fullmatch(r"[a-z_][a-z0-9_-]{0,47}", user):
         home = operator_home(user)
@@ -217,18 +202,12 @@ def check_applications(site):
             state_paths.append(name)
     if site["notes_enabled"]:
         absolute_path(site.get("notes_guest_root"), "notes_guest_root")
-        profiles = site.get("notes_shared_profiles")
-        if not isinstance(profiles, list) or any(not isinstance(p, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,47}", p) for p in profiles):
-            raise ValueError("notes_shared_profiles must be a list of profile names")
-        if len(profiles) != len(set(profiles)):
-            raise ValueError("notes_shared_profiles must not repeat an audience")
     return state_paths
 
 
 def check_resources_and_names(site):
     for name, minimum, maximum in (("vm_cpu", 1, 256), ("vm_memory_mb", 1024, 1048576),
-                                    ("host_disk_reserve_gib", 0, 1048576), ("host_memory_reserve_gib", 0, 1048576),
-                                    ("hermes_reserve_count", 0, 10)):
+                                    ("host_disk_reserve_gib", 0, 1048576), ("host_memory_reserve_gib", 0, 1048576)):
         if type(site.get(name)) is not int or not minimum <= site[name] <= maximum:
             raise ValueError(f"{name} must be an integer between {minimum} and {maximum}")
     require_pattern(site, "vm_cpu_quota", r"[1-9][0-9]*%")
@@ -242,10 +221,6 @@ def check_resources_and_names(site):
     for name in ('hermes_initial_model', 'worker_model', 'worker_codex_model'):
         if name in site and site[name] != '':
             require_pattern(site, name, r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,127}")
-    # Discord IDs are needed only before the first Discord test; empty means pending.
-    for alias, name in DISCORD_ALIASES.items():
-        if site[name] and not re.fullmatch(r"[0-9]{17,20}", site[name]):
-            raise ValueError(f"{alias} must be a numeric Discord ID (Developer Mode → Copy ID)")
     require_pattern(site, "paperclip_owner_email", r"[A-Za-z0-9_.+-]+@[A-Za-z0-9.-]+")
     hosts = site.get("paperclip_allowed_hosts")
     if not isinstance(hosts, list) or not hosts or any(not isinstance(h, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", h) for h in hosts):

@@ -16,6 +16,24 @@
     - name: Wait for the fresh guest's native cloud-init completion
       ansible.builtin.command: cloud-init status --wait
       changed_when: false
+    # cloud-init grows the root filesystem at boot; this covers a live resize.
+    - name: Grow the root partition and filesystem to the disk size online
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import json, re, subprocess
+            source = subprocess.run(['findmnt', '-no', 'SOURCE', '/'], check=True, capture_output=True, text=True).stdout.strip()
+            disk, part = re.fullmatch(r'(/dev/[a-z]+)(\d+)', source).groups()
+            grown = subprocess.run(['growpart', disk, part], capture_output=True, text=True)
+            if grown.returncode not in (0, 1) or (grown.returncode == 1 and 'NOCHANGE' not in grown.stdout):
+                raise SystemExit('growpart failed: ' + (grown.stdout + grown.stderr).strip()[-300:])
+            if grown.returncode == 0:
+                subprocess.run(['resize2fs', source], check=True, capture_output=True)
+            print(json.dumps({'changed': grown.returncode == 0}))
+      register: guest_root_grown
+      changed_when: (guest_root_grown.stdout | from_json).changed
     - name: Allow a terminal for the deployment key on guests created before it was permitted
       ansible.builtin.lineinfile:
         path: "/home/{{ guest_user }}/.ssh/authorized_keys"

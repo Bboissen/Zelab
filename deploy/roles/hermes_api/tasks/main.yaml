@@ -62,21 +62,6 @@
     group: root
     mode: '0600'
 
-- name: Set native approval behavior for authorized owner Operations once
-  ansible.builtin.command:
-    argv: ["{{ hermes_install_dir }}/.hermes/bin/hermes", config, set, approvals.mode, 'off']
-    creates: /var/lib/zelab/hermes/operations-approvals-seeded
-  become_user: zelab-hermes
-  environment: "{{ hermes_cli_environment }}"
-
-- name: Retain subsequent owner approval preferences
-  ansible.builtin.copy:
-    dest: /var/lib/zelab/hermes/operations-approvals-seeded
-    content: "Owner Operations native approvals initialized once; named profiles are independent.\n"
-    owner: root
-    group: root
-    mode: '0600'
-
 - name: Load the initial API configuration in the native gateway
   ansible.builtin.systemd_service:
     scope: user
