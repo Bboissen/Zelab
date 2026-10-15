@@ -56,6 +56,12 @@ PERSONA_HINT = '''
   Write it like a short job description: what it watches, decides and delivers; what it leaves
   to others; when it asks you first. Every bot can read it, so keep secrets out.
 '''
+TASK_KEY_HINT = '''
+  The task key lets {name} file Paperclip tickets from chat, so work it promises is tracked:
+  assigned to itself (Paperclip then runs it), to another bot, or unassigned for you to hand
+  to a host agent. Nothing to prepare in Paperclip: make already created these projects from
+  config/projects.yaml and hired {name} there. The key works only in the projects you pick.
+'''
 # Hermes' wizard checks the token and prints the invite link; the portal steps before it are by hand.
 DISCORD_HINT = '''
   Discord: one application per bot, at https://discord.com/developers/applications
@@ -589,6 +595,8 @@ class Bots:
             if not projects:
                 print('  No Paperclip projects yet: add some to config/projects.yaml and rerun make.')
                 return
+            heading(f'{name.upper()} TASK KEY')
+            print(TASK_KEY_HINT.format(name=name))
             for index, project in enumerate(projects, 1):
                 print(f'  {index:>2}  {project["name"]} ({project_slug(project)})')
             while True:
