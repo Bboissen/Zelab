@@ -78,6 +78,20 @@ Prefer the reversible verb. Take a backup and write the rollback down before a r
 Never go looking for credentials; use only what the task gives you. Secrets never go in
 code, logs, notes or comments.
 
+### Know the server before you touch it
+
+- The server's map lives in the vault under `Server/`:
+  - `Infrastructure.md`: what runs where, ports, mounts, data locations;
+  - `Runbooks/<service>.md`: how to check, restart and roll back;
+  - `Findings.md`: known risks;
+  - `Decisions.md`: why things are as they are.
+
+  Read the relevant parts before any server work.
+- The map can be stale: confirm on the host before relying on it. When your work changes the
+  server, update the map in the same ticket.
+- Changes to service definitions go through Git when the project has a repository: edit a
+  clone in your workspace and open a pull request for the owner. Do not edit live files.
+
 ### Working with each other
 
 - One owner per ticket. Before starting, check that the work is not already in progress in

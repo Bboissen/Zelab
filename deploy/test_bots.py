@@ -109,6 +109,32 @@ class BotTest(unittest.TestCase):
         self.assertIn('--assignee-agent-id h1', text)
         self.assertIn('--unassigned', bots.skill(site, 'marvin', {}, []))
 
+    def test_onboarding_ticket_is_filed_once_for_the_lead(self):
+        calls = []
+
+        class FakePaperclip:
+            company = 'c1'
+
+            def call(self, method, path, body=None):
+                calls.append((method, path, body))
+                return {'identifier': 'ZEL-1'}
+
+        with tempfile.TemporaryDirectory() as private:
+            runner = bots.Bots.__new__(bots.Bots)
+            runner.site = {**SITE, 'private_dir': private,
+                           'zelab_team': {'members': {'pm': {'title': 'PM', 'tier': 'dev', 'lead': True}}}}
+            runner.paperclip = FakePaperclip()
+            runner.team = lambda: ({'pm': {'id': 'a-pm'}}, [])
+            runner.onboard()
+            runner.onboard()
+            self.assertEqual(len(calls), 1)
+            method, path, body = calls[0]
+            self.assertEqual((method, path, body['assigneeAgentId'], body['idempotencyKey']),
+                             ('POST', '/companies/c1/issues', 'a-pm', 'zelab-team-onboarding'))
+            self.assertEqual(body['title'], 'Map this server into the vault')
+            self.assertIn('No secrets in notes', body['description'])
+            self.assertTrue((Path(private) / 'team-onboarding.json').is_file())
+
     def test_member_instructions_join_persona_team_rules_and_this_server(self):
         site = {**SITE, 'zelab_projects': {'media': {'name': 'Media Center'}},
                 'zelab_tiers': {'root': {'account': 'zelab-team-root', 'preset': 'full-sudo', 'paths': []}},

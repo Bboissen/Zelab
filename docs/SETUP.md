@@ -69,6 +69,8 @@ Code agent (Opus 5.5, Claude CLI engine) with its own persona in
 - Bots hand work only to the PM, who splits it across the team; the answer comes
   back in the chat it was asked in.
 - Edit a member's instructions in Paperclip; make writes them only at hire.
+- The team's first ticket, filed by make for the PM, maps your server into the
+  vault folder `Server/`, read-only. Review its findings before asking for fixes.
 
 ### Discord
 

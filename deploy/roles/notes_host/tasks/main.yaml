@@ -81,6 +81,15 @@
     mode: '2770'
   loop: "{{ zelab_projects | default({}) | list }}"
 
+# The team's map of the server (its first ticket fills it): site-wide, not one project's.
+- name: Create the vault folder for the server's map
+  ansible.builtin.file:
+    path: "{{ notes_vault_dir }}/Server"
+    state: directory
+    owner: "{{ notes_container_user }}"
+    group: "{{ notes_owner_group }}"
+    mode: '2770'
+
 # The team works in the vault too. host-projects.yaml grants the same on later
 # runs and revokes it when a tier goes; on a fresh site the vault exists only now.
 - name: Let the team tier accounts read and write the whole vault

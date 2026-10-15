@@ -204,6 +204,10 @@ def apply(config):
             changed += 1
         for path in cfg['paths']:
             changed += grant(path, user, cfg['paths_rights'])
+            if Path(path).is_dir() and run('runuser', '-u', user, '--', 'test', '-r', path, check=False).returncode:
+                # An ACL is no use below a parent the account cannot enter (a closed home, say).
+                raise SystemExit(f'{user} cannot reach {path}: a parent folder is closed to it; '
+                                 'choose a folder outside it, or remove it from the tier paths')
         if vault:
             # Notes are shared work: every tier reads and writes the vault.
             changed += grant(vault, user, 'rwx')

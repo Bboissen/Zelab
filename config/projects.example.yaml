@@ -9,12 +9,15 @@
 # tiers: optional overrides of config/team.yaml's tiers for this host.
 #   preset: none of the tiers' rights change unless you set this
 #           (monitor-readonly | docker | repo-dev | full-sudo)
-#   paths:  directories the tier's account may use (read-only for monitor-readonly),
-#           for example your Docker projects for the ops tier.
+#   paths:  directories the tier's account may use (read-only for monitor-readonly).
+#           Usually none: the sysadmin is root and devops sees containers through
+#           Docker. A path must be reachable by the account: not inside a closed
+#           home folder (make stops if it is). Recursive rights on a big tree
+#           take a long time on the first run.
 projects:
   homelab:
     name: Homelab
   research: {}
-tiers:
-  ops:
-    paths: [/srv/compose]
+# tiers:
+#   ops:
+#     paths: [/srv/compose]

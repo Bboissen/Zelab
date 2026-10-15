@@ -105,6 +105,12 @@ rewrites it. Runs use the owner's Claude sign-in (`make bot`, option 4, or when
 Paperclip asks on the first task). Removing a member from the file does not
 fire it: terminate it in Paperclip.
 
+Once the lead is hired, `make` files the team's first ticket for it, once per site
+(`config/team/ONBOARDING.md`, Paperclip's `idempotencyKey`, and the marker
+`private_dir/team-onboarding.json`): map the server, read-only, into the vault
+folder `Server/` (Infrastructure.md, Runbooks/, Findings.md, Decisions.md).
+Every member and every bot's `zelab` skill points at that map.
+
 Bots may assign only the lead (the PM). The `zelab` skill lists the team and the
 recipe: the bot files a ticket for itself noting the chat to answer in, asks
 the lead with a child ticket when Paperclip runs it, and answers the chat with
