@@ -39,7 +39,8 @@ class BotTest(unittest.TestCase):
             (profile / 'config.yaml').write_text('model:\n  provider: openai-codex\n  default: gpt-x\n')
             (profile / 'profile.yaml').write_text('description: finds sources\n')
             (profile / 'auth.json').write_text(json.dumps({'providers': {'openai-codex': {'access_token': 'SECRET-A'}}}))
-            (profile / '.env').write_text('API_SERVER_KEY=SECRET-B\nDISCORD_BOT_TOKEN=SECRET-C\nTELEGRAM_BOT_TOKEN=\n')
+            (profile / '.env').write_text('API_SERVER_KEY=SECRET-B\nDISCORD_BOT_TOKEN=SECRET-C\nTELEGRAM_BOT_TOKEN=\n'
+                                          'DISCORD_HOME_CHANNEL="123"\n')
             (profile / 'SOUL.md').write_text('You are Hermes Agent, built by Nous Research. Be direct.\n')
             writer = Path(home, 'profiles/writer')
             writer.mkdir()
@@ -57,7 +58,14 @@ class BotTest(unittest.TestCase):
         self.assertFalse(draft['soul'])
         self.assertEqual(facts, {'name': 'scout', 'role': 'finds sources', 'model': 'openai-codex/gpt-x',
                                  'signed_in': True, 'chats': ['Discord'], 'api_key': True, 'task_key': False,
-                                 'allow_bots': False, 'soul': False})
+                                 'allow_bots': False, 'soul': False, 'home_channel': True, 'free_home': False})
+
+    def test_home_channel_probe_prints_only_that_channel(self):
+        with tempfile.TemporaryDirectory() as profile:
+            Path(profile, '.env').write_text('DISCORD_BOT_TOKEN=SECRET\nDISCORD_HOME_CHANNEL="123"\n')
+            output = subprocess.run([sys.executable, '-c', bots.HOME_CHANNEL, profile],
+                                    capture_output=True, text=True, check=True).stdout
+        self.assertEqual(output, '123')
 
     def test_only_live_gateway_agents_for_a_profile_are_bots(self):
         prefix = 'http://127.0.0.1:18642/p/'

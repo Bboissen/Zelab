@@ -81,6 +81,12 @@ Create one channel per project, named after its slug, and invite the bots that w
   History, Add Reactions, Connect and Speak. Then Authorize.
 - Who can see a channel is set in Discord; Zelab does not manage channels. Add
   each bot to the private project channels it should answer in.
+- To talk to one bot directly, give it a private home channel: paste that
+  channel's ID when Hermes' wizard asks for the home channel, then let make
+  have the bot answer there without an @mention. In other channels the bot
+  answers only when @mentioned: pick the entry with the APP badge, not the
+  role of the same name, which bots ignore. Bots connect when make or make
+  bot finishes.
 
 ### Test
 

@@ -202,7 +202,9 @@ for profile in sorted((home / 'profiles').glob('*')):
                  'signed_in': signed_in(profile, values),
                  'chats': sorted({label for key, label in tokens.items() if values.get(key)}),
                  'api_key': bool(values.get('API_SERVER_KEY')), 'task_key': bool(values.get('PAPERCLIP_BRIDGE_API_KEY')),
-                 'allow_bots': bool(values.get('DISCORD_ALLOW_BOTS')), 'soul': own_persona(profile / 'SOUL.md')})
+                 'allow_bots': bool(values.get('DISCORD_ALLOW_BOTS')), 'soul': own_persona(profile / 'SOUL.md'),
+                 'home_channel': bool(values.get('DISCORD_HOME_CHANNEL')),
+                 'free_home': bool(values.get('DISCORD_FREE_RESPONSE_CHANNELS'))})
 print(json.dumps(bots))
 ''' % (repr(CHAT_TOKENS), repr(GENERIC_SOULS), PLACEHOLDER)
 
@@ -211,6 +213,15 @@ READ_FILE = r'''
 import pathlib, sys
 path = pathlib.Path(sys.argv[1])
 print(path.read_text() if path.is_file() else '', end='')
+'''
+
+# The Discord channel Hermes' wizard saved as the bot's home; a channel ID is not a secret.
+HOME_CHANNEL = r'''
+import pathlib, sys
+for line in (pathlib.Path(sys.argv[1]) / '.env').read_text().splitlines():
+    key, sep, value = line.partition('=')
+    if sep and key.strip() == 'DISCORD_HOME_CHANNEL':
+        print(value.strip().strip('"\''), end='')
 '''
 
 # Set KEY=value lines (read from stdin as JSON) in a profile's .env, owned by Hermes, mode 0600.
@@ -533,6 +544,10 @@ class Bots:
             if 'Discord' in bot.get('chats', []) and not bot.get('allow_bots') and yes(
                     f'Let other bots in your Discord server hand work to {name} by @mention?', True):
                 self.guest.hermes(name, 'config', 'set', 'DISCORD_ALLOW_BOTS', 'mentions')
+            if 'Discord' in bot.get('chats', []) and bot.get('home_channel') and not bot.get('free_home') and yes(
+                    f'Let {name} answer every message in its home channel, without an @mention?', True):
+                home = self.guest.root_python(HOME_CHANNEL, f'{HERMES_HOME}/profiles/{name}')
+                self.guest.hermes(name, 'config', 'set', 'DISCORD_FREE_RESPONSE_CHANNELS', home)
         if 'c' in steps:
             self.soul(name)
         if 'd' in steps:
