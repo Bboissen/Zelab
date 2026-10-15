@@ -40,10 +40,21 @@ class BotTest(unittest.TestCase):
             (profile / 'profile.yaml').write_text('description: finds sources\n')
             (profile / 'auth.json').write_text(json.dumps({'providers': {'openai-codex': {'access_token': 'SECRET-A'}}}))
             (profile / '.env').write_text('API_SERVER_KEY=SECRET-B\nDISCORD_BOT_TOKEN=SECRET-C\nTELEGRAM_BOT_TOKEN=\n')
+            (profile / 'SOUL.md').write_text('You are Hermes Agent, built by Nous Research. Be direct.\n')
+            writer = Path(home, 'profiles/writer')
+            writer.mkdir()
+            (writer / 'config.yaml').write_text('model: {}\n')
+            (writer / 'SOUL.md').write_text('\ufeff# Writer\n\nYou are Writer.\n')
+            draft = Path(home, 'profiles/draft')
+            draft.mkdir()
+            (draft / 'config.yaml').write_text('model: {}\n')
+            (draft / 'SOUL.md').write_text(bots.starter('draft', '', {}))
             Path(home, 'profiles/empty').mkdir()
             output = subprocess.run([sys.executable, '-c', bots.FACTS, home], capture_output=True, text=True, check=True).stdout
         self.assertNotIn('SECRET', output)
-        facts, = json.loads(output)
+        draft, facts, writer = json.loads(output)
+        self.assertTrue(writer['soul'])
+        self.assertFalse(draft['soul'])
         self.assertEqual(facts, {'name': 'scout', 'role': 'finds sources', 'model': 'openai-codex/gpt-x',
                                  'signed_in': True, 'chats': ['Discord'], 'api_key': True, 'task_key': False,
                                  'allow_bots': False, 'soul': False})
@@ -67,6 +78,15 @@ class BotTest(unittest.TestCase):
         self.assertIn('| writer |  | `a2` |', text)
         self.assertIn('/profiles/scout/skills/paperclip/paperclip-task-bridge/paperclip-task.mjs', text)
         self.assertNotIn('pcp_', text)
+
+    def test_starter_persona_names_the_bot_and_its_team(self):
+        text = bots.starter('jarvis', 'Chief of Staff', {'scout': 'finds sources', 'writer': ''},
+                            'You are Hermes Agent, built by Nous Research. Be direct.')
+        self.assertTrue(text.startswith('# Jarvis\n\nYou are Jarvis, one of the owner\'s bots. In chat and in Paperclip your name is jarvis. Your role: Chief of Staff.\n'))
+        self.assertIn('The other bots: scout (finds sources), writer.', text)
+        self.assertTrue(text.endswith('## Tone\n\nBe direct.\n'))
+        self.assertIn(bots.PLACEHOLDER, text)
+        self.assertNotIn('other bots', bots.starter('x', '', {}))
 
     def test_remote_commands_are_shell_quoted(self):
         guest = bots.Guest({**SITE, 'deploy_key': '/k', 'guest_known_hosts': '/h', 'guest_ssh_port': 12921,

@@ -301,6 +301,9 @@ def connection_checks(site, elevated):
                             f"rtk proxy make bot, then set up {name} (a)", pending=True, phase=phase))
         checks.append(Check(f"{name}: chat app", bool(bot["chats"]),
                             f"rtk proxy make bot, then set up {name} (b)", pending=True, phase=phase))
+        checks.append(Check(f"{name}: persona", bot["soul"],
+                            f"Still Hermes' generic persona: rtk proxy make bot, then set up {name} (c)",
+                            pending=True, phase=phase))
         checks.append(Check(f"{name}: task key", bot["task_key"],
                             f"rtk proxy make bot, then set up {name} (d)", pending=True, phase=phase))
     hosts = sorted(slug for slug, project in site.get("zelab_projects", {}).items() if project["account"])

@@ -25,8 +25,8 @@ class HostReadinessTest(unittest.TestCase):
             'homelab': {'account': True}, 'research': {'account': False}}}
 
     def test_each_bot_reports_its_own_pending_setup_steps(self):
-        facts = [{'name': 'scout', 'signed_in': True, 'chats': ['Discord'], 'task_key': False},
-                 {'name': 'writer', 'signed_in': False, 'chats': [], 'task_key': True}]
+        facts = [{'name': 'scout', 'signed_in': True, 'chats': ['Discord'], 'task_key': False, 'soul': True},
+                 {'name': 'writer', 'signed_in': False, 'chats': [], 'task_key': True, 'soul': False}]
         with patch.object(doctor, 'bot_facts', return_value=facts), patch.object(Path, 'exists', return_value=True):
             checks = {check.name: check.label for check in doctor.connection_checks(self.site(), elevated=True)}
         self.assertEqual(checks['Hermes bots'], 'PASS')
@@ -34,6 +34,7 @@ class HostReadinessTest(unittest.TestCase):
                          ('PASS', 'PASS', 'PENDING'))
         self.assertEqual((checks['writer: model sign-in'], checks['writer: chat app'], checks['writer: task key']),
                          ('PENDING', 'PENDING', 'PASS'))
+        self.assertEqual((checks['scout: persona'], checks['writer: persona']), ('PASS', 'PENDING'))
         self.assertEqual(checks['Host projects'], 'PASS')
 
     def test_no_bots_or_no_guest_is_a_pending_step_not_a_blocker(self):

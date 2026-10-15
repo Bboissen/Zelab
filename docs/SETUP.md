@@ -42,7 +42,11 @@ At the end of a fresh install, make asks how many bots to set up and opens Herme
     Telegram, Slack and others. Paste the bot token there; it prints the
     invite link. Allow your own user ID when it asks. For Discord, prepare
     each bot's application first (see Discord below).
-  - **Persona**: the bot's `SOUL.md`, edited in nano or pasted.
+  - **Persona**: the bot's `SOUL.md`, which Hermes puts first in every
+    conversation. A new bot has Hermes' generic persona and does not know its
+    name or job; make offers a starter with its name, the Zelab way of working
+    and the other bots, which you finish in nano: what it watches, decides
+    and delivers, and when it asks you first. The one-line role is only a label.
   - **Task key**: pick the Paperclip projects this bot may file tickets in.
 - Add, change or remove bots later with `rtk proxy make bot`. Removing one
   terminates its Paperclip agent (its keys are revoked) and archives its profile
