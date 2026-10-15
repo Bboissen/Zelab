@@ -53,6 +53,19 @@ At the end of a fresh install, make asks how many bots to set up and opens Herme
   without logins or tokens before deleting it.
 - Every step can be skipped and run again from `rtk proxy make bot`.
 
+### Desktop notes
+
+Read and edit the vault in desktop Obsidian on your laptop. Plain make offers this
+once after the bots; `rtk proxy make notes` sets it up any time.
+
+- Pick **Create a new private repository** (with the server's GitHub CLI login) or
+  **Use an existing private repository** (its notes join the vault).
+- make checks the repository is private, adds the server's deploy key with write
+  access after you confirm (or shows it to paste), and runs the first sync.
+- On the laptop: clone it, keep `.obsidian/` out of Git, open it as a vault and keep
+  Restricted mode on. make prints the commands; the routine is in
+  [NOTES.md](NOTES.md).
+
 ### The team
 
 make hires a default team in Paperclip from `config/team.yaml`: a PM who leads,

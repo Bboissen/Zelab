@@ -52,7 +52,7 @@ class ChecklistTest(unittest.TestCase):
     def test_private_guide_marks_done_steps_and_names_the_next_one(self):
         page = checklist.render_html({'host': ('PASS', 'Docker'), 'admin': ('PENDING', 'sudo')}, 'now',
                                      link_base=ROOT / 'docs')
-        self.assertIn('1 of 7 steps done', page)
+        self.assertIn('1 of 8 steps done', page)
         self.assertIn('Next: <a href="#admin">', page)
         self.assertIn('id="step-host" checked disabled', page)
 

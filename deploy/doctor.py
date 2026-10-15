@@ -306,6 +306,10 @@ def connection_checks(site, elevated):
                             pending=True, phase=phase))
         checks.append(Check(f"{name}: task key", bot["task_key"],
                             f"rtk proxy make bot, then set up {name} (d)", pending=True, phase=phase))
+    synced = bool(site.get("notes_sync_remote"))
+    checks.append(Check("Desktop notes", synced,
+                        "Synced with a private GitHub repository: rtk proxy make notes" if synced else
+                        "Optional: rtk proxy make notes sets up desktop Obsidian", pending=True, phase=phase_of("notes")))
     tiers = sorted(site.get("zelab_tiers", {}))
     checks.append(Check("Team tiers", bool(tiers),
                         "SSH environments: " + ", ".join(f"{tier} host" for tier in tiers) if tiers else

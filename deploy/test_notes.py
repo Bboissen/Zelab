@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import notes
 
@@ -129,6 +130,62 @@ class NotesSyncTest(unittest.TestCase):
         sync = notes.Sync({'notes_vault_dir': '/tmp', 'private_dir': '/tmp',
                            'notes_sync_remote': 'git@github.com:owner/zelab-notes.git'})
         self.assertEqual((sync.owner, sync.repo), ('owner', 'zelab-notes'))
+
+
+
+class WizardTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.site = {'notes_vault_dir': str(self.root / 'vault'), 'private_dir': str(self.root / 'private')}
+        self.config = self.root / 'site.yaml'
+        self.config.write_text('# Local site.\noperator_user: operator\n')
+
+    def answers(self, *values):
+        return patch('builtins.input', side_effect=list(values))
+
+    def test_remote_is_saved_in_site_yaml_and_replaced_later(self):
+        notes.save_remote(self.config, 'git@github.com:owner/one.git')
+        notes.save_remote(self.config, 'git@github.com:owner/two.git')
+        text = self.config.read_text()
+        self.assertTrue(text.startswith('# Local site.\noperator_user: operator\n'))
+        self.assertEqual(text.count('notes_sync_remote:'), 1)
+        self.assertIn('notes_sync_remote: git@github.com:owner/two.git', text)
+
+    def test_create_makes_a_private_repository_and_existing_can_be_picked(self):
+        calls = []
+
+        def fake_gh(*args):
+            calls.append(args)
+            out = 'owner/old-vault\nowner/zelab-notes\n' if args[:2] == ('repo', 'list') else ''
+            return subprocess.CompletedProcess(args, 0, out, '')
+        with patch.object(notes, 'gh', side_effect=fake_gh), self.answers('1', '', 'y'), \
+                patch('sys.stdout'):
+            self.assertEqual(notes.choose_repository('owner'), 'owner/zelab-notes')
+        self.assertIn('--private', calls[0])
+        with patch.object(notes, 'gh', side_effect=fake_gh), self.answers('2', '1'), patch('sys.stdout'):
+            self.assertEqual(notes.choose_repository('owner'), 'owner/old-vault')
+        with patch.object(notes, 'gh', side_effect=fake_gh), self.answers('2', 'someone/notes'), patch('sys.stdout'):
+            self.assertEqual(notes.choose_repository('owner'), 'someone/notes')
+
+    def test_declining_in_plain_make_is_remembered(self):
+        with patch('sys.stdin.isatty', return_value=True), self.answers('n'), patch('sys.stdout'):
+            notes.wizard(self.site, self.config, offered=True)
+        self.assertTrue((self.root / 'private/notes-sync/declined').exists())
+        with patch('sys.stdin.isatty', return_value=True), patch('builtins.input') as asked:
+            notes.wizard(self.site, self.config, offered=True)
+        asked.assert_not_called()
+
+    def test_a_repository_that_is_not_private_is_refused(self):
+        def fake_gh(*args):
+            out = 'PUBLIC\n' if args[:2] == ('repo', 'view') else ''
+            return subprocess.CompletedProcess(args, 0, out, '')
+        with patch('sys.stdin.isatty', return_value=True), patch.object(notes, 'gh_login', return_value='owner'), \
+                patch.object(notes, 'gh', side_effect=fake_gh), self.answers('y', '2', 'owner/notes'), \
+                patch('sys.stdout'), self.assertRaisesRegex(notes.Stop, 'not private'):
+            notes.wizard(self.site, self.config, offered=False)
+        self.assertNotIn('notes_sync_remote', self.config.read_text())
 
 
 if __name__ == '__main__':

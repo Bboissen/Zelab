@@ -30,33 +30,35 @@ still your undo for anything an agent does, synced or not.
 
 ## Set up once
 
-**GitHub**
+**On the server:** plain `make` offers this once, after the bots. `rtk proxy make notes`
+runs the same steps any time sync is not set up yet.
 
-1. Create an empty **private** repository, for example `zelab-notes`.
+1. Choose a repository:
+   - **Create a new private repository.** The server's GitHub CLI (`gh`), if it is signed
+     in, creates `OWNER/zelab-notes` as private after you confirm.
+   - **Use an existing private repository.** Pick it from your private repositories or type
+     `OWNER/REPO`. Its notes join the vault on the first sync, and the vault's notes join
+     it. A repository that tracks `.obsidian/` is refused until you stop tracking it
+     (`git rm -r --cached .obsidian` on the laptop, then push).
+2. make checks the repository is private: your `gh` login must see it as private, and
+   anonymous GitHub must not see it at all.
+3. It creates the server's deploy key and adds it with write access after you confirm. Without
+   `gh`, it shows the key and the GitHub page to paste it into, and waits.
+4. It saves `notes_sync_remote` in `config/site.yaml` and runs the first sync.
 
-**The server**
+Without `gh`, create an empty private repository at https://github.com/new (no README)
+first, then choose **Use an existing private repository**.
 
-2. Add its address to `config/site.yaml`:
+**On the laptop:** make prints these commands with your repository filled in.
 
-       notes_sync_remote: git@github.com:OWNER/zelab-notes.git
-
-3. Run `rtk proxy make notes`. It checks that GitHub does not show the repository to
-   anonymous visitors (a public one is refused), creates a deploy key and prints it,
-   then stops.
-4. In GitHub: the repository, **Settings**, **Deploy keys**, **Add deploy key**. Paste the
-   key and tick **Allow write access**.
-5. Run `rtk proxy make notes` again. It commits the vault as it is and pushes it.
-
-**The laptop**
-
-6. Clone the repository with your own GitHub login, and keep Obsidian's files out of it:
+5. Clone the repository with your own GitHub login, and keep Obsidian's files out of it:
 
        git clone git@github.com:OWNER/zelab-notes.git ~/Notes/zelab
        cd ~/Notes/zelab
        printf '.obsidian/\n.trash/\n.DS_Store\n' >> .git/info/exclude
 
-7. In desktop Obsidian, choose **Open folder as vault** and pick `~/Notes/zelab`.
-8. Leave **Restricted mode** on (Settings, Community plugins), or at least enable no
+6. In desktop Obsidian, choose **Open folder as vault** and pick `~/Notes/zelab`.
+7. Leave **Restricted mode** on (Settings, Community plugins), or at least enable no
    plugin that runs code from notes: Dataview JavaScript queries, Templater and similar.
    Agents write these notes.
 

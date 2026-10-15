@@ -30,6 +30,7 @@ ITEMS = (
     Item("admin", "Before privileged changes", "Administrator"),
     Item("tailscale", "Before private remote access", "Tailscale"),
     Item("bots", "After installation", "Hermes bots"),
+    Item("notes", "After installation", "Desktop notes"),
     Item("hosts", "Before team work", "The team"),
     Item("discord", "Before the first Discord test", "Discord"),
     Item("proof", "Before declaring success", "Test"),

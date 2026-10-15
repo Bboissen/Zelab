@@ -326,6 +326,12 @@ class Installer:
             self.screen.start('Hermes bots')
             self.fail('bot setup stopped; finish it with: rtk proxy make bot')
 
+    def notes(self):
+        # Offered once, in the terminal; a failure here never fails the install.
+        command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/notes.py', 'offer', *self.inputs()]
+        if subprocess.run(command, cwd=ROOT).returncode:
+            print('  Desktop notes are not set up yet; finish with: rtk proxy make notes')
+
     def ui_passwords(self, action):
         # Inherit the terminal; neither input nor credential values enter capture/logs.
         command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/passwords.py', action,
@@ -496,6 +502,7 @@ class Installer:
                 self.screen.section(4)
                 self.services()
                 self.bots()
+                self.notes()
                 self.ui_passwords('finish')
                 self.summary()
             self.password_dir = None

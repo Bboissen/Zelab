@@ -96,10 +96,7 @@ class Sync:
             raise Stop(f'{self.vault} is not readable and writable by this account; run rtk proxy make first.')
         if not self.key.exists():
             subprocess.run(['rtk', 'proxy', 'ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'zelab-notes-sync',
-                            '-f', str(self.key)], check=True)
-            raise Stop('A deploy key was created for the server. In GitHub, open the private repository '
-                       f'{self.owner}/{self.repo}, Settings, Deploy keys, Add deploy key; paste this key and tick '
-                       f'"Allow write access", then run rtk proxy make notes again:\n\n  {self.key.with_suffix(".pub").read_text().strip()}\n')
+                            '-f', str(self.key)], check=True, stdout=subprocess.DEVNULL)
         if not self.known_hosts.exists():
             meta = self.github('https://api.github.com/meta')
             lines = [f'github.com {key}' for key in (meta or {}).get('ssh_keys', [])]
@@ -131,15 +128,27 @@ class Sync:
         except OSError:
             raise Stop('GitHub is unreachable; nothing was synced.') from None
 
-    def require_private(self):
-        """Anonymous GitHub must not see the repository; the deploy key must reach it."""
-        public = self.github(f'https://api.github.com/repos/{self.owner}/{self.repo}')
-        if public is not None:
+    def public_key(self):
+        return self.key.with_suffix('.pub').read_text().strip()
+
+    def key_page(self):
+        return f'https://github.com/{self.owner}/{self.repo}/settings/keys/new'
+
+    def require_public_hidden(self):
+        if self.github(f'https://api.github.com/repos/{self.owner}/{self.repo}') is not None:
             raise Stop(f'{self.owner}/{self.repo} is visible without signing in: it is public. '
                        'Make it private (or pick a private one) before any note leaves this server.')
-        if self.git('ls-remote', '--heads', 'origin', check=False, cwd=self.home).returncode:
-            raise Stop(f'The deploy key cannot reach {self.owner}/{self.repo}: check that the repository exists '
-                       'and that the key in notes-sync/deploy_key.pub is added with write access.')
+
+    def reachable(self):
+        return self.git('ls-remote', '--heads', 'origin', check=False, cwd=self.home).returncode == 0
+
+    def require_private(self):
+        """Anonymous GitHub must not see the repository; the deploy key must reach it."""
+        self.require_public_hidden()
+        if not self.reachable():
+            raise Stop(f'The server\'s deploy key cannot reach {self.owner}/{self.repo}. Check that the repository '
+                       f'exists, then add this key with "Allow write access" at {self.key_page()}\n\n'
+                       f'  {self.public_key()}\n')
 
     # --- the sync --------------------------------------------------------------------------
 
@@ -168,8 +177,9 @@ class Sync:
         bad = [entry.partition('\t')[2] for entry in listing
                if entry and forbidden(entry.partition('\t')[2], entry.split()[0])]
         if bad:
-            raise Stop(f'The remote carries paths that must not reach the server ({", ".join(bad[:5])}). '
-                       'Remove them on the laptop, push, and run make notes again.')
+            raise Stop(f'The repository carries paths that must not reach the server ({", ".join(bad[:5])}). '
+                       'On the laptop, stop tracking them (for .obsidian: git rm -r --cached .obsidian, then add '
+                       '.obsidian/ to .git/info/exclude), commit, push, and run make notes again.')
 
     def fast_forward(self, target):
         result = self.git('merge', '--ff-only', '--quiet', target, check=False)
@@ -241,6 +251,146 @@ class Sync:
         print(f'  Notes synced: {sent} server change(s) sent, {received} laptop change(s) received.')
 
 
+# --- setup wizard (make notes before sync is set up; offered once by plain make) ---------
+
+DECLINED = 'declined'
+LAPTOP = """
+  On your laptop (once):
+    git clone {remote} ~/Notes/zelab
+    cd ~/Notes/zelab && printf '.obsidian/\\n.trash/\\n.DS_Store\\n' >> .git/info/exclude
+    Desktop Obsidian: Open folder as vault, pick ~/Notes/zelab, keep Restricted mode on.
+  Then: rtk proxy make notes here, git pull / git push there. Workflow: docs/NOTES.md
+"""
+
+
+def ask(question, default=True):
+    while True:
+        answer = input(f'  {question} [{"Y/n" if default else "y/N"}]: ').strip().lower()
+        if not answer:
+            return default
+        if answer in ('y', 'yes', 'n', 'no'):
+            return answer.startswith('y')
+
+
+def gh(*args):
+    """The operator's own GitHub CLI login, if any; never prints tokens."""
+    try:
+        return subprocess.run(['rtk', 'proxy', 'gh', *args], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return subprocess.CompletedProcess(args, 1, '', '')
+
+
+def gh_login():
+    result = gh('api', 'user', '--jq', '.login')
+    return result.stdout.strip() if result.returncode == 0 and re.fullmatch(r'[A-Za-z0-9-]+', result.stdout.strip()) else None
+
+
+def save_remote(site_config, remote):
+    """Write notes_sync_remote into the local config/site.yaml, keeping everything else."""
+    text = site_config.read_text()
+    line = f'notes_sync_remote: {remote}'
+    if re.search(r'^notes_sync_remote:.*$', text, re.M):
+        text = re.sub(r'^notes_sync_remote:.*$', line, text, count=1, flags=re.M)
+    else:
+        text = text.rstrip('\n') + '\n\n# Desktop Obsidian: the private GitHub repository make notes syncs with.\n' + line + '\n'
+    site_config.write_text(text)
+
+
+def choose_repository(login):
+    """OWNER/REPO of a new or existing private repository, or None to skip."""
+    print('\n    1  Create a new private repository' + (f' ({login}/zelab-notes)' if login else ''))
+    print('    2  Use an existing private repository (its notes join the vault on the first sync)')
+    while True:
+        choice = input('  Choice (Enter = later): ').strip()
+        if not choice:
+            return None
+        if choice in ('1', '2'):
+            break
+    if choice == '1':
+        if not login:
+            print('  The GitHub CLI is not signed in here. Create an empty private repository at')
+            print('  https://github.com/new (Private, no README), then type it below.')
+            choice = '2'
+        else:
+            name = input('  Repository name [zelab-notes]: ').strip() or 'zelab-notes'
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+', name):
+                raise Stop('Use letters, digits, dots, dashes and underscores for the name.')
+            if not ask(f'Create {login}/{name} as a private repository on GitHub?'):
+                return None
+            created = gh('repo', 'create', f'{login}/{name}', '--private', '--disable-issues', '--disable-wiki',
+                         '--description', 'Zelab notes (private)')
+            if created.returncode:
+                raise Stop(f'gh could not create {login}/{name}: {created.stderr.strip()[-300:]}')
+            return f'{login}/{name}'
+    names = []
+    if login:
+        listed = gh('repo', 'list', '--visibility', 'private', '--limit', '50', '--json', 'nameWithOwner',
+                    '--jq', '.[].nameWithOwner')
+        names = [n for n in listed.stdout.split() if re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', n)]
+        for index, name in enumerate(names, 1):
+            print(f'   {index:>2}  {name}')
+    while True:
+        answer = input('  Number, or OWNER/REPO (Enter = later): ').strip()
+        if not answer:
+            return None
+        if answer.isdigit() and 1 <= int(answer) <= len(names):
+            return names[int(answer) - 1]
+        if re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', answer):
+            return answer
+
+
+def wizard(site, site_config, offered):
+    """Set up the sync: a private repository, the server's deploy key, the first sync, the laptop steps."""
+    home = Path(site['private_dir']) / 'notes-sync'
+    if offered and (home / DECLINED).exists():
+        return
+    if not sys.stdin.isatty():
+        print('  Desktop notes are not set up; in a terminal: rtk proxy make notes')
+        return
+    from console import heading
+    heading('NOTES ON YOUR LAPTOP')
+    print('  Agents keep their notes in the server vault. To read and edit them in desktop Obsidian on')
+    print('  your laptop, the vault syncs with a private GitHub repository each time you run')
+    print('  rtk proxy make notes. Obsidian settings and plugins never sync.')
+    if not ask('Set it up now?'):
+        if offered:
+            home.mkdir(mode=0o700, parents=True, exist_ok=True)
+            (home / DECLINED).write_text('make notes sets it up later\n')
+        print('  Later: rtk proxy make notes')
+        return
+    login = gh_login()
+    repository = choose_repository(login)
+    if not repository:
+        print('  Later: rtk proxy make notes')
+        return
+    owner, repo = repository.split('/')
+    remote = f'git@github.com:{owner}/{repo}.git'
+    sync = Sync({**site, 'notes_sync_remote': remote})
+    if login:
+        visibility = gh('repo', 'view', repository, '--json', 'visibility', '--jq', '.visibility').stdout.strip()
+        if visibility != 'PRIVATE':
+            raise Stop(f'{repository} is {visibility.lower() or "not visible to your GitHub login"}, not private. '
+                       'Pick or create a private repository.')
+    sync.prepare()
+    sync.require_public_hidden()
+    if not sync.reachable():
+        if login and ask(f"Add this server's deploy key to {repository} with write access?"):
+            added = gh('repo', 'deploy-key', 'add', str(sync.key.with_suffix('.pub')), '--repo', repository,
+                       '--allow-write', '--title', 'Zelab server (make notes)')
+            if added.returncode and 'already' not in added.stderr.lower():
+                print(f'  gh could not add the key: {added.stderr.strip()[-200:]}')
+        if not sync.reachable():
+            print(f'\n  Add this key at {sync.key_page()} and tick "Allow write access":\n\n  {sync.public_key()}\n')
+            input('  Press Enter once it is added: ')
+    if not sync.reachable():
+        raise Stop(f'The deploy key still cannot reach {repository}; run rtk proxy make notes to try again.')
+    save_remote(site_config, remote)
+    (home / DECLINED).unlink(missing_ok=True)
+    print(f'  Saved notes_sync_remote in {site_config.name}. First sync:')
+    sync.run()
+    print(LAPTOP.format(remote=remote))
+
+
 def main(argv=None):
     venv = ROOT / '.venv/bin/python'
     if sys.prefix != str(ROOT / '.venv'):
@@ -250,7 +400,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--site-config', type=Path, default=ROOT / 'config/site.yaml')
     parser.add_argument('--env-file', type=Path, default=ROOT / '.env')
+    parser.add_argument('action', nargs='?', choices=['sync', 'offer'], default='sync',
+                        help='sync (make notes; sets up first) or offer (plain make: ask once)')
     args = parser.parse_args(argv)
+    sys.stdout.reconfigure(line_buffering=True)
     if os.geteuid() == 0:
         raise SystemExit('  Run make notes as the operator, not root: its files and key belong to you.')
     from run import read_inputs
@@ -258,9 +411,15 @@ def main(argv=None):
     if not site.get('notes_enabled', True):
         raise SystemExit('  Notes are turned off on this site (notes_enabled).')
     try:
-        Sync(site).run()
+        if site.get('notes_sync_remote'):
+            if args.action == 'sync':
+                Sync(site).run()
+        else:
+            wizard(site, args.site_config, offered=args.action == 'offer')
     except Stop as error:
         raise SystemExit(f'  {error}') from None
+    except (KeyboardInterrupt, EOFError):
+        raise SystemExit('\n  Stopped; nothing else changed. Run rtk proxy make notes to continue.') from None
     return 0
 
 
