@@ -2,11 +2,13 @@
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import yaml
 
@@ -25,6 +27,39 @@ def host_projects():
 
 
 class BotTest(unittest.TestCase):
+    def test_declared_replacements_resolve_ids_without_guessing_new_permissions(self):
+        projects = [{'id': 'old', 'name': 'Old Lab'}, {'id': 'new', 'name': 'Homelab'}]
+        self.assertEqual(bots.project_replacements(SITE, projects), {})
+        site = {**SITE, 'zelab_project_replacements': {'old-lab': 'homelab'}}
+        self.assertEqual(bots.project_replacements(site, projects), {'old': 'new'})
+        for values in (projects + [projects[1]], projects[:1], [projects[0], {**projects[1], 'archivedAt': 'date'}]):
+            with self.subTest(values=values), self.assertRaises(bots.Stop):
+                bots.project_replacements(site, values)
+
+    def test_generated_files_and_bundled_skill_copy_are_idempotent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / 'profile/skill/SKILL.md'
+            code = bots.WRITE_FILE.replace('61102', str(os.getuid()))
+            args = [sys.executable, '-c', code, str(target), str(root)]
+            subprocess.run(args, input='instructions', text=True, check=True)
+            before = target.stat().st_mtime_ns
+            subprocess.run(args, input='instructions', text=True, check=True)
+            self.assertEqual(target.stat().st_mtime_ns, before)
+            source = root / 'upstream'
+            source.mkdir()
+            (source / 'SKILL.md').write_text('upstream')
+            (source / 'helper.mjs').write_text('one')
+            code = bots.COPY_SKILL.replace('61102', str(os.getuid()))
+            args = [sys.executable, '-c', code, str(source), str(target.parent)]
+            subprocess.run(args, check=True)
+            before = target.stat().st_mtime_ns
+            subprocess.run(args, check=True)
+            self.assertEqual(target.stat().st_mtime_ns, before)
+            (source / 'helper.mjs').write_text('two')
+            subprocess.run(args, check=True)
+            self.assertEqual((target.parent / 'helper.mjs').read_text(), 'two')
+
     def test_names_are_profile_and_account_safe(self):
         self.assertIsNone(bots.valid_name('scout'))
         for name in ('Scout', 'a', 'default', 'bad_name', '-x', 'x-', 'a' * 25):
@@ -74,6 +109,8 @@ class BotTest(unittest.TestCase):
                   {'id': '3', 'adapterType': 'codex_local', 'status': 'idle', 'adapterConfig': {}},
                   {'id': '4', 'adapterType': 'hermes_gateway', 'status': 'idle', 'adapterConfig': {'apiBaseUrl': 'http://elsewhere/p/x'}}]
         self.assertEqual({name: agent['id'] for name, agent in bots.bot_agents(SITE, agents).items()}, {'scout': '1'})
+        agents[0]['adapterConfig']['apiBaseUrl'] = 'http://127.0.0.1:12345/p/scout'
+        self.assertIn('scout', bots.bot_agents(SITE, agents))
 
     def test_skill_lists_projects_and_bots_without_credentials(self):
         projects = [{'id': 'p1', 'name': 'Homelab', 'description': 'Vault folder: Projects/homelab/'},
@@ -180,6 +217,126 @@ class BotTest(unittest.TestCase):
                                 capture_output=True, text=True, cwd=ROOT)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('terminal', result.stderr)
+
+
+class ReconcileTest(unittest.TestCase):
+    def setUp(self):
+        self.runner = bots.Bots.__new__(bots.Bots)
+        self.runner.site = {**SITE, 'zelab_project_replacements': {'old-lab': 'homelab'}}
+        self.runner.restart_needed = False
+        self.profile = {'task_key': True}
+        self.agent = {'id': 'a1', 'adapterConfig': {'apiBaseUrl': bots.bot_url(SITE, 'scout'),
+                     'paperclipApiUrl': 'http://10.0.2.2:13100', 'instructions': bots.instructions(SITE, 'scout'),
+                     'apiKey': {'type': 'secret_ref', 'secretId': 'retained'}, 'timeoutSec': 123},
+                      'runtimeConfig': {'heartbeat': {'wakeOnDemand': True, 'enabled': False}}}
+        self.runner.state = lambda: ({'scout': self.profile}, {'scout': self.agent})
+        self.runner.team = lambda: ({}, [])
+        self.runner.hire_team = lambda _: None
+        self.runner.bind_team = self.runner.onboard = lambda: None
+        self.runner.profile_hygiene = lambda action: None
+        self.project_rows = [{'id': 'p-old', 'name': 'Old Lab'}, {'id': 'p-new', 'name': 'Homelab'},
+                             {'id': 'p-other', 'name': 'Another Project'}]
+        self.active = [{'id': 'k-old', 'name': bots.KEY_NAME, 'createdAt': '2026-01-01',
+                        'scope': {'kind': 'task_bridge', 'projectIds': ['p-old'], 'allowedAssigneeAgentIds': ['a1']}}]
+        self.calls, self.writes, self.hermes_calls, self.revoked, self.created = [], {}, [], [], []
+        self.bridge_ready, self.open_issues = True, []
+        self.passthrough = [*bots.TASK_ENV, 'CUSTOM_KEY']
+        outer = self
+
+        class Paperclip:
+            company = 'c1'
+
+            def projects(self):
+                return outer.project_rows
+
+            def keys(self, agent):
+                return outer.active
+
+            def create_key(self, agent, scope):
+                outer.created.append(scope)
+                key = {'id': 'k-new', 'name': bots.KEY_NAME, 'createdAt': '2026-02-01', 'scope': scope}
+                outer.active.append(key)
+                return {**key, 'token': 'private-test-token'}
+
+            def revoke(self, agent, key):
+                outer.revoked.append(key)
+                next(k for k in outer.active if k['id'] == key)['revokedAt'] = 'date'
+
+            def call(self, method, path, body=None):
+                outer.calls.append((method, path, body))
+                if method == 'GET' and '/issues?' in path:
+                    return outer.open_issues
+                if method == 'PATCH' and '/projects/' in path:
+                    next(p for p in outer.project_rows if p['id'] == path.rsplit('/', 1)[1]).update(body)
+                if method == 'PATCH' and '/agents/' in path:
+                    outer.agent.update(body)
+
+        class Guest:
+            def root_python(self, code, *args, stdin=''):
+                if code == bots.PROFILE_SETTINGS:
+                    return json.dumps({'env_passthrough': outer.passthrough})
+                if code == bots.BRIDGE_READY:
+                    return json.dumps(outer.bridge_ready)
+                outer.writes[(code, args)] = stdin
+                if code == bots.SET_ENV:
+                    outer.bridge_ready = True
+                return ''
+
+            def hermes(self, *args):
+                outer.hermes_calls.append(args)
+                outer.passthrough = json.loads(args[-1])
+                return 0, ''
+
+        self.runner.paperclip, self.runner.guest = Paperclip(), Guest()
+
+    def test_make_migrates_keys_and_skill_then_archives_without_deleting_anything(self):
+        self.runner.refresh()
+        self.assertEqual(self.created, [{'kind': 'task_bridge', 'projectIds': ['p-new'],
+                                         'allowedAssigneeAgentIds': ['a1']}])
+        self.assertEqual(self.revoked, ['k-old'])
+        text = next(value for (code, _), value in self.writes.items() if code == bots.WRITE_FILE)
+        self.assertIn('`p-new`', text)
+        self.assertNotIn('`p-old`', text)
+        self.assertNotIn('`p-other`', text)
+        self.assertIsNotNone(self.project_rows[0]['archivedAt'])
+        self.assertFalse(any(method == 'DELETE' for method, _, _ in self.calls))
+        calls, written = list(self.calls), dict(self.writes)
+        self.runner.refresh()
+        self.assertEqual(self.calls, calls)
+        self.assertEqual(self.created, [{'kind': 'task_bridge', 'projectIds': ['p-new'],
+                                         'allowedAssigneeAgentIds': ['a1']}])
+        self.assertEqual(self.writes, written)
+
+    def test_interrupted_rotation_recreates_latest_scope_and_revokes_both_old_keys(self):
+        self.active.append({**self.active[0], 'id': 'candidate', 'createdAt': '2026-01-02',
+                            'scope': {**self.active[0]['scope'], 'projectIds': ['p-new']}})
+        self.bridge_ready = False
+        self.runner.refresh()
+        self.assertEqual(self.created[0]['projectIds'], ['p-new'])
+        self.assertEqual(self.revoked, ['k-old', 'candidate'])
+
+    def test_runtime_repairs_preserve_native_customizations(self):
+        self.agent['adapterConfig']['apiBaseUrl'] = 'http://127.0.0.1:1/p/scout'
+        self.passthrough = ['CUSTOM_KEY']
+        self.runner.refresh()
+        self.assertEqual(self.agent['adapterConfig']['apiBaseUrl'], bots.bot_url(SITE, 'scout'))
+        self.assertEqual(self.agent['adapterConfig']['apiKey']['secretId'], 'retained')
+        self.assertEqual(self.agent['adapterConfig']['timeoutSec'], 123)
+        self.assertIn('CUSTOM_KEY', self.passthrough)
+        self.assertTrue(set(bots.TASK_ENV).issubset(self.passthrough))
+
+    def test_open_work_prevents_archiving_retired_projects(self):
+        self.open_issues = [{'status': 'todo'}]
+        with self.assertRaisesRegex(bots.Stop, 'open tickets'):
+            self.runner.refresh()
+        self.assertNotIn('archivedAt', self.project_rows[0])
+        self.assertEqual(self.created, [])
+
+    def test_no_declared_migration_preserves_project_scope(self):
+        self.runner.site['zelab_project_replacements'] = {}
+        self.runner.refresh()
+        self.assertEqual(self.created, [])
+        self.assertEqual(self.calls, [])
 
 
 class HostProjectsTest(unittest.TestCase):

@@ -31,6 +31,22 @@ def site_plays(path):
 
 
 class InstallerTest(unittest.TestCase):
+    def test_plain_make_reconciles_bots_before_the_terminal_only_wizard(self):
+        runner = self.installer()
+        runner.password_dir = '/dev/shm/test-runtime'
+        calls = []
+        with patch.object(runner, 'capture', side_effect=lambda argv: (calls.append(argv) or (0, []))), \
+                patch.object(install.subprocess, 'run') as run:
+            run.return_value.returncode = 0
+            runner.bots()
+        self.assertIn('refresh', calls[0])
+        self.assertEqual(calls[0][-2:], ['--runtime-dir', '/dev/shm/test-runtime'])
+        self.assertIn('installer', run.call_args.args[0])
+        with patch.object(runner, 'capture', return_value=(1, ['reconciliation failed'])), \
+                patch.object(install.subprocess, 'run') as run, self.assertRaises(install.StepFailed):
+            runner.bots()
+        run.assert_not_called()
+
     def test_password_lifecycle_covers_preflight_and_summary_then_removes_ram_files(self):
         runner = self.installer()
         stages = []

@@ -17,7 +17,9 @@ the native wizards or hidden prompts and never printed or logged.
 """
 
 import argparse
+from datetime import datetime, timezone
 import getpass
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -28,6 +30,7 @@ import signal
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import warnings
 
@@ -216,6 +219,38 @@ path = pathlib.Path(sys.argv[1])
 print(path.read_text() if path.is_file() else '', end='')
 '''
 
+PROFILE_SETTINGS = r'''
+import json, pathlib, sys, yaml
+data = yaml.safe_load((pathlib.Path(sys.argv[1]) / 'config.yaml').read_text()) or {}
+print(json.dumps({'env_passthrough': (data.get('terminal') or {}).get('env_passthrough', [])}))
+'''
+
+BRIDGE_READY = r'''
+import json, pathlib, sys, urllib.request, urllib.error
+profile, base, company, agent = sys.argv[1:]
+values = {}
+for line in (pathlib.Path(profile) / '.env').read_text().splitlines():
+    key, sep, value = line.partition('=')
+    if sep and not key.strip().startswith('#'):
+        values[key.strip()] = value.strip().strip('\'"')
+expected = {'PAPERCLIP_API_URL': base, 'PAPERCLIP_COMPANY_ID': company, 'PAPERCLIP_AGENT_ID': agent}
+valid = all(values.get(k) == v for k, v in expected.items())
+if valid and values.get('PAPERCLIP_BRIDGE_API_KEY'):
+    request = urllib.request.Request(base + '/api/agents/me',
+                                    headers={'Authorization': 'Bearer ' + values['PAPERCLIP_BRIDGE_API_KEY']})
+    try:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=15) as response:
+            identity = json.load(response)
+            valid = identity.get('id') == agent and identity.get('companyId') == company
+    except urllib.error.HTTPError as error:
+        if error.code not in (401, 403):
+            raise
+        valid = False
+else:
+    valid = False
+print(json.dumps(valid))
+'''
+
 # The Discord channel Hermes' wizard saved as the bot's home; a channel ID is not a secret.
 HOME_CHANNEL = r'''
 import pathlib, sys
@@ -245,21 +280,43 @@ WRITE_FILE = r'''
 import os, pathlib, sys
 path = pathlib.Path(sys.argv[1])
 path.parent.mkdir(parents=True, exist_ok=True)
+content = sys.stdin.read()
+if path.is_file() and path.read_text() == content:
+    raise SystemExit(0)
 for parent in [path.parent, *path.parent.parents]:
     if str(parent).startswith(sys.argv[2] + '/'):
         os.chown(parent, %d, %d)
-path.write_text(sys.stdin.read())
-os.chown(path, %d, %d)
-path.chmod(0o600)
+temporary = path.with_name(path.name + '.zelab')
+temporary.write_text(content)
+os.chown(temporary, %d, %d)
+temporary.chmod(0o600)
+temporary.replace(path)
 ''' % (HERMES_UID, HERMES_UID, HERMES_UID, HERMES_UID)
 
 # Copy Paperclip's bundled task-bridge skill into a profile, unchanged.
 COPY_SKILL = r'''
 import os, pathlib, shutil, sys
 source, target = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+def contents(path):
+    return {str(p.relative_to(path)): p.read_bytes() for p in path.rglob('*') if p.is_file()}
+if target.is_dir() and contents(source) == contents(target):
+    raise SystemExit(0)
+staging = target.with_name(target.name + '.zelab-new')
+previous = target.with_name(target.name + '.zelab-previous')
+if not target.exists() and previous.exists():
+    previous.replace(target)
+shutil.rmtree(staging, ignore_errors=True)
+shutil.copytree(source, staging)
+shutil.rmtree(previous, ignore_errors=True)
 if target.exists():
-    shutil.rmtree(target)
-shutil.copytree(source, target)
+    target.replace(previous)
+try:
+    staging.replace(target)
+except BaseException:
+    if previous.exists():
+        previous.replace(target)
+    raise
+shutil.rmtree(previous, ignore_errors=True)
 for folder, dirs, files in os.walk(target.parent):
     os.chown(folder, %d, %d)
     for name in files:
@@ -393,9 +450,14 @@ def bot_agents(site, agents):
     found = {}
     for agent in agents:
         url = (agent.get('adapterConfig') or {}).get('apiBaseUrl', '')
-        prefix = f"http://127.0.0.1:{site['guest_api_port']}/p/"
-        if agent.get('adapterType') == 'hermes_gateway' and url.startswith(prefix) and agent.get('status') != 'terminated':
-            found[url[len(prefix):]] = agent
+        parsed = urllib.parse.urlsplit(url)
+        name = parsed.path.removeprefix('/p/')
+        if (agent.get('adapterType') == 'hermes_gateway' and parsed.hostname == '127.0.0.1'
+                and parsed.scheme == 'http' and parsed.path.startswith('/p/') and NAME.fullmatch(name)
+                and agent.get('status') != 'terminated'):
+            if name in found:
+                raise Stop(f'{name}: more than one live Paperclip agent addresses this profile.')
+            found[name] = agent
     return found
 
 
@@ -487,6 +549,21 @@ def team_instructions(site, name, projects):
 def project_slug(project):
     match = re.search(r'Projects/([a-z0-9-]+)/', project.get('description') or '')
     return match.group(1) if match else re.sub(r'[^a-z0-9]+', '-', project['name'].lower()).strip('-')
+
+
+def project_replacements(site, projects):
+    """Resolve only operator-declared migrations; never infer grants from a persona."""
+    by_slug = {}
+    for project in projects:
+        by_slug.setdefault(project_slug(project), []).append(project)
+    result = {}
+    for old, new in site.get('zelab_project_replacements', {}).items():
+        sources, targets = by_slug.get(old, []), by_slug.get(new, [])
+        if len(sources) > 1 or len(targets) != 1 or targets[0].get('archivedAt'):
+            raise Stop(f'Project replacement {old} -> {new} is missing, ambiguous or archived.')
+        if sources:
+            result[sources[0]['id']] = targets[0]['id']
+    return result
 
 
 def instructions(site, name):
@@ -760,8 +837,13 @@ class Bots:
             'PAPERCLIP_API_URL': f"http://10.0.2.2:{self.site['paperclip_port']}",
             'PAPERCLIP_BRIDGE_API_KEY': created['token'],
             'PAPERCLIP_COMPANY_ID': self.paperclip.company, 'PAPERCLIP_AGENT_ID': agent['id']}))
+        if not json.loads(self.guest.root_python(BRIDGE_READY, f'{HERMES_HOME}/profiles/{name}',
+                                                 f"http://10.0.2.2:{self.site['paperclip_port']}",
+                                                 self.paperclip.company, agent['id'])):
+            raise Stop(f'{name}: replacement task key could not be verified; old keys remain for recovery.')
         for key in previous:
             self.paperclip.revoke(agent['id'], key['id'])
+        self.restart_needed = True
 
     def team(self):
         return team_agents(self.site, self.paperclip.agents(), self.paperclip.ids)
@@ -833,26 +915,97 @@ class Bots:
         print(f"  Filed the team's first ticket for {lead}: {issue.get('identifier') or ''} {title.lstrip('# ').strip()}.")
 
     def refresh(self):
-        """Hire the team and file its first ticket, then every bot's zelab skill, and task keys widened to every
-        bot and the team lead."""
+        """Reconcile managed integration and context against the declared, qualified site."""
         profiles, agents = self.state()
+        self.profile_hygiene('check')
         self.hire_team(agents)
         self.bind_team()
         self.onboard()
         projects, (members, others) = self.paperclip.projects(), self.team()
+        replacements = project_replacements(self.site, projects)
+        self.retire_projects(projects, replacements, check_only=True)
         for name in profiles:
-            self.guest.root_python(WRITE_FILE, f'{HERMES_HOME}/profiles/{name}/skills/zelab/zelab/SKILL.md',
-                                   f'{HERMES_HOME}/profiles', stdin=skill(self.site, name, agents, projects, members, others))
             if name not in agents:
-                continue
+                raise Stop(f'{name}: Hermes profile has no Paperclip agent; repair its hire with make bot.')
+            self.guest.root_python(COPY_SKILL, BRIDGE_SKILL,
+                                   f'{HERMES_HOME}/profiles/{name}/skills/paperclip/paperclip-task-bridge')
+            self.reconcile_adapter(name, agents[name])
+            current = json.loads(self.guest.root_python(PROFILE_SETTINGS, f'{HERMES_HOME}/profiles/{name}'))
+            passthrough = current.get('env_passthrough') or []
+            if not set(TASK_ENV).issubset(passthrough):
+                code, _ = self.guest.hermes(name, 'config', 'set', 'terminal.env_passthrough',
+                                            json.dumps(sorted(set(passthrough) | set(TASK_ENV))))
+                if code:
+                    raise Stop(f'{name}: could not reconcile terminal credentials.')
+                self.restart_needed = True
             active = [key for key in self.paperclip.keys(agents[name]['id'])
                       if key.get('name') == KEY_NAME and not key.get('revokedAt')]
-            if len(active) == 1:
-                scope = active[0].get('scope') or {}
-                project_ids = sorted(scope.get('projectIds') or [])
-                wanted = assignees(self.site, agents, members)
-                if sorted(scope.get('allowedAssigneeAgentIds') or []) != wanted:
-                    self.write_key(name, agents, project_ids)
+            if not active:
+                raise Stop(f'{name}: task-bridge key is missing; select its projects with make bot.')
+            # A killed rotation can leave the old and candidate keys active.
+            # The newest managed key records the last explicit project choice.
+            latest = max(active, key=lambda k: (k.get('createdAt') or '', k['id']))
+            scope = latest.get('scope') or {}
+            if scope.get('kind') != 'task_bridge' or set(scope) - {'kind', 'projectIds', 'allowedAssigneeAgentIds'}:
+                raise Stop(f'{name}: custom task-key scope needs explicit adoption with make bot.')
+            project_ids = sorted({replacements.get(pid, pid) for pid in scope.get('projectIds', [])})
+            visible = [p for p in projects if p['id'] in project_ids and not p.get('archivedAt')]
+            if len(visible) != len(project_ids) or not visible:
+                raise Stop(f'{name}: task scope contains missing or archived projects; select projects with make bot.')
+            wanted = assignees(self.site, agents, members)
+            bridge_ready = profiles[name]['task_key'] and json.loads(self.guest.root_python(
+                BRIDGE_READY, f'{HERMES_HOME}/profiles/{name}', f"http://10.0.2.2:{self.site['paperclip_port']}",
+                self.paperclip.company, agents[name]['id']))
+            if (sorted(scope.get('projectIds') or []) != project_ids
+                    or sorted(scope.get('allowedAssigneeAgentIds') or []) != wanted
+                    or not bridge_ready or len(active) != 1):
+                self.write_key(name, agents, project_ids)
+            self.guest.root_python(WRITE_FILE, f'{HERMES_HOME}/profiles/{name}/skills/zelab/zelab/SKILL.md',
+                                   f'{HERMES_HOME}/profiles', stdin=skill(self.site, name, agents, visible, members, others))
+        if self.restart_needed:
+            self.profile_hygiene('check')
+            self.guest.root_python(RESTART)
+            self.restart_needed = False
+        self.profile_hygiene('apply')
+        self.retire_projects(projects, replacements)
+        for member, agent in sorted(members.items()):
+            if agent.get('status') in ('error', 'paused'):
+                print(f"  WARN: {member} is {agent['status']} in Paperclip; inspect its latest run before relying on handoffs.")
+
+    def profile_hygiene(self, action):
+        pins = hashlib.sha256((ROOT / 'versions.yaml').read_bytes()).hexdigest()
+        result = json.loads(self.guest.root_python((ROOT / 'deploy/profile_hygiene.py').read_text(),
+                                                   HERMES_HOME, pins, action))
+        if result.get('error'):
+            raise Stop(result['error'])
+        if action == 'apply':
+            print(f"  Bot context: {result['changed']} profile(s) refreshed, {result['ended']} old chat session(s) retained in history.")
+
+    def reconcile_adapter(self, name, agent):
+        """Deployment-owned routing fields; retain native UI tuning and secret references."""
+        config = agent.get('adapterConfig') or {}
+        wanted = {'apiBaseUrl': bot_url(self.site, name),
+                  'paperclipApiUrl': f"http://10.0.2.2:{self.site['paperclip_port']}",
+                  'instructions': instructions(self.site, name)}
+        if any(config.get(k) != v for k, v in wanted.items()):
+            self.paperclip.call('PATCH', f"/agents/{agent['id']}", {'adapterConfig': {**config, **wanted}})
+        runtime = agent.get('runtimeConfig') or {}
+        heartbeat = runtime.get('heartbeat') or {}
+        if heartbeat.get('wakeOnDemand') is not True:
+            self.paperclip.call('PATCH', f"/agents/{agent['id']}",
+                                {'runtimeConfig': {**runtime, 'heartbeat': {**heartbeat, 'wakeOnDemand': True}}})
+
+    def retire_projects(self, projects, replacements, check_only=False):
+        for project in projects:
+            if project['id'] not in replacements or project.get('archivedAt'):
+                continue
+            issues = self.paperclip.call('GET', f"/companies/{self.paperclip.company}/issues?projectId={project['id']}") or []
+            if any(i.get('status') not in ('done', 'cancelled') for i in issues):
+                raise Stop(f"Retired project {project_slug(project)} still has open tickets; move or finish them, then rerun make.")
+            if check_only:
+                continue
+            self.paperclip.call('PATCH', f"/projects/{project['id']}",
+                                {'archivedAt': datetime.now(timezone.utc).isoformat()})
 
     def remove(self, profiles, agents):
         heading('REMOVE A BOT')
@@ -1009,14 +1162,14 @@ def main(argv=None):
     from run import read_inputs
     site = read_inputs(args.site_config, args.env_file)
     if args.action == 'refresh' and not args.runtime_dir:
-        return 0
+        raise Stop('Bot reconciliation needs the private runtime credentials supplied by make.')
     bots = Bots(site, owner_password(args.runtime_dir))
     if args.action == 'menu':
         menu(bots)
     elif args.action == 'installer':
         installer(bots)
     else:
-        bots.refresh()
+        bots.finish()
     return 0
 
 

@@ -79,11 +79,11 @@ def tier_settings(where, settings, allowed):
 
 
 def validate(data):
-    """config/projects.yaml: {'projects': {slug: {name}}, 'tiers': {tier: overrides}}."""
+    """Local projects, tier overrides and explicit retired-project replacements."""
     if data in (None, {}):
-        return {'projects': {}, 'tiers': {}}
-    if not isinstance(data, dict) or not set(data) or set(data) - {'projects', 'tiers'}:
-        raise ValueError('config/projects.yaml may contain only "projects:" and "tiers:" mappings')
+        return {'projects': {}, 'tiers': {}, 'project_replacements': {}}
+    if not isinstance(data, dict) or not set(data) or set(data) - {'projects', 'tiers', 'project_replacements'}:
+        raise ValueError('config/projects.yaml may contain only projects, tiers and project_replacements')
     projects = data.get('projects') or {}
     if not isinstance(projects, dict):
         raise ValueError('"projects:" must map project slugs to settings')
@@ -109,7 +109,15 @@ def validate(data):
         if not isinstance(tier, str) or not TIER.fullmatch(tier):
             raise ValueError(f'Tier {tier!r} must be 2-12 lowercase letters and digits')
         overrides[tier] = tier_settings(f'tier {tier}', settings, {'preset', 'paths'})
-    return {'projects': result, 'tiers': overrides}
+    replacements = data.get('project_replacements', {})
+    if not isinstance(replacements, dict):
+        raise ValueError('project_replacements must map retired slugs to declared project slugs')
+    for old, new in replacements.items():
+        if not isinstance(old, str) or not SLUG.fullmatch(old) or old in result:
+            raise ValueError('project_replacements sources must be retired project slugs')
+        if not isinstance(new, str) or new not in result:
+            raise ValueError('project_replacements targets must be declared projects (no chains)')
+    return {'projects': result, 'tiers': overrides, 'project_replacements': replacements}
 
 
 def validate_team(data, persona_dir=None):
@@ -192,7 +200,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         local, team = read(args.path), read_team(args.team)
-        result = {'projects': local['projects'], 'tiers': tiers(team, local), 'team': team}
+        result = {'projects': local['projects'], 'tiers': tiers(team, local), 'team': team,
+                  'project_replacements': local['project_replacements']}
     except (ValueError, yaml.YAMLError) as error:
         print(f'{error}', file=sys.stderr)
         return 1

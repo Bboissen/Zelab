@@ -98,10 +98,14 @@ class PrivateInputsTest(unittest.TestCase):
                                                         'sudo': list(MONITOR_COMMANDS), 'paths_rights': 'rwx'})
         self.assertEqual(loaded['zelab_tiers']['root']['sudo'], ['ALL'])
         self.assertEqual(loaded['zelab_team']['members']['pm']['lead'], True)
+        projects.write_text('projects:\n  homelab: {}\nproject_replacements:\n  old-lab: homelab\n')
+        self.assertEqual(read_inputs(self.site, self.env)['zelab_project_replacements'], {'old-lab': 'homelab'})
         for text in ('projects:\n  Bad_Slug: {}\n', 'projects:\n  web:\n    host_preset: repo-dev\n',
                      'projects:\n  web:\n    paths: [/srv/web]\n', 'tiers:\n  ops:\n    paths: [/etc]\n',
                      'tiers:\n  nope:\n    preset: docker\n', 'tiers:\n  ops:\n    preset: root\n',
-                     'projects:\n  a:\n    name: Same\n  b:\n    name: same\n', 'other: 1\n'):
+                     'projects:\n  a:\n    name: Same\n  b:\n    name: same\n', 'other: 1\n',
+                     'project_replacements: []\n', 'projects:\n  lab: {}\nproject_replacements:\n  lab: lab\n',
+                     'projects:\n  target: {}\nproject_replacements:\n  old: missing\n'):
             with self.subTest(text=text):
                 projects.write_text(text)
                 with self.assertRaises(ValueError):

@@ -14,6 +14,35 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProvisioningTest(unittest.TestCase):
+    def test_qualified_bridge_upgrade_removes_old_staging_and_unchanged_make_does_nothing(self):
+        plays = yaml.safe_load((ROOT / 'deploy/paperclip-projects.yaml').read_text())
+        tasks = copy.deepcopy(plays[1]['tasks'])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for task in tasks:
+                for module in ('ansible.builtin.stat', 'ansible.builtin.file', 'ansible.builtin.copy'):
+                    for key, value in list(task.get(module, {}).items()):
+                        if isinstance(value, str):
+                            task[module][key] = value.replace('/usr/local/lib/zelab', str(root / 'export'))
+                    task.get(module, {}).pop('owner', None)
+                    task.get(module, {}).pop('group', None)
+            runtime = root / 'runtime-one'
+            source = runtime / 'node_modules/@paperclipai/hermes-paperclip-adapter/skills/paperclip-task-bridge'
+            source.mkdir(parents=True)
+            (source / 'SKILL.md').write_text('first upstream skill')
+            (source / 'removed.mjs').write_text('obsolete helper')
+            self.run_play(directory, tasks=tasks, variables={'paperclip_runtime_dir': str(runtime)})
+            result = self.run_play(directory, tasks=tasks, variables={'paperclip_runtime_dir': str(runtime)})
+            self.assertIn('changed=0', result.stdout)
+            candidate = root / 'runtime-two'
+            upgraded = candidate / source.relative_to(runtime)
+            upgraded.mkdir(parents=True)
+            (upgraded / 'SKILL.md').write_text('second upstream skill')
+            self.run_play(directory, tasks=tasks, variables={'paperclip_runtime_dir': str(candidate)})
+            exported = root / 'export/paperclip-task-bridge'
+            self.assertEqual((exported / 'SKILL.md').read_text(), 'second upstream skill')
+            self.assertFalse((exported / 'removed.mjs').exists())
+
     def test_database_binaries_need_no_runtime_chmod_in_the_readonly_service(self):
         task, = role_tasks('deploy/roles/paperclip/tasks/main.yaml', 'Prepare native database executables for the read-only service runtime')
         task['ansible.builtin.file'].pop('owner')

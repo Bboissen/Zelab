@@ -123,7 +123,7 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
     resource_fraction(site.get('vm_install_resource_fraction', 0.7))
     check_private_inputs(site)
     check_identities(site)
-    site["zelab_projects"], site["zelab_tiers"], site["zelab_team"] = read_projects(site)
+    site["zelab_projects"], site["zelab_tiers"], site["zelab_team"], site["zelab_project_replacements"] = read_projects(site)
     remote = site.get("notes_sync_remote", "")
     if not isinstance(remote, str) or (remote and not re.fullmatch(
             r"(?:git@github\.com:|ssh://git@github\.com/)[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?(?:\.git)?", remote)):
@@ -141,7 +141,7 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
 
 
 def read_projects(site):
-    """Projects, tiers and team from projects_config and team_config, validated; absent means none."""
+    """Validated projects, tiers, team and replacements from the local inputs."""
     import projects
     paths = []
     for key, default in (("projects_config", "config/projects.yaml"), ("team_config", "config/team.yaml")):
@@ -153,7 +153,7 @@ def read_projects(site):
             raise ValueError(f"{key} cannot be a symlink")
         paths.append(path)
     local, team = projects.read(paths[0]), projects.read_team(paths[1])
-    return local["projects"], projects.tiers(team, local), team
+    return local["projects"], projects.tiers(team, local), team, local['project_replacements']
 
 
 def read_env(env_path):

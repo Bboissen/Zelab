@@ -5,6 +5,9 @@
 #   name: the Paperclip project name (default: the slug).
 # A project is only where tickets and notes go; it grants no host rights.
 # Removing a project here keeps its Paperclip project, tickets and vault folder.
+# project_replacements: explicitly migrate bot grants from retired projects to
+# declared projects. make archives a replaced project only when it has no open
+# tickets; its tickets and notes remain. No replacement is inferred from names.
 #
 # tiers: optional overrides of config/team.yaml's tiers for this host.
 #   preset: none of the tiers' rights change unless you set this
@@ -21,3 +24,5 @@ projects:
 # tiers:
 #   ops:
 #     paths: [/srv/compose]
+# project_replacements:
+#   old-lab: homelab

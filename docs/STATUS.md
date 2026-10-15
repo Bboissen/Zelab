@@ -29,6 +29,20 @@ disposable guest and scratch Paperclip (wizards excluded).
 
 ## v1.1 acceptance
 
+Bot reconciliation regression coverage (2026-10-16): unattended plain `make`
+invokes refresh; explicit project replacements migrate scoped grants; generated
+instructions omit inaccessible projects; interrupted rotations converge;
+bundled skill updates retain identical-file timestamps; native settings and
+secret references survive routing repairs; open tickets prevent project
+archiving. Context tests cover first adoption, persona/skill/pin changes,
+unchanged reapplies, retries after failure, pagination and preserving Paperclip
+sessions and transcripts. Against the pinned live Hermes API, a synthetic
+Discord-source session was created, ended with `session_reset`, and read back
+with its row and metadata retained; the synthetic fixture was then removed.
+No model call, real chat boundary or outbound message was used. Read-only
+reconciliation preflight passed for the live profiles. Full live deployment
+and the complete Discord-to-team return path: **NOT RUN** for these changes.
+
 Record PASS, FAIL or NOT RUN with timestamp, steps and sanitized evidence.
 
 | ID | Criterion | Result |

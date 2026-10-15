@@ -40,8 +40,8 @@ host account stay on the host.
 | Hermes dashboard | Guest service on port 8640, basic-auth; forwarded to host loopback and published through Tailscale Serve |
 | Paperclip | Host service under `zelab-paperclip`, authenticated private mode, loopback only; embedded PostgreSQL reachable only by root, the operator and the service account (nftables) |
 | Paperclip bot agents | One `hermes_gateway` agent per bot, hired with `/agent-hires` and approved by `make bot`; `apiBaseUrl` is `http://127.0.0.1:<guest_api_port>/p/<bot>` |
-| Task bridge | Paperclip's bundled `paperclip-task-bridge` skill, copied unchanged into each profile; its `task_bridge` key, scoped to the projects the owner picks, is in the profile's `.env` and reaches the terminal tool through Hermes' `terminal.env_passthrough` |
-| Zelab skill | A generated `zelab` skill per profile listing projects (Paperclip IDs, vault folders) and the other bots (agent IDs); no secrets |
+| Task bridge | Paperclip's bundled `paperclip-task-bridge` skill, reconciled unchanged into each profile on every `make`; its `task_bridge` key, scoped to the projects the owner picks, is in the profile's `.env` and reaches the terminal tool through Hermes' `terminal.env_passthrough` |
+| Zelab skill | Reconciled on every `make`, listing only the bot's permitted projects (Paperclip IDs, vault folders), the team and other bots; no secrets |
 | Projects | `config/projects.yaml`: a Paperclip project and a vault folder each; no host rights |
 | Team tiers | `config/team.yaml`: one account `zelab-team-<tier>` per tier (`dev` repo-dev, `ops` docker, `root` full-sudo; home below `/var/lib/zelab-projects`), read/write on the vault, and the Paperclip SSH environment `<tier> host`; site paths in `config/projects.yaml` |
 | Team | Claude Code agents make hires once from `config/team.yaml` (PM as lead; frontend, backend, mobile, game, data on `dev`; devops on `ops`; sysadmin on `root`): Claude CLI engine, Opus 5.5, persona `config/team/<member>.md` plus `TEAM.md` as the first `AGENTS.md`; runs use the owner's Claude sign-in. Both pinned CLIs are installed as `codex` and `claude` |
@@ -87,6 +87,22 @@ host account stay on the host.
 
 `make backup` archives all of the above together with the source pins, because
 a database dump or `.env` alone cannot rebuild a site.
+
+Plain `make` reconciles bots even without a terminal. It refreshes bundled
+skills, terminal credential passthrough and gateway routing, verifies each task
+key against Paperclip, and resumes an interrupted key rotation. Project grants
+remain the owner's choice; explicit `project_replacements` in
+`config/projects.yaml` migrate retired project grants to declared replacements.
+Replaced projects are archived only after their open tickets are resolved;
+their notes and tickets are retained.
+
+A private fingerprint covers each profile's persona, configuration, managed
+skills and qualified component pins. On first adoption and after a change,
+`make` ends old chat contexts through Hermes' native session API. Transcripts,
+logins, memory and Paperclip run sessions remain; the next chat starts with
+current instructions. Unchanged reapplies keep the current conversation. Busy
+Hermes work defers reconciliation with an actionable failure. Native team
+errors are reported for inspection; failed work is never replayed blindly.
 
 ## Network
 

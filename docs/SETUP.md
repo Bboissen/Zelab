@@ -52,6 +52,11 @@ At the end of a fresh install, make asks how many bots to set up and opens Herme
   terminates its Paperclip agent (its keys are revoked) and archives its profile
   without logins or tokens before deleting it.
 - Every step can be skipped and run again from `rtk proxy make bot`.
+- Plain `make` reconciles existing bots even without a terminal: it refreshes
+  managed skills, repairs routing and task credentials, and retires stale chat
+  contexts when their inputs change. History, memory, logins and model choices
+  stay. Configure retired project replacements in `config/projects.yaml`;
+  see [Operations](OPERATIONS.md#updating-and-removing).
 
 ### Desktop notes
 

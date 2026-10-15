@@ -230,6 +230,36 @@ acceptance remains unrun (see [STATUS.md](STATUS.md)).
 
 ## Updating and removing
 
+Every plain `make` also reconciles bot integration, before any terminal-only
+setup wizard. Existing native profiles keep their personas, logins, model
+choices and custom settings. Deployment-owned routing, bundled bridge skills,
+required terminal credential passthrough and scoped project tables are repaired.
+A second unchanged run does not rotate keys or end conversations.
+
+To retire a project, explicitly map its slug to a currently declared project
+in local `config/projects.yaml`:
+
+```yaml
+projects:
+  homelab: {name: Homelab}
+project_replacements:
+  old-lab: homelab
+```
+
+`make` migrates existing bot grants through that mapping, then archives the old
+project if it has no open tickets. It never deletes its tickets or vault folder.
+Without a declared replacement, existing grants are preserved. The generated
+skill advertises only the projects that the bot's actual key permits.
+
+The first reconciliation, and subsequent changes to a profile's persona,
+configuration, managed skills or qualified pins, end its old chat contexts
+using the native Hermes API. The transcripts remain in history; the next chat
+loads the current instructions. Paperclip run sessions are preserved. If Hermes
+has active work, let it finish and rerun `make`. A malformed private context
+receipt or an unreachable API fails the step rather than claiming freshness.
+An errored or paused team member is reported; inspect its native Paperclip run
+before retrying work, since it may already have changed data.
+
 Versions and hashes live in [versions.yaml](../versions.yaml). Qualify updates
 against native adapters, subscription inference and database recovery before
 adopting new pins. The Hermes role refuses an unexpected source revision;

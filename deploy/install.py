@@ -319,6 +319,13 @@ class Installer:
         self.log.open(settings.get("private_dir", DEFAULT_PRIVATE_DIR))
 
     def bots(self):
+        self.screen.start('Bot reconciliation')
+        code, tail = self.capture([str(VENV_PYTHON), 'deploy/bots.py', 'refresh', *self.inputs(),
+                                   '--runtime-dir', self.password_dir])
+        if code:
+            self.tool_failed('bot reconciliation failed', tail)
+        warnings = [line.strip() for line in tail if line.startswith('  WARN:')]
+        self.screen.finish('PASS', 'skills, scoped keys, adapters and conversation freshness', warnings)
         # Hermes' wizards need the terminal: capture() would hide them.
         command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/bots.py', 'installer', *self.inputs(),
                    '--runtime-dir', self.password_dir]
