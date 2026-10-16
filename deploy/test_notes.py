@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import notes
+import vault_access
 
 GIT_ENV = {**os.environ, 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1',
            'GIT_AUTHOR_NAME': 'Laptop', 'GIT_AUTHOR_EMAIL': 'laptop@example.invalid',
@@ -23,6 +24,10 @@ class LocalSync(notes.Sync):
 
     def require_private(self):
         self.git('ls-remote', '--heads', 'origin', cwd=self.home)
+
+    def restore_access(self):
+        # Fixtures belong to this account; no privilege escalation in source checks.
+        vault_access.restore(self.vault, [os.getuid()])
 
 
 class NotesSyncTest(unittest.TestCase):
@@ -135,6 +140,34 @@ class NotesSyncTest(unittest.TestCase):
         sync = notes.Sync({'notes_vault_dir': '/tmp', 'private_dir': '/tmp',
                            'notes_sync_remote': 'git@github.com:owner/zelab-notes.git'})
         self.assertEqual((sync.owner, sync.repo), ('owner', 'zelab-notes'))
+
+    def test_access_failure_stops_before_exchange(self):
+        with patch.object(self.sync, 'restore_access', side_effect=notes.Stop('access repair failed')), \
+                patch.object(self.sync, 'exchange') as exchange, \
+                self.assertRaisesRegex(notes.Stop, 'access repair failed'):
+            self.sync.run()
+        exchange.assert_not_called()
+
+    def test_native_repair_uses_operator_and_installed_tier_uids(self):
+        import pwd
+        from types import SimpleNamespace
+        self.sync.editors = [pwd.getpwuid(os.getuid()).pw_name, 'fixture-tier', 'fixture-missing']
+
+        def account(user):
+            if user == 'fixture-missing':
+                raise KeyError(user)
+            return SimpleNamespace(pw_uid=12345 if user == 'fixture-tier' else os.getuid())
+
+        with patch.object(notes.pwd, 'getpwnam', side_effect=account), \
+                patch.object(notes.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                    [], 0, '{"changed":0,"skipped":0}', '')) as run:
+            notes.Sync.restore_access(self.sync)
+        command = run.call_args.args[0]
+        self.assertEqual(command[:4], ['sudo', '-n', 'python3', '-I'])
+        self.assertEqual(command[5:], [str(self.vault), str(os.getuid()), '12345'])
+        with patch.object(notes.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', '')):
+            with self.assertRaisesRegex(notes.Stop, 'unattended sudo'):
+                notes.Sync.restore_access(self.sync)
 
 
 

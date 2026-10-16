@@ -23,6 +23,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import pwd
 import re
 import subprocess
 import sys
@@ -54,6 +55,8 @@ class Sync:
         self.git_dir = self.home / 'vault.git'
         self.key = self.home / 'deploy_key'
         self.known_hosts = self.home / 'known_hosts'
+        self.editors = [site.get('operator_user') or pwd.getpwuid(os.getuid()).pw_name]
+        self.editors += [tier['account'] for tier in (site.get('zelab_tiers') or {}).values()]
         remote = site.get('notes_sync_remote') or ''
         match = REMOTE.fullmatch(remote)
         if not match:
@@ -152,6 +155,27 @@ class Sync:
 
     # --- the sync --------------------------------------------------------------------------
 
+    def restore_access(self):
+        """Private-mode agent writes can mask otherwise correct inherited ACLs."""
+        uids = []
+        for user in self.editors:
+            try:
+                uids.append(str(pwd.getpwnam(user).pw_uid))
+            except KeyError:
+                if user == self.editors[0]:
+                    raise Stop('The configured deployment operator account does not exist.') from None
+                # A declared tier need not have been installed yet.
+        result = subprocess.run(['sudo', '-n', 'python3', '-I', str(ROOT / 'deploy/vault_access.py'),
+                                 str(self.vault), *uids], capture_output=True, text=True)
+        if result.returncode:
+            raise Stop('Cannot restore shared vault access. make notes needs the deployment operator\'s '
+                       'existing unattended sudo rights; run make to check the installation. Nothing was synced.')
+        repaired = json.loads(result.stdout)
+        if repaired['changed']:
+            print(f"  Restored shared access on {repaired['changed']} vault file(s)/directory(s).")
+        if repaired['skipped']:
+            print(f"  Skipped {repaired['skipped']} symlink(s), hard link(s), special file(s) or other-device entries.")
+
     def commit_server_edits(self):
         self.git('add', '--all', '--', '.')
         staged = self.git('diff', '--cached', '--name-only', '-z').stdout.split('\0')
@@ -210,6 +234,7 @@ class Sync:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise Stop('Another make notes is running.') from None
+            self.restore_access()
             self.exchange()
 
     def exchange(self):

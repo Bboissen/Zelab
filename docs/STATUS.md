@@ -7,6 +7,43 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Private-mode vault writes and notes sync: 2026-10-16
+
+A real bot note was readable by the notes account and root but not by the
+operator: mode `0600` had reduced its inherited ACL mask to `---`. The original
+root read-back did not test the identity that runs `make notes`. A targeted
+live ACL repair restored that note, but was not a repository-level fix.
+
+`make notes` now restores the operator's and installed team tiers' native vault
+ACLs before indexing. It uses the operator's existing unattended sudo rights
+only for that metadata repair; Git, credentials and network operations stay
+under the operator. No sudo grant, upstream code or pin changed. The repair
+reads no note contents, changes no ownership, refuses symlinked vault paths,
+skips symlinks, hard links, special files and other-device entries, and uses
+open descriptors to prevent path replacement from redirecting ACL updates.
+This reapplies the documented whole-vault sharing, rather than adding a new
+access scope. Another restrictive agent write can mask entries again; the
+next sync repairs them again. Unusual skipped entries may still need attention.
+
+Live acceptance at 22:47 UTC used a new synthetic atomic `0600` write through
+the deployed guest SSHFS mount, without a model call. The operator read failed
+with PermissionError before the repair. Updated `make notes` restored shared
+access, successfully indexed and pushed the note; an independent private-remote
+clone matched its exact bytes and SHA-256. An unchanged second sync made no
+ACL changes and sent/received zero notes. Existing note contents were unchanged.
+Regression checks cover private creation/replacement, idempotence, link and
+special-file exclusion, symlinked ancestors, foreign-device exclusion, a path
+replacement during repair, and stopping sync when repair fails. CI installs
+its ACL fixture prerequisite explicitly.
+
+Repository changes are the sync repair, tests, CI prerequisite and docs. Host
+changes are vault ACL reconciliation, one retained private acceptance note,
+notes Git sync and a disposable verification clone (removed). Guest changes
+are only the synthetic write through its existing mount. Fresh-site install,
+full `make`, reboot, real chat/model replay after this fix and desktop Obsidian
+visibility: **NOT RUN**. Source checks: **PASS**, 283 tests, repository checks
+and playbook syntax.
+
 ## Live notes acceptance and archived project inventory: 2026-10-16
 
 At 22:03 UTC, three deployed Hermes profiles each used the bundled Obsidian
