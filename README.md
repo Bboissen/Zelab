@@ -10,10 +10,11 @@ sysadmin) working on the host over SSH; one vault holds the notes, one folder
 per project, which you open in desktop Obsidian on your laptop through a private
 Git repository (`make notes`). Administration UIs are reachable only through Tailscale or localhost.
 
-In a project's channel you ask a bot to research something; it writes notes
-under `Projects/<slug>/` and files a Paperclip ticket. Work on the server goes
-to the team's PM, who splits it across the team; each member runs on its rights
-tier's own account, and the answer comes back in the chat.
+In a project's channel you ask a bot to research something; it files a Paperclip
+ticket and, when Paperclip runs it, writes notes under `Projects/<slug>/`. Chat
+itself runs no commands. Work on the server goes to the team's PM, who splits it
+across the team; each member runs on its rights tier's own account, and the bot
+brings the answer back to the chat in plain words.
 
 ## Install
 

@@ -301,97 +301,146 @@ def recovery_check(runtime, previous, node, folder):
     print('Worker execution, inference, Discord delivery and whole-site recovery are not exercised by this fixture.')
 
 
-def chat_handoff_check(client, runtime, node, root, environment):
-    """Exercise scoped delegation and child completion without inference or chat delivery."""
+class McpClient:
+    """Minimal stdio client for the pinned Paperclip MCP server, as Hermes starts it: no run ID."""
+
+    def __init__(self, node, mcp_runtime, env):
+        server = mcp_runtime / 'node_modules/@paperclipai/mcp-server/dist/stdio.js'
+        self.process = subprocess.Popen([str(node), str(server)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        stderr=subprocess.DEVNULL, text=True, env={'PATH': '/usr/bin:/bin', **env})
+        self.next_id = 0
+        self.rpc('initialize', {'protocolVersion': '2025-06-18', 'capabilities': {},
+                                'clientInfo': {'name': 'zelab-check', 'version': '1'}})
+        self.send({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
+
+    def send(self, message):
+        self.process.stdin.write(json.dumps(message) + '\n')
+        self.process.stdin.flush()
+
+    def rpc(self, method, params):
+        self.next_id += 1
+        self.send({'jsonrpc': '2.0', 'id': self.next_id, 'method': method, 'params': params})
+        while True:
+            line = self.process.stdout.readline()
+            if not line:
+                raise RuntimeError('Paperclip MCP server exited')
+            message = json.loads(line)
+            if message.get('id') == self.next_id:
+                return message
+
+    def call(self, name, arguments):
+        """The tool's JSON result, or None when Paperclip refused it."""
+        result = self.rpc('tools/call', {'name': name, 'arguments': arguments}).get('result') or {}
+        text = (result.get('content') or [{}])[0].get('text', '')
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return None
+        return None if result.get('isError') or (isinstance(data, dict) and 'error' in data) else data
+
+    def close(self):
+        self.process.terminate()
+        self.process.wait(timeout=10)
+
+
+def chat_handoff_check(client, runtime, mcp_runtime, node, root, environment):
+    """Exercise the chat flow through the MCP server and one reply run, without inference or chat."""
     company, _ = seed(client, runtime, node, root, environment, secrets.token_urlsafe(32))
     project = client.request(f'/companies/{company}/projects', {'name': 'Handoff fixture'})
-    worker = client.request(f'/companies/{company}/agents', {
+    lead = client.request(f'/companies/{company}/agents', {
         'name': 'Fixture lead', 'role': 'general', 'adapterType': 'process',
         'adapterConfig': {'command': '/usr/bin/true'},
         'runtimeConfig': {'heartbeat': {'enabled': False, 'wakeOnDemand': False}}})
-    script = root / 'handoff.py'
-    state = root / 'handoff.json'
-    # Use the exact curl block generated for real bots, rather than a parallel API implementation.
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'deploy'))
-    from bots import skill
-    from run import load_yaml
-    site = load_yaml(Path(__file__).resolve().parents[1] / 'config/defaults.yaml')
-    text = skill(site, 'fixture', {}, [])
-    waiting = text.split('    curl --fail-with-body', 1)[1].split('\n\n', 1)[0]
-    waiting = 'curl --fail-with-body' + waiting.replace('\n    ', '\n')
-    script.write_text('''import json, os, pathlib, subprocess, urllib.request
-state = pathlib.Path(os.environ['FIXTURE_STATE'])
-base = os.environ['PAPERCLIP_API_URL']
-parent = os.environ['FIXTURE_PARENT']
-headers = {'Authorization': 'Bearer ' + os.environ['PAPERCLIP_BRIDGE_API_KEY'],
-           'X-Paperclip-Run-Id': os.environ['PAPERCLIP_RUN_ID'], 'Content-Type': 'application/json'}
-if not state.exists():
-    command = ['rtk', 'proxy', os.environ['FIXTURE_NODE'], os.environ['FIXTURE_HELPER'],
-               'create-task', '--project-id', os.environ['FIXTURE_PROJECT'], '--title', 'Narrow check',
-               '--description', 'Depth: quick. One observation, then stop.', '--parent-id', parent,
-               '--assignee-agent-id', os.environ['FIXTURE_WORKER'], '--status', 'backlog']
-    result = subprocess.run(command, capture_output=True, text=True, check=True)
-    child = json.loads(result.stdout)['issue']['id']
-    state.write_text(json.dumps({'child': child}))
-    command = os.environ['FIXTURE_WAIT'].replace('<your ticket UUID>', parent).replace(
-        '<child UUID>', child).replace('<current run ID>', os.environ['PAPERCLIP_RUN_ID'])
-    subprocess.run(['rtk', 'proxy', 'bash', '-c', command], capture_output=True, text=True, check=True)
-else:
-    body = json.dumps({'status': 'done', 'comment': 'Child result received; fixture complete.'}).encode()
-    request = urllib.request.Request(base + '/api/issues/' + parent, data=body, headers=headers, method='PATCH')
-    with urllib.request.urlopen(request, timeout=15) as response:
-        assert json.load(response)['status'] == 'done'
-print('Synthetic handoff recorded; no model call or outbound chat.')
-''')
+    script = root / 'reply.py'
+    state = root / 'reply.json'
     bot = client.request(f'/companies/{company}/agents', {
         'name': 'Fixture bot', 'role': 'general', 'adapterType': 'process',
-        'adapterConfig': {'command': '/usr/bin/python3', 'args': [str(script)], 'cwd': str(root), 'timeoutSec': 30},
+        'adapterConfig': {'command': sys.executable, 'args': [str(script)], 'cwd': str(root), 'timeoutSec': 30},
         'runtimeConfig': {'heartbeat': {'enabled': False, 'wakeOnDemand': True, 'maxConcurrentRuns': 1}}})
     key = client.request(f'/agents/{bot["id"]}/keys', {'name': 'Synthetic scoped task key',
-        'scope': {'kind': 'task_bridge', 'projectIds': [project['id']], 'allowedAssigneeAgentIds': [worker['id']]}})
-    parent = client.request(f'/companies/{company}/issues', {
-        'title': 'Quick status fixture', 'projectId': project['id'], 'assigneeAgentId': bot['id'], 'status': 'backlog'})
+        'scope': {'kind': 'task_bridge', 'projectIds': [project['id']], 'allowedAssigneeAgentIds': [lead['id']]}})
+    env = {'PAPERCLIP_API_URL': client.base, 'PAPERCLIP_API_KEY': key['token'],
+           'PAPERCLIP_COMPANY_ID': company, 'PAPERCLIP_AGENT_ID': bot['id']}
+
+    def runs():
+        return client.request(f'/companies/{company}/heartbeat-runs?agentId={bot["id"]}')
+
+    # The chat: the exact tool calls the generated skill describes, with no Paperclip run.
+    chat = McpClient(node, mcp_runtime, env)
+    try:
+        tools = {tool['name'] for tool in chat.rpc('tools/list', {})['result']['tools']}
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'deploy'))
+        from bots import MCP_TOOLS, skill
+        from run import load_yaml
+        if not set(MCP_TOOLS) <= tools:
+            raise RuntimeError('Pinned MCP server lacks a tool the bots are configured to use')
+        job = chat.call('paperclipCreateIssue', {'projectId': project['id'], 'assigneeAgentId': lead['id'],
+                        'status': 'todo', 'title': 'Is the media server up?', 'description': 'Depth: quick.'})
+        reply = job and chat.call('paperclipCreateIssue', {'projectId': project['id'], 'assigneeAgentId': bot['id'],
+                                  'status': 'blocked', 'blockedByIssueIds': [job['id']], 'title': 'Reply: media server',
+                                  'description': 'Reply to: discord:1\nAsked by: Fixture, not technical\nQuestion: Is it up?'})
+        if not reply:
+            raise RuntimeError('Task key could not file the job and the waiting reply ticket outside a run')
+        if not chat.call('paperclipCreateIssue', {'projectId': project['id'], 'title': 'Chat delivery failed: fixture',
+                                                  'description': 'Unassigned delivery report'}):
+            raise RuntimeError('Task key could not file an unassigned delivery report')
+        if (chat.call('paperclipGetIssue', {'issueId': job['id']}) or {}).get('status') != 'todo':
+            raise RuntimeError('Task key could not read the job it filed')
+        if chat.call('paperclipListIssues', {}) is not None:
+            raise RuntimeError('Task key unexpectedly listed company-wide issues')
+        if chat.call('paperclipUpdateIssue', {'issueId': reply['id'], 'status': 'done'}) is not None:
+            raise RuntimeError('Task key unexpectedly changed a ticket outside a Paperclip run')
+    finally:
+        chat.close()
+    waiting = client.request('/issues/' + reply['id'])
+    if waiting['status'] != 'blocked' or [b['id'] for b in waiting.get('blockedBy', [])] != [job['id']]:
+        raise RuntimeError('Reply ticket does not wait on the job')
+    time.sleep(3)
+    if runs():
+        raise RuntimeError('The waiting reply ticket woke the bot before the job finished')
+
+    # The reply run: read the result through the MCP server, then the skill's exact close command.
+    site = load_yaml(Path(__file__).resolve().parents[1] / 'config/defaults.yaml')
+    close = next(line.strip() for line in skill(site, 'fixture', {}, []).splitlines() if 'update-status' in line)
     helper = runtime / 'node_modules/@paperclipai/hermes-paperclip-adapter/skills/paperclip-task-bridge/paperclip-task.mjs'
     if not helper.is_file():
-        matches = list((runtime / 'node_modules/@paperclipai/hermes-paperclip-adapter').rglob('paperclip-task.mjs'))
-        if len(matches) != 1:
-            raise RuntimeError('Pinned task-bridge helper could not be located uniquely')
-        helper = matches[0]
-    config = {**bot['adapterConfig'], 'env': {
-        'PAPERCLIP_BRIDGE_API_KEY': key['token'], 'PAPERCLIP_API_URL': client.base,
-        'PAPERCLIP_COMPANY_ID': company, 'PAPERCLIP_AGENT_ID': bot['id'],
-        'FIXTURE_STATE': str(state), 'FIXTURE_PARENT': parent['id'], 'FIXTURE_NODE': str(node),
-        'FIXTURE_HELPER': str(helper), 'FIXTURE_PROJECT': project['id'],
-        'FIXTURE_WORKER': worker['id'], 'FIXTURE_WAIT': waiting}}
+        raise RuntimeError('Pinned task-bridge helper is missing')
+    close = close.split(' update-status ', 1)[1].replace('<ticket id>', reply['id'])
+    script.write_text(f'''import json, os, shlex, subprocess, sys
+sys.path.insert(0, {str(Path(__file__).resolve().parent)!r})
+from check_paperclip import McpClient
+from pathlib import Path
+env = json.loads(os.environ['FIXTURE_ENV'])
+mcp = McpClient(Path({str(node)!r}), Path({str(mcp_runtime)!r}), env)
+comments = mcp.call('paperclipListComments', {{'issueId': {job['id']!r}}}) or []
+mcp.close()
+result = {{'read': any('91%' in (c.get('body') or '') for c in comments)}}
+command = [{str(node)!r}, {str(helper)!r}, 'update-status', *shlex.split({close!r})]
+done = subprocess.run(command, capture_output=True, text=True, env={{'PATH': '/usr/bin:/bin',
+    'PAPERCLIP_API_URL': env['PAPERCLIP_API_URL'], 'PAPERCLIP_BRIDGE_API_KEY': env['PAPERCLIP_API_KEY'],
+    'PAPERCLIP_RUN_ID': os.environ['PAPERCLIP_RUN_ID']}})
+result['closed'] = done.returncode == 0
+Path({str(state)!r}).write_text(json.dumps(result))
+''')
+    config = {**bot['adapterConfig'], 'env': {'FIXTURE_ENV': json.dumps(env)}}
     client.request('/agents/' + bot['id'], {'adapterConfig': config}, method='PATCH')
-    client.request('/issues/' + parent['id'], {'status': 'todo'}, method='PATCH')
-
-    def wait_for(status, expected_runs):
-        deadline = time.monotonic() + 45
-        while time.monotonic() < deadline:
-            issue = client.request('/issues/' + parent['id'])
-            runs = client.request(f'/companies/{company}/heartbeat-runs?agentId={bot["id"]}')
-            if any(run['status'] in ('failed', 'timed_out') for run in runs):
-                raise RuntimeError('Synthetic handoff run failed; inspect the private fixture log')
-            if (issue['status'] == status and len(runs) == expected_runs
-                    and all(run['status'] == 'succeeded' for run in runs)):
-                return issue, runs
-            time.sleep(0.2)
-        raise RuntimeError('Synthetic handoff did not reach the expected state')
-
-    issue, _ = wait_for('blocked', 1)
-    child = json.loads(state.read_text())['child']
-    if not any(blocker['id'] == child for blocker in issue.get('blockedBy', [])):
-        raise RuntimeError('Waiting parent has no first-class child dependency')
-    client.request('/issues/' + child, {'status': 'done', 'comment': 'Synthetic current observation.'}, method='PATCH')
-    _, runs = wait_for('done', 2)
-    reasons = [run.get('contextSnapshot', {}).get('wakeReason')
-               for run in sorted(runs, key=lambda run: run['createdAt'])]
-    if reasons != ['issue_status_changed', 'issue_children_completed']:
-        raise RuntimeError(f'Unexpected wake during synthetic handoff: {reasons}')
-    print('PASS: scoped task key creates a child, records a real blocker, and resumes once on child completion.')
-    print('PASS: parent completes in two process runs with no disposition-repair run and no model calls.')
-    print('Discord delivery and production agent behavior: NOT RUN.')
+    client.request('/issues/' + job['id'], {'status': 'done', 'comment': 'Up; one disk is 91% full.'}, method='PATCH')
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline and not state.exists():
+        time.sleep(0.5)
+    # Paperclip schedules a disposition repair at once when a run leaves its ticket open.
+    time.sleep(10)
+    result = json.loads(state.read_text()) if state.exists() else {}
+    if not result.get('read'):
+        raise RuntimeError('Reply run could not read the job result through the MCP server')
+    if not result.get('closed') or client.request('/issues/' + reply['id'])['status'] != 'done':
+        raise RuntimeError('Generated close command did not finish the reply ticket')
+    reasons = [(run['status'], run.get('contextSnapshot', {}).get('wakeReason')) for run in runs()]
+    if reasons != [('succeeded', 'issue_blockers_resolved')]:
+        raise RuntimeError(f'Unexpected bot runs during the handoff: {reasons}')
+    print('PASS: chat-side MCP calls file the job and a waiting reply ticket; no run, no company-wide reads.')
+    print('PASS: the finished job wakes the bot once; it reads the result and the generated command closes the ticket.')
+    print('Inference and Discord delivery: NOT RUN.')
 
 
 def main():
@@ -400,11 +449,14 @@ def main():
     parser.add_argument('--node', type=Path, required=True, help='Pinned Node executable')
     parser.add_argument('--recovery', action='store_true', help='Also verify native task state through encrypted restore')
     parser.add_argument('--project-retirement', action='store_true', help='Verify deployed project retirement against the native API')
-    parser.add_argument('--chat-handoff', action='store_true', help='Verify scoped child delegation without inference or chat')
+    parser.add_argument('--chat-handoff', action='store_true', help='Verify the MCP chat handoff without inference or chat')
+    parser.add_argument('--mcp-runtime', type=Path, help='Installed Paperclip MCP server (with --chat-handoff)')
     parser.add_argument('--previous-runtime', type=Path, help='Verify update and snapshot rollback against this installed runtime')
     args = parser.parse_args()
     if args.previous_runtime and not args.recovery:
         parser.error('--previous-runtime requires --recovery')
+    if args.chat_handoff and not (args.mcp_runtime and (args.mcp_runtime / 'node_modules/@paperclipai/mcp-server').is_dir()):
+        parser.error('--chat-handoff needs --mcp-runtime with the installed MCP server')
     if sum((args.project_retirement, args.recovery, args.chat_handoff)) > 1:
         parser.error('Run --project-retirement, --chat-handoff and --recovery separately')
     for runtime in [args.runtime, *([args.previous_runtime] if args.previous_runtime else [])]:
@@ -428,8 +480,8 @@ def main():
                         project_retirement_check(client, args.runtime.resolve(), args.node.resolve(),
                                                  root / 'state', environment)
                     if args.chat_handoff:
-                        chat_handoff_check(client, args.runtime.resolve(), args.node.resolve(),
-                                           root / 'state', environment)
+                        chat_handoff_check(client, args.runtime.resolve(), args.mcp_runtime.resolve(),
+                                           args.node.resolve(), root / 'state', environment)
                 print('PASS: fresh native database/migrations, authenticated private health and anonymous API denial.')
         success = True
     finally:

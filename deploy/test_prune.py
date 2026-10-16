@@ -20,7 +20,8 @@ class HostPruneTest(unittest.TestCase):
                                                       ('cache', 'tools', 'releases', 'bin', 'logs', 'units'))
         for directory in (cache, tools, releases, links, logs, units):
             directory.mkdir(exist_ok=True)
-        for name in ('hermes-web-new.tar', 'hermes-web-old.tar', 'node-1.tar.xz', 'debian.qcow2', '.partial'):
+        for name in ('hermes-web-new.tar', 'hermes-web-old.tar', 'paperclip-mcp-new.tar', 'paperclip-mcp-old.tar',
+                     'node-1.tar.xz', 'debian.qcow2', '.partial'):
             (cache / name).write_text('x')
         (cache / 'hermes-agent-new').mkdir(exist_ok=True)
         for name in ('node-v2-linux-x64', 'node-v1-linux-x64', 'codex-9-package', 'codex-8-package',
@@ -46,7 +47,7 @@ class HostPruneTest(unittest.TestCase):
         variables.update({
             'prune_cache_dir': str(cache), 'prune_tools_dir': str(tools), 'prune_units_dir': str(units),
             'prune_command_links': [str(links / name) for name in ('zelab-codex', 'zelab-claude', 'node')],
-            'vm_service': 'zelab-vm', 'hermes_commit': 'new', 'node_version': '2', 'codex_version': '9',
+            'vm_service': 'zelab-vm', 'hermes_commit': 'new', 'paperclip_mcp_revision': 'new', 'node_version': '2', 'codex_version': '9',
             'claude_version': '5', 'paperclip_runtime_dir': str(releases / 'current'),
             'private_dir': str(root), 'obsidian_enabled': False})
         result = run_play(root, variables=variables, tasks=role_tasks('deploy/roles/artifact_prune/tasks/host.yaml'))
@@ -57,7 +58,7 @@ class HostPruneTest(unittest.TestCase):
             root = Path(directory)
             cache, tools, releases, links, logs, _ = self.layout(root)
             self.prune(root)
-            self.assertEqual(sorted(p.name for p in cache.iterdir()), ['hermes-web-new.tar'])
+            self.assertEqual(sorted(p.name for p in cache.iterdir()), ['hermes-web-new.tar', 'paperclip-mcp-new.tar'])
             self.assertEqual(sorted(p.name for p in tools.iterdir()),
                              ['claude-5', 'codex-9-package', 'node-v2-linux-x64', 'unrelated'])
             self.assertEqual([p.name for p in releases.iterdir()], ['current'])
@@ -72,7 +73,7 @@ class HostPruneTest(unittest.TestCase):
             cache, tools, releases, _, logs, units = self.layout(root)
             (units / 'zelab-other.service').write_text('[Unit]\nDescription=Zelab native Hermes guest\n')
             self.prune(root)
-            self.assertEqual(len(list(cache.iterdir())), 6)
+            self.assertEqual(len(list(cache.iterdir())), 8)
             self.assertEqual(len(list(tools.iterdir())), 7)
             self.assertEqual(len(list(releases.iterdir())), 2)
             self.assertEqual(len(list(logs.iterdir())), 5)

@@ -31,7 +31,8 @@ class BotTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             inputs = ('versions.yaml', 'deploy/roles/hermes/files/dependencies/manifest.json',
-                      'deploy/roles/paperclip/files/package.json', 'deploy/roles/paperclip/files/package-lock.json')
+                      'deploy/roles/paperclip/files/package.json', 'deploy/roles/paperclip/files/package-lock.json',
+                      'deploy/roles/paperclip_mcp/files/package.json', 'deploy/roles/paperclip_mcp/files/package-lock.json')
             for name in inputs:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -160,8 +161,41 @@ class BotTest(unittest.TestCase):
         text = bots.skill(site, 'marvin', {'marvin': {'id': 'b1'}}, [], members, others)
         self.assertIn('| pm | Product Manager (lead) | `h1` | yes |', text)
         self.assertIn('| helper |  | `h3` | no |', text)
-        self.assertIn('--assignee-agent-id h1', text)
-        self.assertIn('--unassigned', bots.skill(site, 'marvin', {}, []))
+        self.assertIn('`assigneeAgentId` `h1`', text)
+        self.assertIn('`blockedByIssueIds`', text)
+        self.assertIn('without an assignee', bots.skill(site, 'marvin', {}, []))
+
+    def test_chat_has_no_command_tools_and_reaches_paperclip_through_its_mcp_server(self):
+        settings = bots.chat_settings()
+        self.assertEqual({key.split('.', 1)[1] for key in settings if key.startswith('platform_toolsets.')},
+                         {'discord', 'telegram', 'slack', 'mattermost', 'matrix', 'signal', 'whatsapp', 'email'})
+        for platform in bots.CHAT_PLATFORMS:
+            tools = settings[f'platform_toolsets.{platform}']
+            self.assertIn('paperclip', tools)
+            for forbidden in ('terminal', 'code_execution', 'file', 'browser', 'cronjob', 'delegation',
+                              'kanban', 'computer_use', 'hermes-discord', 'hermes-api-server'):
+                self.assertNotIn(forbidden, tools)
+        self.assertNotIn('platform_toolsets.api_server', settings)
+        server = settings['mcp_servers.paperclip']
+        self.assertEqual(server['tools'], {'include': ['paperclipCreateIssue', 'paperclipGetIssue', 'paperclipListComments']})
+        self.assertTrue(all(value.startswith('${') for value in server['env'].values()))
+        self.assertEqual(server['env']['PAPERCLIP_API_KEY'], '${PAPERCLIP_BRIDGE_API_KEY}')
+        self.assertTrue(server['args'][0].startswith(bots.MCP_DIR + '/'))
+        self.assertEqual(settings['tools.tool_search.enabled'], 'off')
+        text = bots.skill(SITE, 'marvin', {}, [])
+        self.assertNotIn('curl', text)
+        self.assertNotIn('create-task', text)
+        self.assertIn('update-status --issue <ticket id> --status done', text)
+
+    def test_mcp_server_is_the_paperclip_release(self):
+        from run import load_yaml
+        package = json.loads((bots.ROOT / 'deploy/roles/paperclip_mcp/files/package.json').read_text())
+        lock = json.loads((bots.ROOT / 'deploy/roles/paperclip_mcp/files/package-lock.json').read_text())
+        version = load_yaml(bots.ROOT / 'versions.yaml')['paperclip_npm_version']
+        self.assertEqual(package['dependencies'], {'@paperclipai/mcp-server': version})
+        self.assertEqual(lock['packages']['node_modules/@paperclipai/mcp-server']['version'], version)
+        self.assertTrue(all(entry.get('resolved', '').startswith('https://registry.npmjs.org/') and entry.get('integrity')
+                            for name, entry in lock['packages'].items() if name))
 
     def test_team_prefers_the_connected_shared_claude_connection(self):
         personal = {'id': 'c1', 'grantId': 'g1', 'provider': 'anthropic', 'method': 'subscription',
@@ -292,6 +326,7 @@ class ReconcileTest(unittest.TestCase):
         self.bridge_ready, self.open_issues = True, []
         self.archive_failures = 0
         self.passthrough = [*bots.TASK_ENV, 'CUSTOM_KEY']
+        self.chat = dict(bots.chat_settings())
         outer = self
 
         class Paperclip:
@@ -328,7 +363,8 @@ class ReconcileTest(unittest.TestCase):
         class Guest:
             def root_python(self, code, *args, stdin=''):
                 if code == bots.PROFILE_SETTINGS:
-                    return json.dumps({'env_passthrough': outer.passthrough})
+                    return json.dumps({'env_passthrough': outer.passthrough,
+                                       'settings': {key: outer.chat.get(key) for key in json.loads(args[1])}})
                 if code == bots.BRIDGE_READY:
                     return json.dumps(outer.bridge_ready)
                 outer.writes[(code, args)] = stdin
@@ -338,7 +374,10 @@ class ReconcileTest(unittest.TestCase):
 
             def hermes(self, *args):
                 outer.hermes_calls.append(args)
-                outer.passthrough = json.loads(args[-1])
+                if args[-2] == 'terminal.env_passthrough':
+                    outer.passthrough = json.loads(args[-1])
+                else:
+                    outer.chat[args[-2]] = args[-1] if args[-1] == 'off' else json.loads(args[-1])
                 return 0, ''
 
         self.runner.paperclip, self.runner.guest = Paperclip(), Guest()
@@ -416,6 +455,21 @@ class ReconcileTest(unittest.TestCase):
         self.assertEqual(self.agent['adapterConfig']['timeoutSec'], 123)
         self.assertIn('CUSTOM_KEY', self.passthrough)
         self.assertTrue(set(bots.TASK_ENV).issubset(self.passthrough))
+
+    def test_make_resets_chat_tools_and_restarts_once(self):
+        self.chat.pop('mcp_servers.paperclip')
+        self.chat['platform_toolsets.discord'] = ['hermes-discord']
+        restarts = []
+        self.runner.guest.root_python = (lambda original: lambda code, *args, stdin='':
+                                         restarts.append(1) if code == bots.RESTART else original(code, *args, stdin=stdin)
+                                         )(self.runner.guest.root_python)
+        self.runner.refresh()
+        self.assertEqual(self.chat, bots.chat_settings())
+        self.assertEqual(len(restarts), 1)
+        self.hermes_calls = []
+        self.runner.refresh()
+        self.assertEqual(self.hermes_calls, [])
+        self.assertEqual(len(restarts), 1)
 
     def test_open_work_prevents_archiving_retired_projects(self):
         self.open_issues = [{'status': 'todo'}]

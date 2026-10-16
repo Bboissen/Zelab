@@ -1,0 +1,39 @@
+# One fixed, read-only path, so bot configuration does not change across revisions.
+- name: Inspect the installed Paperclip MCP server revision
+  ansible.builtin.stat:
+    path: /opt/zelab-tools/paperclip-mcp-server/revision
+    checksum_algorithm: sha256
+  register: paperclip_mcp_installed
+
+- name: Replace the Paperclip MCP server on a new locked revision
+  when: >-
+    not paperclip_mcp_installed.stat.exists
+    or paperclip_mcp_installed.stat.checksum != ((paperclip_mcp_revision ~ '\n') | hash('sha256'))
+  block:
+    - name: Remove the superseded MCP server
+      ansible.builtin.file:
+        path: /opt/zelab-tools/paperclip-mcp-server
+        state: absent
+
+    - name: Create the MCP server directory
+      ansible.builtin.file:
+        path: /opt/zelab-tools/paperclip-mcp-server
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Unpack the host-built MCP server
+      ansible.builtin.unarchive:
+        src: "/var/cache/zelab/paperclip-mcp-{{ paperclip_mcp_revision }}.tar"
+        dest: /opt/zelab-tools/paperclip-mcp-server
+        owner: root
+        group: root
+
+    - name: Record the installed MCP server revision
+      ansible.builtin.copy:
+        dest: /opt/zelab-tools/paperclip-mcp-server/revision
+        content: "{{ paperclip_mcp_revision }}\n"
+        owner: root
+        group: root
+        mode: '0644'

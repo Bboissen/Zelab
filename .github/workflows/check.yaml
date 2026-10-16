@@ -37,6 +37,9 @@ jobs:
       - name: Audit the production npm lock
         working-directory: deploy/roles/paperclip/files
         run: rtk proxy npm audit --omit=dev --package-lock-only --audit-level=moderate
+      - name: Audit the Paperclip MCP server lock
+        working-directory: deploy/roles/paperclip_mcp/files
+        run: rtk proxy npm audit --omit=dev --package-lock-only --audit-level=moderate
       - name: Audit the qualified Hermes Python inventory
         run: |
           rtk proxy python3 -m venv /tmp/zelab-audit-tools

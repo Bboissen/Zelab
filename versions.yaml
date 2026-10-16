@@ -20,6 +20,8 @@ paperclip_npm_version: 2026.1005.0
 # Build beside the active release, including dependency patches and Node changes.
 # Native state remains in paperclip_home; switching binaries never rolls back a DB.
 paperclip_runtime_dir: "/opt/paperclip/releases/{{ paperclip_npm_version }}-{{ (node_version ~ lookup('ansible.builtin.file', playbook_dir + '/roles/paperclip/files/package.json') ~ lookup('ansible.builtin.file', playbook_dir + '/roles/paperclip/files/package-lock.json')) | hash('sha256') }}"
+# Paperclip's official MCP server for bot chats, same release; locked in roles/paperclip_mcp/files.
+paperclip_mcp_revision: "{{ (node_version ~ lookup('ansible.builtin.file', playbook_dir + '/roles/paperclip_mcp/files/package.json') ~ lookup('ansible.builtin.file', playbook_dir + '/roles/paperclip_mcp/files/package-lock.json')) | hash('sha256') }}"
 paperclip_npm_archive_sha256: 60cf5e88a9ad0e68bf3a10e4ba6ba0df2f21560f81a73e6a25517fee82187d12
 paperclip_server_archive_sha256: 50d5032f9a47611866b58a8013e946e4ae0683a48ddc2fa424e2e46220cb9139
 paperclip_commit: 467125fafb47a8520856504fecc48d6e32055db1

@@ -4,35 +4,50 @@ Zelab is experimental. This page separates what has been exercised from what
 has not. An HTTP 200, a parsed configuration or a unit test is not acceptance;
 anything not exercised live is NOT RUN.
 
-Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip `2026.1005.0`, Debian 13
+Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
-## Chat handoff correction: 2026-10-16
+## Chat without commands: 2026-10-16
 
-A read-only live trace of a simple status question found sub-second queue waits,
-several minutes of expanded host investigation, then repeated bot runs attempting
-chat delivery and disposition repair. The generated skill named `send_message`,
-which the pinned Hermes deliberately does not register as a model tool, and said
-to leave a waiting parent open without a dependency. The terminal also failed to
-find `node`; two recovery commands waited five minutes each for an unanswered
-native approval. The bot's persona was under 3 KB; shrinking it would not fix
-these observed errors.
+In the family Discord, a bot asked chat members to approve a Python heredoc it wrote
+to read Paperclip: chat sessions had the terminal, and Hermes' default `smart`
+approval escalated the command to Allow/Deny buttons. Chat now runs no commands.
+Each chat platform `make bot` sets up gets Hermes' native `platform_toolsets` without
+terminal, code, file, browser, cron, delegation or kanban tools, plus Paperclip's
+official MCP server (`@paperclipai/mcp-server` 2026.1005.0, the Paperclip release)
+limited to creating and reading tickets. From chat the bot files the job for the
+team lead and a reply ticket for itself that waits on the job; Paperclip wakes it
+once when the job is done, and that run answers the chat in plain words and closes
+the ticket. This replaces the earlier handoff, where the bot's own run created the
+child and recorded the blocker with curl.
 
-The corrected skill uses the pinned Node executable, records child dependencies
-with `blockedByIssueIds`, and specifies the native profile-scoped `hermes send`
-CLI for replies. Simple status questions request a narrow check; chat gets one
-short acknowledgement and one short result. Existing team instructions and model
-effort settings remain under the owner's native product configuration.
+Qualified without production state, inference or chat:
 
-`tools/check_paperclip.py --chat-handoff` passed against the installed pinned
-Paperclip runtime in disposable authenticated private state: a synthetic process
-agent used a real scoped task key and the unchanged bundled helper to create a
-child; the exact generated curl command recorded its blocker; child completion
-woke the parent once and it completed in two runs without disposition repair.
-No model call or outbound chat was used. Native Hermes `send --help` confirmed
-the profile-scoped interface; the bundled task helper's `--help` also passed with
-Hermes' managed pinned Node executable in the guest. Production reapply, changed live team instructions,
-Discord delivery and a measured post-fix response time: **NOT RUN**.
+- The MCP lock: 98 registry packages with integrity hashes, no install scripts;
+  `npm audit --omit=dev` found 0 vulnerabilities.
+- `tools/check_paperclip.py --chat-handoff --mcp-runtime <dir>` against the pinned
+  Paperclip runtime, in disposable authenticated private state, through the real MCP
+  server started without a run ID (as Hermes starts it): the task key filed the job
+  for the lead, a `blocked` reply ticket waiting on it and an unassigned delivery
+  report; it read the job; company-wide listing and ticket updates outside a run were
+  refused; no bot run started. Finishing the job woke the bot once
+  (`issue_blockers_resolved`); the run read the result through the MCP server, the
+  generated `update-status` command closed the ticket, and no disposition repair
+  followed.
+- Pinned Hermes built from the qualified manifests with native `pm.build_env` in a
+  disposable host directory, separate `HERMES_HOME`, against that Paperclip and a stub
+  model: native resolution gave Discord and Telegram exactly the chat list and
+  `api_server` its terminal; a `hermes chat` turn configured like a chat platform was
+  offered no terminal, code or file tool and the three Paperclip tools, filed the job
+  and the waiting reply ticket, read the job, and was refused a `terminal` call
+  (`Tool 'terminal' does not exist`).
+- Found on the way: closing a ticket inside a run needs the run ID, which the
+  long-lived MCP server cannot send, so the run closes with the bundled helper; and
+  Paperclip refuses `blocked` without a blocker and `in_review` without a review
+  path, so a failed delivery becomes an unassigned ticket instead.
+
+Production reapply, a live Discord turn, a real model following the new skill and
+the reply run's `hermes send`: **NOT RUN**.
 
 ## Final v1.1 dependency qualification: 2026-10-16
 
