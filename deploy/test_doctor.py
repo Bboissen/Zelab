@@ -45,6 +45,17 @@ class HostReadinessTest(unittest.TestCase):
             self.assertEqual((check.name, check.label), ('Hermes bots', 'PENDING'))
             self.assertIn(detail, check.detail)
 
+    def test_task_key_guide_lists_project_setup_first_only_when_no_projects_exist(self):
+        facts = [{'name': 'scout', 'signed_in': True, 'chats': ['Discord'], 'task_key': False, 'soul': True}]
+        for projects in ({}, {'my-project': {'name': 'My Project'}}):
+            with self.subTest(projects=projects), patch.object(doctor, 'bot_facts', return_value=facts), \
+                    patch.object(Path, 'exists', return_value=True):
+                checks = doctor.connection_checks({**self.site(), 'zelab_projects': projects}, elevated=True)
+            task = next(check for check in checks if check.name == 'scout: task key')
+            self.assertEqual(task.label, 'PENDING')
+            self.assertIn('set up scout (d)', task.detail)
+            self.assertEqual('Add a project to config/projects.yaml' in task.detail, not projects)
+
     def test_allowlisted_release_expires_at_its_maintenance_boundary(self):
         for (family, version), expiry in doctor.SUPPORTED_OS.items():
             release = {"ID": family, "VERSION_ID": version}

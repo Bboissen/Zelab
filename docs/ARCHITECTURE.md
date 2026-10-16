@@ -102,6 +102,11 @@ remain the owner's choice; explicit `project_replacements` in
 Replaced projects are archived only after their open tickets are resolved;
 their notes and tickets are retained.
 
+Projects and task keys are optional. A keyless profile still receives the
+managed integration and a chat-only skill; its Paperclip MCP entry stays
+disabled until a verified task key is written. The guide lists the remaining
+setup steps, and plain `make` succeeds.
+
 Team defaults apply when hiring. Subsequent harness, model and AI connection
 changes in Paperclip remain authoritative during reapplies.
 
