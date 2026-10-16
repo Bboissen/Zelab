@@ -584,7 +584,13 @@ def integration_revision(root=ROOT):
 
 def skill(site, name, bots, projects, members=None, outside=()):
     """The profile's zelab skill: where notes go and whom tickets are for. No secrets."""
+    from run import load_yaml
+
+    node = f"{HERMES_HOME}/tools/node-{load_yaml(ROOT / 'versions.yaml')['node_version']}-linux-x64/bin/node"
     helper = f'{HERMES_HOME}/profiles/{name}/skills/paperclip/paperclip-task-bridge/paperclip-task.mjs'
+    task = f'{node} {helper}'
+    hermes = shlex.quote(site['hermes_install_dir'] + '/.hermes/bin/hermes')
+    send = f'HERMES_HOME={HERMES_HOME} {hermes} -p {name} send'
     rows = '\n'.join(f"| {project_slug(p)} | {p['name']} | `{p['id']}` | `/var/lib/zelab-notes/Projects/{project_slug(p)}/` |"
                      for p in sorted(projects, key=lambda p: p['name'].lower()))
     others = '\n'.join(f"| {bot} | {agent.get('title') or ''} | `{agent['id']}` |"
@@ -601,14 +607,19 @@ def skill(site, name, bots, projects, members=None, outside=()):
 
 1. From the chat, create a ticket for yourself in the project. Put the question in the user's
    words, and on its first line `Reply to: <platform> <chat or channel ID>` of the chat you are
-   in. Tell the user someone is looking, with the ticket ID.
+   in. Preserve any thread ID. Include the requested depth (below). Acknowledge once in one
+   short sentence; keep ticket IDs and handoffs in Paperclip unless the user asks.
 2. When Paperclip runs you on that ticket, create one child ticket for {lead}:
    `--parent-id <your ticket id> --assignee-agent-id {members[lead]['id']}`. Say what you need
-   answered or done, and ask for a closing comment that sums up what was found and done.
-   Comment on your ticket that you asked {lead}, and leave it open (not done, not blocked).
-3. When the child is done, Paperclip runs you again on your ticket with its summary. Send the
-   answer, in plain words, to the `Reply to` chat with the send_message tool; then comment it
-   on your ticket and set it to done.'''
+   answered or done, preserving the depth and scope. Record the child as a blocker on your
+   ticket with the native API shown below, then end this run. A parent link or a waiting
+   comment alone does not record the dependency. Do not poll or try to repair Paperclip.
+3. When the child is done, Paperclip runs you again on your ticket with its summary. Reply
+   only to the `Reply to` destination, using the native Hermes CLI shown below. Then comment
+   the result on your ticket and set it to done. If delivery fails, keep the answer and
+   exact failure on the ticket. Create one `--unassigned` configuration-repair ticket in
+   the same project, record it as a blocker, and stop. Do not ask the host team to publish
+   the message or retry without a configuration change.'''
     else:
         delegate = ('No team lead is hired yet: file host work with `--unassigned` and tell the user the owner '
                     'will assign it, with the ticket ID.')
@@ -642,13 +653,13 @@ A Discord channel named after a project's slug belongs to that project.
 
 Use the paperclip-task-bridge skill. Its credentials are already in your environment:
 
-    node {helper} create-task --project-id <project id> --title "..." --description "..."
+    {task} create-task --project-id <project id> --title "..." --description "..."
 
 - A ticket you create is assigned to you; Paperclip then runs it and you report on it.
 - Work for another bot: add `--assignee-agent-id <its agent id>` (table below).
 - Work on the server itself (code, containers, the host, data): ask the team, below.
 - Commenting or changing a ticket's status needs the run ID Paperclip gives you when it runs
-  the ticket: `PAPERCLIP_RUN_ID=<run id> node {helper} comment --issue <id> --body "..."`.
+  the ticket: `PAPERCLIP_RUN_ID=<run id> {task} comment --issue <id> --body "..."`.
 - Your key only reaches the projects the owner picked for you.
 
 ## Team
@@ -661,6 +672,40 @@ You cannot see the server; they can. Never guess its state: ask the team.
 {team_rows}
 
 {delegate}
+
+## Depth and replies
+
+- A simple question such as "is the service up?" is **quick** by default: ask for the
+  smallest current observation that answers it, and state what it does not establish.
+  Stop when answered. No broad audit, library inventory or unrelated fixes.
+- Implementation and troubleshooting are **standard**: investigate the reported symptom
+  and verify the relevant behavior. **Deep** is for an explicitly requested audit or
+  thorough investigation. Carry the chosen depth and stopping condition into child tickets.
+- Discord and other chats get one acknowledgement and one short answer, with a caveat or
+  next step only when useful. Keep commands, reports and internal routing on the ticket.
+
+## Waiting for a child
+
+After creating the child, use its UUID to record a real dependency on your own ticket.
+Use the current Paperclip run ID from the wake input; keep existing blockers if there are any.
+
+    curl --fail-with-body --silent --show-error --max-time 15 \\
+      -X PATCH "$PAPERCLIP_API_URL/api/issues/<your ticket UUID>" \\
+      -H "Authorization: Bearer $PAPERCLIP_BRIDGE_API_KEY" \\
+      -H "X-Paperclip-Run-Id: <current run ID>" \\
+      -H 'Content-Type: application/json' \\
+      --data '{{"status":"blocked","blockedByIssueIds":["<child UUID>"],"comment":"Waiting for the child result."}}'
+
+## Returning the answer
+
+This Hermes version has no agent-callable `send_message` tool. Do not search for one.
+Write the short answer to a text file, then use the shipped CLI with this bot's profile:
+
+    {send} --to <platform>:<chat ID> --file ./reply.txt --json
+
+For a thread use `<platform>:<chat ID>:<thread ID>`. Check the exit code and delivery result
+before claiming it was sent. This uses the profile's existing chat login; do not read or
+copy tokens, call chat REST APIs yourself, or ask the host team to publish the reply.
 
 ## Other bots
 

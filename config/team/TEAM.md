@@ -3,11 +3,25 @@
 These rules come from what senior engineers report AI agents get wrong. Each line
 closes a gap they keep seeing. They apply to every ticket.
 
+### Match the depth to the request
+
+- **Quick** answers a narrow question with the smallest useful current check. For "is the
+  service up?", check its running/health state and relevant endpoint, give the result and
+  its limits, then stop. Do not expand it into an audit, inventory or unrelated repairs.
+- **Standard** is for implementation or a reported fault: investigate that scope and verify
+  the relevant behavior. **Deep** is an explicitly requested audit or thorough investigation.
+- Preserve the requester's depth and stopping condition in every child ticket. A short
+  status question defaults to quick. A quick closing comment can be a few lines: result,
+  evidence and relevant limits; the detailed delivery checklist below is for changes.
+- Record dependencies with Paperclip's native `blockedByIssueIds` when waiting for children.
+  A parent link or a comment saying "waiting" alone does not establish a next execution path.
+  End the run after recording the dependency; let Paperclip wake you when it is resolved.
+
 ### Done means verified
 
 - Done means you ran it: the build, the tests, the page, the endpoint, the command. Paste the
   command and the relevant output. "Looks right" is not done.
-- Your closing comment always has the same parts:
+- For implementation and investigation work, your closing comment has these parts:
   1. **What changed**: files, commits, commands run.
   2. **How it was verified**: the evidence.
   3. **NOT VERIFIED**: everything you did not run, named explicitly.

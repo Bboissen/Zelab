@@ -109,7 +109,7 @@ def server(runtime, node, root, *, signup=False):
     instance = root / 'instances/default'
     # Do not inherit provider credentials or a personal Paperclip configuration.
     environment = {
-        'PATH': f'{node.parent}:/usr/local/bin:/usr/bin:/bin', 'HOME': str(root),
+        'PATH': f'{node.parent}:{Path(shutil.which("rtk")).parent}:/usr/local/bin:/usr/bin:/bin', 'HOME': str(root),
         'PAPERCLIP_HOME': str(root), 'PAPERCLIP_CONFIG': str(instance / 'config.json'),
         'PAPERCLIP_INSTANCE_ID': 'default', 'PAPERCLIP_DEPLOYMENT_MODE': 'authenticated',
         'PAPERCLIP_DEPLOYMENT_EXPOSURE': 'private', 'PAPERCLIP_AUTH_DISABLE_SIGN_UP': str(not signup).lower(),
@@ -301,18 +301,112 @@ def recovery_check(runtime, previous, node, folder):
     print('Worker execution, inference, Discord delivery and whole-site recovery are not exercised by this fixture.')
 
 
+def chat_handoff_check(client, runtime, node, root, environment):
+    """Exercise scoped delegation and child completion without inference or chat delivery."""
+    company, _ = seed(client, runtime, node, root, environment, secrets.token_urlsafe(32))
+    project = client.request(f'/companies/{company}/projects', {'name': 'Handoff fixture'})
+    worker = client.request(f'/companies/{company}/agents', {
+        'name': 'Fixture lead', 'role': 'general', 'adapterType': 'process',
+        'adapterConfig': {'command': '/usr/bin/true'},
+        'runtimeConfig': {'heartbeat': {'enabled': False, 'wakeOnDemand': False}}})
+    script = root / 'handoff.py'
+    state = root / 'handoff.json'
+    # Use the exact curl block generated for real bots, rather than a parallel API implementation.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'deploy'))
+    from bots import skill
+    from run import load_yaml
+    site = load_yaml(Path(__file__).resolve().parents[1] / 'config/defaults.yaml')
+    text = skill(site, 'fixture', {}, [])
+    waiting = text.split('    curl --fail-with-body', 1)[1].split('\n\n', 1)[0]
+    waiting = 'curl --fail-with-body' + waiting.replace('\n    ', '\n')
+    script.write_text('''import json, os, pathlib, subprocess, urllib.request
+state = pathlib.Path(os.environ['FIXTURE_STATE'])
+base = os.environ['PAPERCLIP_API_URL']
+parent = os.environ['FIXTURE_PARENT']
+headers = {'Authorization': 'Bearer ' + os.environ['PAPERCLIP_BRIDGE_API_KEY'],
+           'X-Paperclip-Run-Id': os.environ['PAPERCLIP_RUN_ID'], 'Content-Type': 'application/json'}
+if not state.exists():
+    command = ['rtk', 'proxy', os.environ['FIXTURE_NODE'], os.environ['FIXTURE_HELPER'],
+               'create-task', '--project-id', os.environ['FIXTURE_PROJECT'], '--title', 'Narrow check',
+               '--description', 'Depth: quick. One observation, then stop.', '--parent-id', parent,
+               '--assignee-agent-id', os.environ['FIXTURE_WORKER'], '--status', 'backlog']
+    result = subprocess.run(command, capture_output=True, text=True, check=True)
+    child = json.loads(result.stdout)['issue']['id']
+    state.write_text(json.dumps({'child': child}))
+    command = os.environ['FIXTURE_WAIT'].replace('<your ticket UUID>', parent).replace(
+        '<child UUID>', child).replace('<current run ID>', os.environ['PAPERCLIP_RUN_ID'])
+    subprocess.run(['rtk', 'proxy', 'bash', '-c', command], capture_output=True, text=True, check=True)
+else:
+    body = json.dumps({'status': 'done', 'comment': 'Child result received; fixture complete.'}).encode()
+    request = urllib.request.Request(base + '/api/issues/' + parent, data=body, headers=headers, method='PATCH')
+    with urllib.request.urlopen(request, timeout=15) as response:
+        assert json.load(response)['status'] == 'done'
+print('Synthetic handoff recorded; no model call or outbound chat.')
+''')
+    bot = client.request(f'/companies/{company}/agents', {
+        'name': 'Fixture bot', 'role': 'general', 'adapterType': 'process',
+        'adapterConfig': {'command': '/usr/bin/python3', 'args': [str(script)], 'cwd': str(root), 'timeoutSec': 30},
+        'runtimeConfig': {'heartbeat': {'enabled': False, 'wakeOnDemand': True, 'maxConcurrentRuns': 1}}})
+    key = client.request(f'/agents/{bot["id"]}/keys', {'name': 'Synthetic scoped task key',
+        'scope': {'kind': 'task_bridge', 'projectIds': [project['id']], 'allowedAssigneeAgentIds': [worker['id']]}})
+    parent = client.request(f'/companies/{company}/issues', {
+        'title': 'Quick status fixture', 'projectId': project['id'], 'assigneeAgentId': bot['id'], 'status': 'backlog'})
+    helper = runtime / 'node_modules/@paperclipai/hermes-paperclip-adapter/skills/paperclip-task-bridge/paperclip-task.mjs'
+    if not helper.is_file():
+        matches = list((runtime / 'node_modules/@paperclipai/hermes-paperclip-adapter').rglob('paperclip-task.mjs'))
+        if len(matches) != 1:
+            raise RuntimeError('Pinned task-bridge helper could not be located uniquely')
+        helper = matches[0]
+    config = {**bot['adapterConfig'], 'env': {
+        'PAPERCLIP_BRIDGE_API_KEY': key['token'], 'PAPERCLIP_API_URL': client.base,
+        'PAPERCLIP_COMPANY_ID': company, 'PAPERCLIP_AGENT_ID': bot['id'],
+        'FIXTURE_STATE': str(state), 'FIXTURE_PARENT': parent['id'], 'FIXTURE_NODE': str(node),
+        'FIXTURE_HELPER': str(helper), 'FIXTURE_PROJECT': project['id'],
+        'FIXTURE_WORKER': worker['id'], 'FIXTURE_WAIT': waiting}}
+    client.request('/agents/' + bot['id'], {'adapterConfig': config}, method='PATCH')
+    client.request('/issues/' + parent['id'], {'status': 'todo'}, method='PATCH')
+
+    def wait_for(status, expected_runs):
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            issue = client.request('/issues/' + parent['id'])
+            runs = client.request(f'/companies/{company}/heartbeat-runs?agentId={bot["id"]}')
+            if any(run['status'] in ('failed', 'timed_out') for run in runs):
+                raise RuntimeError('Synthetic handoff run failed; inspect the private fixture log')
+            if (issue['status'] == status and len(runs) == expected_runs
+                    and all(run['status'] == 'succeeded' for run in runs)):
+                return issue, runs
+            time.sleep(0.2)
+        raise RuntimeError('Synthetic handoff did not reach the expected state')
+
+    issue, _ = wait_for('blocked', 1)
+    child = json.loads(state.read_text())['child']
+    if not any(blocker['id'] == child for blocker in issue.get('blockedBy', [])):
+        raise RuntimeError('Waiting parent has no first-class child dependency')
+    client.request('/issues/' + child, {'status': 'done', 'comment': 'Synthetic current observation.'}, method='PATCH')
+    _, runs = wait_for('done', 2)
+    reasons = [run.get('contextSnapshot', {}).get('wakeReason')
+               for run in sorted(runs, key=lambda run: run['createdAt'])]
+    if reasons != ['issue_status_changed', 'issue_children_completed']:
+        raise RuntimeError(f'Unexpected wake during synthetic handoff: {reasons}')
+    print('PASS: scoped task key creates a child, records a real blocker, and resumes once on child completion.')
+    print('PASS: parent completes in two process runs with no disposition-repair run and no model calls.')
+    print('Discord delivery and production agent behavior: NOT RUN.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--runtime', type=Path, required=True, help='Directory containing installed node_modules')
     parser.add_argument('--node', type=Path, required=True, help='Pinned Node executable')
     parser.add_argument('--recovery', action='store_true', help='Also verify native task state through encrypted restore')
     parser.add_argument('--project-retirement', action='store_true', help='Verify deployed project retirement against the native API')
+    parser.add_argument('--chat-handoff', action='store_true', help='Verify scoped child delegation without inference or chat')
     parser.add_argument('--previous-runtime', type=Path, help='Verify update and snapshot rollback against this installed runtime')
     args = parser.parse_args()
     if args.previous_runtime and not args.recovery:
         parser.error('--previous-runtime requires --recovery')
-    if args.project_retirement and args.recovery:
-        parser.error('Run --project-retirement and --recovery separately')
+    if sum((args.project_retirement, args.recovery, args.chat_handoff)) > 1:
+        parser.error('Run --project-retirement, --chat-handoff and --recovery separately')
     for runtime in [args.runtime, *([args.previous_runtime] if args.previous_runtime else [])]:
         if not (runtime / 'node_modules/@paperclipai/server/dist/index.js').is_file():
             parser.error('Supply installed Paperclip runtimes')
@@ -329,10 +423,13 @@ def main():
                                    args.node.resolve(), root)
             else:
                 with server(args.runtime.resolve(), args.node.resolve(), root / 'state',
-                            signup=args.project_retirement) as (client, environment):
+                            signup=args.project_retirement or args.chat_handoff) as (client, environment):
                     if args.project_retirement:
                         project_retirement_check(client, args.runtime.resolve(), args.node.resolve(),
                                                  root / 'state', environment)
+                    if args.chat_handoff:
+                        chat_handoff_check(client, args.runtime.resolve(), args.node.resolve(),
+                                           root / 'state', environment)
                 print('PASS: fresh native database/migrations, authenticated private health and anonymous API denial.')
         success = True
     finally:

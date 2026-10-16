@@ -65,7 +65,10 @@ host account stay on the host.
    Paperclip runs as Claude Code over SSH on each member's tier account. When
    children are done, Paperclip wakes their parent's owner
    (`issue_children_completed`, with each child's summary): the PM closes its
-   ticket, then the bot answers the chat it noted on its own.
+   ticket, then the bot answers the chat it noted through its profile's native
+   `hermes send` CLI. Waiting parents record their children in `blockedByIssueIds`;
+   the parent link alone does not establish a dependency. A simple status question
+   requests only a narrow current check; detailed evidence stays on the tickets.
 3. **Owner to bot (G3).** A ticket the owner assigns to a bot in Paperclip is
    dispatched to `/p/<bot>/v1/runs` of the shared gateway.
 4. **Bot to bot (G4).** By chat, a bot that allows bots (`DISCORD_ALLOW_BOTS`)
