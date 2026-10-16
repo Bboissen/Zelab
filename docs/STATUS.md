@@ -15,7 +15,8 @@ HTTP 403 (`deny_scope`). Restoring the generated skills and refreshing old chat
 contexts through Hermes' native API repaired this. At 19:56 UTC the configured
 model, run from its own profile directory with the chat toolsets, read the skill,
 created one unassigned backlog verification ticket in its permitted project and
-read it back through the MCP tools. No Discord message or team job was sent.
+read it back through the MCP tools. That probe explicitly asked it to read the
+skill. No Discord message or team job was sent.
 An initial CLI probe from the deployment account's private directory could not
 start MCP; the corrected working directory passed.
 
@@ -26,15 +27,38 @@ chat context before the next bot or team sign-in wizard. Plain `make` still
 restores missing skills from the managed key's scope. The generated skill
 explicitly requires `projectId` on every create-ticket call.
 
+The subsequent real Discord retry at 19:58 UTC again omitted `projectId` and
+received the same 403. Its stored prompt mentioned the skill index but contained
+neither the permitted project ID nor the full Zelab workflow; it read the
+upstream task-bridge skill and searched the earlier failed chat instead. Writing
+the skill alone was insufficient. Reconciliation now also adds `zelab` to
+Hermes' native `skills.auto_load`, retaining the owner's other entries. The
+pinned `agent/system_prompt.py` injects these complete skill blocks into the
+stable prompt for messaging agents with skill tools.
+
+At 20:12 UTC, an unmodified native `AIAgent` used the real configured model,
+Discord's managed toolsets, the gateway's native provider resolver and an
+explicit profile-home context as the shared gateway does. Its complete prompt
+contained the permitted project ID, team lead and create-ticket rule, and it
+offered the three Paperclip tools without command tools. Asked only to create
+and reread an unassigned backlog test ticket, without a skill-reading directive,
+it made one successful create call with `projectId` and one successful read.
+The host database confirmed the bot as creator and the selected project. The
+probe used a separate session database and sent no Discord message or team job.
+The live gateway was restarted; all six profiles received the native auto-load
+setting and current generated skills, and one old Discord context was ended
+with its transcript retained. A second context pass changed nothing.
+
 Regression coverage exercises setup completion before later wizards, skipped
 setup, skill publication before MCP activation, failed writes retaining old
-keys, recovery on reapply, and omission of projects outside the selected scope.
-The full source suite (272 tests, repository and playbook checks) and gitleaks
-passed.
-Repository changes are in the installer and documentation; the earlier live
-repair changed guest skills and chat boundaries, and left one verification
-ticket on the host. Fresh installation, live task-key rotation with this change
-and the full Discord-to-team return path: **NOT RUN**.
+keys, recovery on reapply, omission of projects outside the selected scope, and
+retention of other auto-loaded skills on an unchanged second pass.
+The full source suite (273 tests, repository and playbook checks) and gitleaks
+passed. Repository changes are in the installer and documentation. Guest
+changes are generated skills, native settings and chat boundaries; host changes
+are the two verification tickets from the probes. Fresh installation, live
+task-key rotation with this change, a real Discord retry after auto-loading and
+the full Discord-to-team return path: **NOT RUN**.
 
 ## Paperclip harness switch Test/Save mismatch: 2026-10-16
 

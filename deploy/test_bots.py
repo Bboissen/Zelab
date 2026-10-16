@@ -200,6 +200,7 @@ class BotTest(unittest.TestCase):
         self.assertEqual(server['env']['PAPERCLIP_API_KEY'], '${PAPERCLIP_BRIDGE_API_KEY}')
         self.assertTrue(server['args'][0].startswith(bots.MCP_DIR + '/'))
         self.assertEqual(settings['tools.tool_search.enabled'], 'off')
+        self.assertEqual(settings['skills.auto_load'], ['zelab'])
         text = bots.skill(SITE, 'marvin', {}, [])
         for command in ('curl', 'create-task', 'update-status', ' send ', 'PAPERCLIP_RUN_ID'):
             self.assertNotIn(command, text)
@@ -739,6 +740,16 @@ class ReconcileTest(unittest.TestCase):
         self.assertEqual(self.created, [])
         stages = [event[0] for event in self.events]
         self.assertLess(stages.index('skill'), stages.index('config'))
+
+    def test_reapply_auto_loads_workflow_and_preserves_other_native_skill_choices(self):
+        self.active[0]['scope']['projectIds'] = ['p-new']
+        self.chat['skills.auto_load'] = ['owner-workflow']
+        self.runner.refresh()
+        self.assertEqual(self.chat['skills.auto_load'], ['owner-workflow', 'zelab'])
+        self.assertEqual(self.created, [])
+        self.hermes_calls = []
+        self.runner.refresh()
+        self.assertEqual(self.hermes_calls, [])
 
     def test_refresh_still_stops_for_scope_decisions_and_unhired_profiles(self):
         scopes = ({'kind': 'custom'},

@@ -624,7 +624,7 @@ def chat_settings(*, task_key=True):
         server = {'enabled': False}
     toolsets = CHAT_TOOLSETS if task_key else [tool for tool in CHAT_TOOLSETS if tool != 'paperclip']
     # Deferred tool search would hide the three Paperclip tools behind a lookup step.
-    return {'mcp_servers.paperclip': server, 'tools.tool_search.enabled': 'off',
+    return {'mcp_servers.paperclip': server, 'tools.tool_search.enabled': 'off', 'skills.auto_load': ['zelab'],
             **{f'platform_toolsets.{platform}': toolsets for platform in CHAT_PLATFORMS}}
 
 
@@ -1124,6 +1124,10 @@ class Bots:
         """Chats get no command tools and reach Paperclip through its MCP server; Paperclip runs keep theirs."""
         changed = False
         for key, value in chat_settings(task_key=task_key).items():
+            if key == 'skills.auto_load':
+                # This workflow must be present even when the model chooses a
+                # different skill. Retain the owner's other native auto-loads.
+                value = list(dict.fromkeys([*(current.get(key) or []), *value]))
             if current.get(key) == value:
                 continue
             code, _ = self.guest.hermes(name, 'config', 'set', key, value if isinstance(value, str) else json.dumps(value))

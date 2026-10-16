@@ -103,7 +103,9 @@ Task-key setup writes the selected project IDs and team routing into that skill
 before enabling Paperclip's chat tools. Each completed bot setup reconciles its
 configuration and refreshes old chat contexts immediately, including when all
 steps are skipped; a later wizard or open menu does not defer these changes.
-The install wizard uses the same path.
+Hermes' native `skills.auto_load` includes `zelab` in every session so its project
+IDs and team routing are available without a skill lookup. Other auto-loaded
+skills are retained. The install wizard uses the same path.
 
 On quit, make bot performs a final reconciliation: each bot's `zelab` skill
 (projects with their IDs and vault folders, the other bots with their agent IDs)
