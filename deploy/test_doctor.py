@@ -31,7 +31,7 @@ class HostReadinessTest(unittest.TestCase):
             checks = {check.name: check.label for check in doctor.connection_checks(self.site(), elevated=True)}
         self.assertEqual(checks['Hermes bots'], 'PASS')
         self.assertEqual((checks['scout: model sign-in'], checks['scout: chat app'], checks['scout: task key']),
-                         ('PASS', 'PASS', 'PENDING'))
+                         ('PASS', 'PASS', 'WARN'))
         self.assertEqual((checks['writer: model sign-in'], checks['writer: chat app'], checks['writer: task key']),
                          ('PENDING', 'PENDING', 'PASS'))
         self.assertEqual((checks['scout: persona'], checks['writer: persona']), ('PASS', 'PENDING'))
@@ -45,16 +45,40 @@ class HostReadinessTest(unittest.TestCase):
             self.assertEqual((check.name, check.label), ('Hermes bots', 'PENDING'))
             self.assertIn(detail, check.detail)
 
-    def test_task_key_guide_lists_project_setup_first_only_when_no_projects_exist(self):
+    def test_optional_task_key_advice_lists_project_setup_only_when_no_projects_exist(self):
         facts = [{'name': 'scout', 'signed_in': True, 'chats': ['Discord'], 'task_key': False, 'soul': True}]
         for projects in ({}, {'my-project': {'name': 'My Project'}}):
             with self.subTest(projects=projects), patch.object(doctor, 'bot_facts', return_value=facts), \
                     patch.object(Path, 'exists', return_value=True):
                 checks = doctor.connection_checks({**self.site(), 'zelab_projects': projects}, elevated=True)
             task = next(check for check in checks if check.name == 'scout: task key')
-            self.assertEqual(task.label, 'PENDING')
+            self.assertEqual(task.label, 'WARN')
+            self.assertFalse(task.blocking or task.pending)
+            self.assertIn('Optional: chat and direct notes need no task key', task.detail)
             self.assertIn('set up scout (d)', task.detail)
-            self.assertEqual('Add a project to config/projects.yaml' in task.detail, not projects)
+            self.assertEqual('add a project to config/projects.yaml' in task.detail, not projects)
+
+    def test_keyless_bot_is_complete_in_guide_and_not_a_terminal_next_action(self):
+        site = {**self.site(), 'notes_sync_remote': 'git@github.com:OWNER/notes.git'}
+        facts = [{'name': 'scout', 'signed_in': True, 'chats': ['Discord'], 'task_key': False, 'soul': True}]
+        with patch.object(doctor, 'bot_facts', return_value=facts), patch.object(Path, 'exists', return_value=True):
+            checks = doctor.connection_checks(site, elevated=True)
+        with tempfile.TemporaryDirectory() as directory:
+            guide = Path(directory) / 'guide.html'
+            with patch.object(doctor, 'load_site', return_value=(site, None)), \
+                 patch.object(doctor, 'readiness_checks', return_value=checks), \
+                 patch.object(doctor, 'application_links', return_value=[]), \
+                 patch.object(doctor, 'guide_path', return_value=guide), \
+                 redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(doctor.main(['--brief', '--after-install', '--html']), 0)
+            page = guide.read_text()
+        self.assertNotIn('scout: task key', output.getvalue())
+        self.assertNotIn('set up scout', output.getvalue())
+        self.assertIn('First Discord request', output.getvalue())
+        self.assertIn('id="step-bots" checked disabled', page)
+        self.assertIn('scout: task key', page)
+        self.assertIn('Optional: chat and direct notes need no task key', page)
+        self.assertNotIn('Next: <a href="#bots">', page)
 
     def test_allowlisted_release_expires_at_its_maintenance_boundary(self):
         for (family, version), expiry in doctor.SUPPORTED_OS.items():

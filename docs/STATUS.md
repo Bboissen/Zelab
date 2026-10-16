@@ -7,7 +7,15 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
-## Notes sync acceptance and archived project inventory: 2026-10-16
+## Live notes acceptance and archived project inventory: 2026-10-16
+
+At 22:03 UTC, three deployed Hermes profiles each used the bundled Obsidian
+skill and native file tools to create a personal note and read it back. Two
+profiles had no Paperclip task key; one of those also wrote a project note and
+read both markers from the note received through Git. The model runs used the
+live profiles, logins and configured Discord toolsets through the native CLI.
+All four exact markers matched on the guest and host; no Paperclip or terminal
+tool was called. These runs did not send Discord messages.
 
 Live `make notes` sent existing server edits to the private Git repository. An
 independent clone matched the server commit, pushed a new test note, and a
@@ -18,7 +26,11 @@ received the resolution and removed `server-pending`. Live exclusion checks
 kept test `.obsidian` settings, a Git file and a symlink out of the remote tree.
 The exclusion fixtures were removed. The history service snapshotted the test
 note, and a root-only restore recovered its exact bytes after a temporary edit.
-These checks used the real private remote; they did not exercise a laptop UI.
+A final sync put all six acceptance notes in the independent clone, and an
+unchanged second sync sent and received zero changes. The root-only history
+also contained all six markers. A readable test index was kept with the notes
+in the private vault. These checks used the real private remote; they did not
+exercise a laptop UI.
 
 The owner's full `make` then exposed a pre-existing reconciliation bug: the
 native project-list route defaults to active projects. A configured archived
@@ -26,16 +38,44 @@ project was omitted, so make attempted to recreate it; native Paperclip added
 a name suffix, and saving the exact-name ID mapping failed. Both deployment
 inventory reads and bot reconciliation now request `includeArchived=true`.
 Archived records keep their IDs and state; they are not reactivated or granted
-to bots. The extra record created by the failed run is retained pending cleanup
-through the native application; no projects or tickets were deleted.
+to bots. The empty extra record created within the failed install was archived
+through the native owner API after verifying its timestamps, absence of tickets
+and absence of workspaces. The original remains archived; no projects or
+tickets were deleted.
 
 A regression play exercises the native active-only default, duplicate-name
 suffixing, archived-ID persistence and an unchanged second pass. Rendering the
 resource mapping from read-only live project metadata retained all previously
 saved project IDs. Source pins, credentials and access controls are unchanged.
-A successful full reapply, the three live-profile note writes, a Paperclip worker
-note and actual Discord or desktop Obsidian acceptance remain **NOT RUN** at
-this checkpoint; the reapply stopped before the bot update.
+An existing bot's scoped key filed one small ticket through the unchanged
+Paperclip MCP server. The assigned team lead completed it without delegation,
+wrote the requested project note, read it back and reported its exact marker
+on the ticket. The native ticket is done; the host file and independent clone
+contain the same marker. This exercised a real worker, not just the API.
+
+The live public-repository guard also refused an anonymously visible repository
+before any notes were sent. The configured private remote was unchanged.
+Full `make` completed at 22:03 UTC: all deployment stages and final service
+checks passed, all six profiles received the new skill and managed chat
+settings, and two stale chat contexts were ended with their history retained.
+The private guide was regenerated and temporary RAM password inputs were
+removed. Actual Discord transport, desktop Obsidian visibility, a reboot and
+a destructive vault-wipe recovery remain **NOT RUN**.
+
+The final guide initially listed five keyless profiles as pending setup.
+Task keys enable ticket filing; direct notes and chat do not require one.
+Missing task keys are now optional advice, while missing model, chat or persona
+setup remains pending. At 22:06 UTC the live guide was regenerated: bot setup
+was complete, no task-key actions remained in the terminal, and the manual
+Discord test was still listed. No credentials or bot settings changed during
+this guide correction. A regression checks both the terminal and rendered guide.
+
+Repository changes in this acceptance update are diagnostics, guide text,
+regression coverage and documentation. Host changes are private test notes,
+Git sync/history, native archival of the empty duplicate and the private guide.
+Guest changes are the normal managed profile reapply and native test runs. No
+upstream source, pin or extra runtime component changed. Repository checks:
+**PASS**, 276 tests, repository and playbook checks, and working-tree Gitleaks.
 
 ## Direct Hermes notes: 2026-10-16
 
@@ -461,8 +501,8 @@ Record PASS, FAIL or NOT RUN with timestamp, steps and sanitized evidence.
 | O2 | `make backup`, `make fclean`, `make restore` bring back Paperclip, the vault and its history, every bot and its logins; a host task then runs | NOT RUN |
 | O3 | Source checks and gitleaks are clean; the docs describe v1.1 | NOT RUN |
 | N1 | With the browser Obsidian off: an agent reads and writes notes; `make` and a reboot keep the container and its route gone; root-only snapshots still run | NOT RUN |
-| N3 | Direct personal and project notes use the native Obsidian skill and file tools, read back on the host, without Paperclip; keyless personal notes work | PARTIAL: native model personal-note write/read-back and host marker passed with MCP disabled; project-note model and real chat checks NOT RUN |
-| N2 | `make notes`: a server edit reaches desktop Obsidian, a laptop edit reaches the server and an agent, a conflict keeps both versions, `.obsidian/` never travels, a public repository is refused | PARTIAL: real private-remote two-way sync, conflict preservation/resolution, exclusions and independent-clone checks passed; desktop UI and live public-remote refusal NOT RUN |
+| N3 | Direct personal and project notes use the native Obsidian skill and file tools, read back on the host, without Paperclip; keyless personal notes work | PARTIAL: three live profiles passed personal writes; a keyless profile also passed a project write and Git-received note read-back; all used the native Obsidian skill with no Paperclip calls. Real chat transport NOT RUN |
+| N2 | `make notes`: a server edit reaches desktop Obsidian, a laptop edit reaches the server and an agent, a conflict keeps both versions, `.obsidian/` never travels, a public repository is refused | PARTIAL: real two-way sync, agent read-back of an incoming note, conflict preservation/resolution, exclusions, independent clone, unchanged second sync and live public-remote refusal passed; desktop UI NOT RUN |
 
 ## Earlier versions
 
