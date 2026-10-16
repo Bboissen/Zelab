@@ -155,10 +155,11 @@ For a Hermes bot, use its native profile configuration, `agent.reasoning_effort`
 `config/team.yaml` sets effort at hire; changing it does not retune existing
 members. No model or effort setting is changed by refreshing the skill.
 
-Plain `make` refreshes the managed bot skills. Existing team instructions are
-owned in Paperclip: copy the depth/dependency guidance from `config/team/TEAM.md`
-and the PM routing guidance from `config/team/pm.md` into the respective member's
-instructions there. Reapply preserves existing team instructions and SOUL files.
+Plain `make` refreshes the managed bot skills and each bot's Paperclip run
+prompt (the delivery and closing steps). Existing team instructions are owned
+in Paperclip: to adopt a newer `config/team/` text, replace the member's
+`AGENTS.md` in Paperclip (its instruction history can restore the old one).
+Reapply preserves existing team instructions and SOUL files.
 
 `config/defaults.yaml` holds public defaults. `config/site.yaml` (generated once
 by `make`, never overwritten) holds only host-specific values and any

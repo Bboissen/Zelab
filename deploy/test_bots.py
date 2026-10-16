@@ -136,10 +136,10 @@ class BotTest(unittest.TestCase):
         agents = {'scout': {'id': 'a1', 'title': 'finds sources'}, 'writer': {'id': 'a2'}}
         text = bots.skill(SITE, 'scout', agents, projects)
         self.assertTrue(text.startswith('---\nname: zelab\n'))
-        self.assertIn('| homelab | Homelab | `p1` | `/var/lib/zelab-notes/Projects/homelab/` |', text)
+        self.assertIn('| homelab | Homelab | `p1` |', text)
         self.assertIn('| market-study | Market Study | `p2` |', text)
         self.assertIn('| writer |  | `a2` |', text)
-        self.assertIn('/profiles/scout/skills/paperclip/paperclip-task-bridge/paperclip-task.mjs', text)
+        self.assertNotIn('| scout |', text)
         self.assertNotIn('pcp_', text)
 
     def test_team_is_matched_by_metadata_and_only_the_lead_is_assignable(self):
@@ -159,8 +159,8 @@ class BotTest(unittest.TestCase):
         self.assertEqual(bots.assignees(site, {'marvin': {'id': 'b1'}}, members), ['b1', 'h1'])
         self.assertEqual(bots.assignees(site, {'marvin': {'id': 'b1'}}, {}), ['b1'])
         text = bots.skill(site, 'marvin', {'marvin': {'id': 'b1'}}, [], members, others)
-        self.assertIn('| pm | Product Manager (lead) | `h1` | yes |', text)
-        self.assertIn('| helper |  | `h3` | no |', text)
+        self.assertIn('Only **pm** takes work from you', text)
+        self.assertIn('the right expert: helper.', text)
         self.assertIn('`assigneeAgentId` `h1`', text)
         self.assertIn('`blockedByIssueIds`', text)
         self.assertIn('without an assignee', bots.skill(site, 'marvin', {}, []))
@@ -183,9 +183,12 @@ class BotTest(unittest.TestCase):
         self.assertTrue(server['args'][0].startswith(bots.MCP_DIR + '/'))
         self.assertEqual(settings['tools.tool_search.enabled'], 'off')
         text = bots.skill(SITE, 'marvin', {}, [])
-        self.assertNotIn('curl', text)
-        self.assertNotIn('create-task', text)
-        self.assertIn('update-status --issue <ticket id> --status done', text)
+        for command in ('curl', 'create-task', 'update-status', ' send ', 'PAPERCLIP_RUN_ID'):
+            self.assertNotIn(command, text)
+        run = bots.instructions(SITE, 'marvin')
+        self.assertIn('/profiles/marvin/skills/paperclip/paperclip-task-bridge/paperclip-task.mjs update-status '
+                      '--issue <ticket id> --status done', run)
+        self.assertIn('-p marvin send --to <Reply to> --file ./reply.txt --json', run)
 
     def test_mcp_server_is_the_paperclip_release(self):
         from run import load_yaml
