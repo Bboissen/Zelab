@@ -816,6 +816,15 @@ class Bots:
                     f'Let {name} answer every message in its home channel, without an @mention?', True):
                 home = self.guest.root_python(HOME_CHANNEL, f'{HERMES_HOME}/profiles/{name}')
                 self.guest.hermes(name, 'config', 'set', 'DISCORD_FREE_RESPONSE_CHANNELS', home)
+        if 'a' in steps or 'b' in steps:
+            # The shared gateway may connect as soon as the wizard saves a token,
+            # before it saves the allowlist. Native hot reload keeps live adapters
+            # and their connect-time gates; apply the completed setup before any
+            # later prompt or Paperclip failure can leave that snapshot in use.
+            print('  Restarting the shared Hermes gateway to apply the saved model and chat settings ...',
+                  end=' ', flush=True)
+            self.restart_gateway()
+            print('done')
         if 'c' in steps:
             self.soul(name)
         if 'd' in steps:
@@ -1081,10 +1090,7 @@ class Bots:
             self.guest.root_python(WRITE_FILE, f'{HERMES_HOME}/profiles/{name}/skills/zelab/zelab/SKILL.md',
                                    f'{HERMES_HOME}/profiles',
                                    stdin=skill(self.site, name, agents, visible, members, others, task_key=bool(active)))
-        if self.restart_needed:
-            self.profile_hygiene('check')
-            self.guest.root_python(RESTART)
-            self.restart_needed = False
+        self.restart_gateway()
         self.profile_hygiene('apply')
         self.retire_projects(projects, replacements)
         for member, agent in sorted(members.items()):
@@ -1211,13 +1217,15 @@ class Bots:
         print('  Host agent sign-in saved in Paperclip.')
         self.bind_team()
 
+    def restart_gateway(self):
+        """Apply pending native settings only when the gateway has no active work."""
+        if self.restart_needed:
+            self.profile_hygiene('check')
+            self.guest.root_python(RESTART)
+            self.restart_needed = False
+
     def finish(self):
         self.refresh()
-        if self.restart_needed:
-            print('  Restarting the shared Hermes gateway so new logins and chat tokens connect ...', end=' ', flush=True)
-            self.guest.root_python(RESTART)
-            print('done')
-            self.restart_needed = False
 
 
 def yes(question, default=True):

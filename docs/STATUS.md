@@ -7,6 +7,32 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Discord setup allowlist refresh: 2026-10-16
+
+Live diagnosis at 19:24–19:30 UTC, on the pinned Hermes `3637c512`: one
+Discord adapter connected while its native wizard was still writing settings.
+The saved profile had the owner and two additional numeric user IDs, but an
+incoming message produced the native "no allowlist is configured" warning.
+The sender was in the saved list, the home channel existed and matched the
+free-response setting, and the second message mentioned the bot itself.
+Native profile rescans keep already-connected adapters, whose gate snapshot is
+taken at connection time. A restart with no active work reconnected all six
+bots; the owner confirmed a fresh Discord message received a reply.
+
+A fresh native Discord adapter under that profile's multiplex runtime scope
+read exactly the three saved users, admitted each and denied an unrelated
+synthetic user. This checks authorization without opening access to anyone else.
+Actual messages from the two additional accounts, and the Plex task handoff:
+**NOT RUN**.
+
+The installer now applies pending gateway changes after model and chat setup,
+including the optional bot-mention and home-channel choices, before persona or
+task-key setup can interrupt the flow. The existing active-work preflight still
+guards restarts. Regression coverage simulates token-first connection, all
+three saved users, the optional settings and a later Paperclip failure; it also
+covers a busy gateway, model-only setup and persona-only setup. Interactive
+installer acceptance after this source change: **NOT RUN**.
+
 ## Optional task keys and projects: 2026-10-16
 
 A hired bot without an active managed task key no longer stops plain `make` or

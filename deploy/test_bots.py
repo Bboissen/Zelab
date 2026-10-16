@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import yaml
 
@@ -469,6 +469,82 @@ class BotTest(unittest.TestCase):
                                 capture_output=True, text=True, cwd=ROOT)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('terminal', result.stderr)
+
+
+class SetupTest(unittest.TestCase):
+    def setUp(self):
+        self.runner = bots.Bots.__new__(bots.Bots)
+        self.runner.restart_needed = False
+        self.runner.guest = Mock()
+        self.runner.profile_hygiene = Mock()
+        self.runner.soul = Mock()
+        self.runner.task_key = Mock()
+
+    def test_chat_setup_applies_all_saved_users_and_options_before_later_failure(self):
+        saved, connected = {}, {}
+        events = []
+
+        def wizard(*args):
+            # Hermes connects on token save, then the owner finishes its prompts.
+            connected.update(saved)
+            saved['DISCORD_ALLOWED_USERS'] = '111,222,333'
+            events.append('wizard')
+            return 0
+
+        def hermes(profile, command, action, key, value):
+            saved[key] = value
+            events.append(key)
+            return 0, ''
+
+        def root_python(code, *args):
+            if code == bots.HOME_CHANNEL:
+                return '123'
+            self.assertEqual(code, bots.RESTART)
+            connected.clear()
+            connected.update(saved)
+            events.append('restart')
+
+        def task_key(name):
+            events.append('task key')
+            raise bots.Stop('Later Paperclip setup failed')
+
+        self.runner.guest.wizard.side_effect = wizard
+        self.runner.guest.bots.return_value = [
+            {'name': 'scout', 'chats': ['Discord'], 'home_channel': True}]
+        self.runner.guest.hermes.side_effect = hermes
+        self.runner.guest.root_python.side_effect = root_python
+        self.runner.task_key.side_effect = task_key
+        with patch('bots.yes', return_value=True), redirect_stdout(io.StringIO()), \
+                self.assertRaisesRegex(bots.Stop, 'Later Paperclip'):
+            self.runner.setup('scout', steps='bcd')
+        self.assertEqual(events, ['wizard', 'DISCORD_ALLOW_BOTS', 'DISCORD_FREE_RESPONSE_CHANNELS',
+                                  'restart', 'task key'])
+        self.assertEqual(connected, {'DISCORD_ALLOWED_USERS': '111,222,333',
+                                     'DISCORD_ALLOW_BOTS': 'mentions', 'DISCORD_FREE_RESPONSE_CHANNELS': '123'})
+        self.runner.profile_hygiene.assert_called_once_with('check')
+        self.runner.soul.assert_called_once_with('scout')
+        self.assertFalse(self.runner.restart_needed)
+
+    def test_busy_gateway_keeps_restart_pending_without_interrupting_work(self):
+        self.runner.guest.bots.return_value = []
+        self.runner.profile_hygiene.side_effect = bots.Stop('Gateway has active work')
+        with redirect_stdout(io.StringIO()), self.assertRaisesRegex(bots.Stop, 'active work'):
+            self.runner.setup('scout', steps='bcd')
+        self.runner.guest.root_python.assert_not_called()
+        self.runner.soul.assert_not_called()
+        self.assertTrue(self.runner.restart_needed)
+
+    def test_model_only_setup_applies_login_and_persona_only_keeps_gateway(self):
+        with redirect_stdout(io.StringIO()):
+            self.runner.setup('scout', steps='a')
+        self.runner.guest.root_python.assert_called_once_with(bots.RESTART)
+        self.assertFalse(self.runner.restart_needed)
+        self.runner.guest.reset_mock()
+        with redirect_stdout(io.StringIO()):
+            self.runner.setup('scout', steps='c')
+        self.runner.guest.root_python.assert_not_called()
+        self.runner.guest.wizard.assert_not_called()
+        self.runner.soul.assert_called_once_with('scout')
 
 
 class ReconcileTest(unittest.TestCase):
