@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'implementation'))
 from backup import pipeline
 from restore import authenticate, inspect_archive
 from runtime import recover_on_interrupt, run
+from artifacts import record
 
 
 def free_port():
@@ -466,6 +467,7 @@ def main():
         parser.error('Supply the pinned Node executable and install RTK')
     os.umask(0o077)
     root = Path(tempfile.mkdtemp(prefix='zelab-paperclip-check-'))
+    record(root)
     success = False
     try:
         with recover_on_interrupt():

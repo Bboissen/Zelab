@@ -20,6 +20,8 @@ def main():
     print('  Host connections and installed resource names/locations are kept.')
     print('  fclean/re also delete Zelab notes, tasks and application logins. Backups,')
     print('  config/projects.yaml, SSH/Tailscale and unrelated services are kept.')
+    print('  Generated checkout builds/caches are cleared; fclean also removes owned')
+    print('  qualification builds and VMs shown in its preview, retaining reports/bundles.')
     print('  Restore a file: make restore RESTORE_ARCHIVE=/absolute/path/backup.tar.gpg')
     print('  Restore needs an installed compatible site; run make first after fclean.')
     print('  On a laptop: make REMOTE_HOST=user@server REMOTE_DIR=/absolute/checkout')

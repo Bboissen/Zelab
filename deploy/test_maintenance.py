@@ -88,6 +88,7 @@ class CleanTest(unittest.TestCase):
             for code in (0, 2):
                 with self.subTest(code=code), \
                      patch.object(maintenance.controller, 'main', return_value=0), \
+                     patch.object(maintenance, 'generated_paths', return_value=[]), \
                      patch.object(maintenance.subprocess, 'run', side_effect=[Mock(returncode=0), Mock(returncode=code)]), \
                      patch.object(maintenance, 'clean') as cleaned, redirect_stdout(io.StringIO()):
                     self.assertEqual(maintenance.main(['fclean', '--site-config', str(site)]), code)
@@ -188,6 +189,46 @@ class CleanTest(unittest.TestCase):
                      self.assertRaises(PermissionError):
                     clean(root)
                 run.assert_not_called()
+
+    def test_build_exports_and_caches_are_removed_but_private_evidence_stays(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            generated = ('.cache', 'dist', 'node_modules', '.pytest_cache', '.ruff_cache', 'htmlcov')
+            preserved = ('archive', 'state', 'backups', 'implementation/evidence/private')
+            for name in (*generated, *preserved):
+                (root / name).mkdir(parents=True)
+                (root / name / 'example').write_text('fixture')
+            (root / '.coverage').write_text('coverage')
+            with redirect_stdout(io.StringIO()):
+                clean(root)
+                clean(root)
+            self.assertFalse(any((root / name).exists() for name in (*generated, '.coverage')))
+            self.assertTrue(all((root / name / 'example').is_file() for name in preserved))
+
+    def test_generated_paths_refuse_tracked_content_symlinks_and_mounts_before_deletion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / 'dist').mkdir()
+            (root / '.cache').mkdir()
+            with patch.object(maintenance.subprocess, 'run', return_value=Mock(returncode=0, stdout=b'dist/source')):
+                with self.assertRaisesRegex(ValueError, 'tracked source'):
+                    clean(root)
+            self.assertTrue((root / '.cache').exists())
+            (root / 'dist').rmdir()
+            (root / 'dist').symlink_to(root / '.cache', target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, 'symlink'):
+                clean(root)
+            (root / 'dist').unlink()
+            original = Path.read_text
+
+            def mountinfo(path, *args, **kwargs):
+                if str(path) == '/proc/self/mountinfo':
+                    return f'1 0 0:1 / {root}/.cache rw - tmpfs tmpfs rw\n'
+                return original(path, *args, **kwargs)
+
+            with patch.object(Path, 'read_text', mountinfo), self.assertRaisesRegex(ValueError, 'mount'):
+                clean(root)
+            self.assertTrue((root / '.cache').exists())
 
 
 if __name__ == '__main__':

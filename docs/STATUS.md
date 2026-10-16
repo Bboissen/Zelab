@@ -7,6 +7,24 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Cleanup coverage: 2026-10-16
+
+`clean` now covers checkout builds/exports and test/lint/coverage caches as well
+as the controller and Python caches. `fclean` includes receipt-bound disposable
+scratch directories and identified legacy qualification build/download/runtime/VM
+outputs. It stops only transient qualification QEMU/Paperclip units whose
+disk or PostgreSQL runtime/data match those outputs, then refuses other active
+artifact users before stopping the live site.
+Reports, private logs and Git recovery bundles outside disposable outputs stay.
+
+Focused regressions passed for checkout/path receipts, other checkouts, renamed
+and symlinked directories, tracked files, mounts, legacy evidence preservation,
+QEMU disk/cgroup identity and a real open file blocking cleanup until closed.
+Read-only host discovery identified the two legacy qualification workspaces and
+the running qualification VM and scratch Paperclip user unit. Actual production
+deletion, qualification service shutdown through `fclean`, clean reinstall and
+application E2E: **NOT RUN**.
+
 ## Chat without commands: 2026-10-16
 
 In the family Discord, a bot asked chat members to approve a Python heredoc it wrote

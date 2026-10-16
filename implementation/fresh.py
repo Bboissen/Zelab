@@ -28,6 +28,7 @@ from run import read_inputs  # noqa: E402
 from install_resources import InstallationResources  # noqa: E402
 from console import heading, mark, paint  # noqa: E402
 import shell  # noqa: E402
+import artifacts  # noqa: E402
 from runtime import maintenance_lock, recover_on_interrupt  # noqa: E402
 
 SYSTEMD = Path('/etc/systemd/system')
@@ -67,11 +68,14 @@ class Plan:
     refused: list = field(default_factory=list)        # (resource, reason)
     notes: list = field(default_factory=list)          # data-loss warnings
     protected: list = field(default_factory=list)      # never deleted or contained in a deletion
+    artifact_paths: list = field(default_factory=list)  # disposable outputs, checked for active users
+    transient_units: list = field(default_factory=list)  # qualification QEMU units, never unit files
+    user_units: list = field(default_factory=list)  # operator's transient scratch Paperclip units
 
     def empty(self):
         return not any([self.units, self.containers, self.networks, self.images, self.routes,
                         self.nft_tables, self.files, self.directories, self.accounts, self.groups,
-                        self.private_files])
+                        self.private_files, self.transient_units, self.user_units])
 
 
 def command(*argv, check=True):
@@ -190,6 +194,7 @@ def discover(site, hostname=None):
     discover_routes(plan, site)
     discover_shared_tools(plan, site)
     discover_private(plan, site)
+    artifacts.discover(plan, site)
     plan.protected = protected
     return plan
 
@@ -469,6 +474,10 @@ def print_plan(plan, site):
         print('  Ownership evidence is shown in brackets.')
         for unit, evidence in plan.units:
             print(f'  unit       {unit}  [{evidence}]')
+        for unit in plan.transient_units:
+            print(f'  unit       {unit}  [QEMU disk belongs to this checkout\'s qualification artifacts]')
+        for unit in plan.user_units:
+            print(f'  user unit  {unit}  [embedded PostgreSQL runtime and data belong to this checkout\'s qualification]')
         for name in plan.containers:
             print(f'  container  {name}  [Compose project zelab-notes]')
         for name in plan.networks:
@@ -500,6 +509,10 @@ def print_plan(plan, site):
                  'VM sizing, resource limits, install boost and host reserve preferences',
                  'Optional app choices, profile counts/audiences and Discord IDs'):
         print(f'  - {item}')
+    from maintenance import generated_paths
+    heading('Generated checkout artifacts to remove', 'yellow')
+    for path in generated_paths(ROOT):
+        print(f'  {path.relative_to(ROOT)}  [known generated path, no tracked files or mounts]')
     heading('Always kept', 'green')
     for item in ('Repository source files', 'Host connection settings and installation locations',
                  '.env external path selectors', 'Your personal harness logins',
@@ -555,6 +568,24 @@ def stop_owned_processes(uids, timeout=30):
 
 def reset(plan, site):
     with maintenance_lock(), recover_on_interrupt():
+        problems = [(path, reason) for path in plan.artifact_paths
+                    if (reason := safe_to_delete(path, plan.protected, mountpoints()))]
+        if problems:
+            raise RuntimeError('Refusing artifact deletion: ' + '; '.join(f'{p} ({r})' for p, r in problems))
+        if plan.transient_units:
+            uid = pwd.getpwnam(site['operator_user']).pw_uid
+            current = artifacts.qualification_units(plan.artifact_paths, uid)
+            for unit in plan.transient_units:
+                if unit in current and shell.output(['systemctl', 'show', unit, '-p', 'Transient', '--value']) == 'yes\n':
+                    command('systemctl', 'stop', unit)
+        if plan.user_units:
+            uid = pwd.getpwnam(site['operator_user']).pw_uid
+            current = artifacts.qualification_user_units(plan.artifact_paths, uid)
+            for unit in plan.user_units:
+                if unit in current and shell.output(artifacts.user_systemctl(site['operator_user'], 'show', unit,
+                                                                             '-p', 'Transient', '--value')) == 'yes\n':
+                    command(*artifacts.user_systemctl(site['operator_user'], 'stop', unit))
+        artifacts.require_unused(plan.artifact_paths)
         before = unrelated_snapshot(plan, site)
         heading('1/3  Stop Zelab services', 'yellow')
         print('  Stopping Zelab services ...', flush=True)
