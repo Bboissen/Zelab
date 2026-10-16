@@ -211,6 +211,55 @@ def verify_state(client, root, password, company, issue, status='backlog'):
         raise RuntimeError('Checkpoint note did not survive restore')
 
 
+def project_retirement_check(client, runtime, node, root, environment):
+    """Exercise the deployer's actual archive payload against the pinned server."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'deploy'))
+    from bots import Bots, project_replacements
+
+    company, _ = seed(client, runtime, node, root, environment, secrets.token_urlsafe(32))
+    old = client.request(f'/companies/{company}/projects',
+                         {'name': 'Retired fixture', 'description': 'Vault folder: Projects/old-lab/'})
+    target = client.request(f'/companies/{company}/projects',
+                            {'name': 'Current fixture', 'description': 'Vault folder: Projects/current/'})
+    issue = client.request(f'/companies/{company}/issues',
+                           {'title': 'Retained retirement fixture', 'description': 'Keep this synthetic history.',
+                            'projectId': old['id'], 'status': 'done'})
+
+    class Owner:
+        def __init__(self):
+            self.company = company
+            self.archives = 0
+
+        def call(self, method, path, body=None):
+            if method == 'PATCH' and path.startswith('/projects/'):
+                self.archives += 1
+            return client.request(path, body, method=method)
+
+    runner = Bots.__new__(Bots)
+    runner.paperclip = Owner()
+    site = {'zelab_project_replacements': {'old-lab': 'current'}}
+    projects = client.request(f'/companies/{company}/projects')
+    replacements = project_replacements(site, projects)
+    runner.retire_projects(projects, replacements, check_only=True)
+    if client.request('/projects/' + old['id']).get('archivedAt'):
+        raise RuntimeError('Retirement preflight changed the project')
+    runner.retire_projects(projects, replacements)
+    archived = client.request('/projects/' + old['id'])
+    if not archived.get('archivedAt'):
+        raise RuntimeError('Native project archive was not retained')
+    if client.request('/projects/' + target['id']).get('archivedAt'):
+        raise RuntimeError('Replacement project was unexpectedly archived')
+    kept = client.request('/issues/' + issue['id'])
+    if (kept['projectId'], kept['status'], kept['description']) != (old['id'], 'done', issue['description']):
+        raise RuntimeError('Project retirement changed existing ticket history')
+    # A new process reads fresh native state after an interrupted/completed pass.
+    projects = client.request(f'/companies/{company}/projects')
+    runner.retire_projects(projects, project_replacements(site, projects))
+    if runner.paperclip.archives != 1:
+        raise RuntimeError('Repeated retirement did not converge without another archive write')
+    print('PASS: native project retirement, retained ticket history, untouched replacement and idempotent resume.')
+
+
 def recovery_check(runtime, previous, node, folder):
     original = folder / 'original'
     password = secrets.token_urlsafe(32)
@@ -257,10 +306,13 @@ def main():
     parser.add_argument('--runtime', type=Path, required=True, help='Directory containing installed node_modules')
     parser.add_argument('--node', type=Path, required=True, help='Pinned Node executable')
     parser.add_argument('--recovery', action='store_true', help='Also verify native task state through encrypted restore')
+    parser.add_argument('--project-retirement', action='store_true', help='Verify deployed project retirement against the native API')
     parser.add_argument('--previous-runtime', type=Path, help='Verify update and snapshot rollback against this installed runtime')
     args = parser.parse_args()
     if args.previous_runtime and not args.recovery:
         parser.error('--previous-runtime requires --recovery')
+    if args.project_retirement and args.recovery:
+        parser.error('Run --project-retirement and --recovery separately')
     for runtime in [args.runtime, *([args.previous_runtime] if args.previous_runtime else [])]:
         if not (runtime / 'node_modules/@paperclipai/server/dist/index.js').is_file():
             parser.error('Supply installed Paperclip runtimes')
@@ -276,8 +328,11 @@ def main():
                     recovery_check(args.runtime.resolve(), args.previous_runtime.resolve() if args.previous_runtime else None,
                                    args.node.resolve(), root)
             else:
-                with server(args.runtime.resolve(), args.node.resolve(), root / 'state'):
-                    pass
+                with server(args.runtime.resolve(), args.node.resolve(), root / 'state',
+                            signup=args.project_retirement) as (client, environment):
+                    if args.project_retirement:
+                        project_retirement_check(client, args.runtime.resolve(), args.node.resolve(),
+                                                 root / 'state', environment)
                 print('PASS: fresh native database/migrations, authenticated private health and anonymous API denial.')
         success = True
     finally:

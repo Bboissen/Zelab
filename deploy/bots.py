@@ -1005,7 +1005,7 @@ class Bots:
             if check_only:
                 continue
             self.paperclip.call('PATCH', f"/projects/{project['id']}",
-                                {'archivedAt': datetime.now(timezone.utc).isoformat()})
+                                {'archivedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')})
 
     def remove(self, profiles, agents):
         heading('REMOVE A BOT')

@@ -240,6 +240,7 @@ class ReconcileTest(unittest.TestCase):
                         'scope': {'kind': 'task_bridge', 'projectIds': ['p-old'], 'allowedAssigneeAgentIds': ['a1']}}]
         self.calls, self.writes, self.hermes_calls, self.revoked, self.created = [], {}, [], [], []
         self.bridge_ready, self.open_issues = True, []
+        self.archive_failures = 0
         self.passthrough = [*bots.TASK_ENV, 'CUSTOM_KEY']
         outer = self
 
@@ -267,6 +268,9 @@ class ReconcileTest(unittest.TestCase):
                 if method == 'GET' and '/issues?' in path:
                     return outer.open_issues
                 if method == 'PATCH' and '/projects/' in path:
+                    if outer.archive_failures:
+                        outer.archive_failures -= 1
+                        raise bots.Stop('Fixture rejected archive request (HTTP 400).')
                     next(p for p in outer.project_rows if p['id'] == path.rsplit('/', 1)[1]).update(body)
                 if method == 'PATCH' and '/agents/' in path:
                     outer.agent.update(body)
@@ -299,6 +303,10 @@ class ReconcileTest(unittest.TestCase):
         self.assertNotIn('`p-old`', text)
         self.assertNotIn('`p-other`', text)
         self.assertIsNotNone(self.project_rows[0]['archivedAt'])
+        # Paperclip's pinned z.string().datetime() contract requires Z, and
+        # rejects Python's otherwise valid ISO-8601 +00:00 representation.
+        self.assertRegex(self.project_rows[0]['archivedAt'],
+                         r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$')
         self.assertFalse(any(method == 'DELETE' for method, _, _ in self.calls))
         calls, written = list(self.calls), dict(self.writes)
         self.runner.refresh()
@@ -314,6 +322,16 @@ class ReconcileTest(unittest.TestCase):
         self.runner.refresh()
         self.assertEqual(self.created[0]['projectIds'], ['p-new'])
         self.assertEqual(self.revoked, ['k-old', 'candidate'])
+
+    def test_failed_archive_resumes_without_another_key_rotation(self):
+        self.archive_failures = 1
+        with self.assertRaisesRegex(bots.Stop, 'HTTP 400'):
+            self.runner.refresh()
+        self.assertEqual(len(self.created), 1)
+        self.assertNotIn('archivedAt', self.project_rows[0])
+        self.runner.refresh()
+        self.assertEqual(len(self.created), 1)
+        self.assertIsNotNone(self.project_rows[0]['archivedAt'])
 
     def test_runtime_repairs_preserve_native_customizations(self):
         self.agent['adapterConfig']['apiBaseUrl'] = 'http://127.0.0.1:1/p/scout'

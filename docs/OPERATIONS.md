@@ -297,6 +297,12 @@ fixtures are removed; failure diagnostics remain private under `/tmp`.
 This tests native coordinator persistence, not execution by a restored worker,
 Discord delivery, guest recovery or compatibility of arbitrary future releases.
 
+Run the same checker with `--project-retirement` instead of `--recovery` to
+exercise the deployer's archive request against the actual candidate API. It
+uses disposable projects and a closed ticket, checks that history survives and
+the replacement stays active, then repeats retirement to verify convergence.
+This catches API validation differences that a mocked owner client cannot.
+
 Host distribution upgrades are separate maintenance: take a backup first, keep
 console access, and reapply `make` afterwards. The installer reports an
 out-of-baseline release as a warning, not a blocker.

@@ -43,6 +43,16 @@ No model call, real chat boundary or outbound message was used. Read-only
 reconciliation preflight passed for the live profiles. Full live deployment
 and the complete Discord-to-team return path: **NOT RUN** for these changes.
 
+Project retirement correction (2026-10-16): the owner's subsequent live `make`
+updated bot project grants and refreshed six profiles, retaining two old chat
+sessions, then failed archiving a retired project. Paperclip's pinned validator
+rejects an ISO timestamp with `+00:00`; it requires the UTC `Z` suffix. The old
+payload reproduced HTTP 400 in disposable native Paperclip state. With the
+corrected deployer payload, `tools/check_paperclip.py --project-retirement`
+passed archiving, retained ticket history, an untouched replacement project and
+an unchanged second pass. No production project was changed by that fixture.
+Successful full live reapply after the correction: **NOT RUN**.
+
 Record PASS, FAIL or NOT RUN with timestamp, steps and sanitized evidence.
 
 | ID | Criterion | Result |
