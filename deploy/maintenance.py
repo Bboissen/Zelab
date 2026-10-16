@@ -45,7 +45,7 @@ def choice_reset(root, site_config):
         return None
     if not path.is_file():
         raise ValueError('Site inputs are not a regular file; nothing was removed')
-    tracked = subprocess.run(['rtk', 'proxy', 'git', '-c', f'safe.directory={root}',
+    tracked = subprocess.run(['git', '-c', f'safe.directory={root}',
                               'ls-files', '--error-unmatch', '--',
                               str(path.relative_to(root))], cwd=root, capture_output=True)
     if tracked.returncode == 0:
@@ -87,7 +87,7 @@ def choice_reset(root, site_config):
 
 def privileged_python(python, script, *args):
     terminal_env = [f'{name}={os.environ[name]}' for name in ('NO_COLOR', 'CLICOLOR_FORCE') if name in os.environ]
-    return shell.rtk(*shell.as_root(*(['env', *terminal_env] if terminal_env else []),
+    return shell.command(*shell.as_root(*(['env', *terminal_env] if terminal_env else []),
                                     python, '-B', script, *args, prompt=sys.stdin.isatty()))
 
 
@@ -108,7 +108,7 @@ def clean(root=ROOT, site_config=Path('config/site.yaml')):
         result = subprocess.run(privileged_python(python, Path(__file__).resolve(), 'clean',
                                                   '--site-config', str(site_config)), cwd=ROOT)
         if result.returncode:
-            raise RuntimeError('Generated-file cleanup failed; check administrator access, then rerun rtk proxy make clean')
+            raise RuntimeError('Generated-file cleanup failed; check administrator access, then rerun make clean')
 
 
 def generated_paths(root):
@@ -131,7 +131,7 @@ def generated_paths(root):
             raise ValueError('A generated directory has an unsafe symlink alias; nothing was removed')
         if any(mount == path or mount.is_relative_to(path) for mount in mounts):
             raise ValueError('A generated path contains a mount; nothing was removed')
-        tracked = subprocess.run(['rtk', 'proxy', 'git', '-c', f'safe.directory={root}',
+        tracked = subprocess.run(['git', '-c', f'safe.directory={root}',
                                   'ls-files', '-z', '--', str(path.relative_to(root))],
                                  cwd=root, capture_output=True)
         if tracked.stdout or (tracked.returncode and (root / '.git').exists()):
@@ -185,12 +185,12 @@ def main(argv=None):
     if not args.site_config.exists():
         if args.action == 'fclean':
             raise ValueError('No site configuration exists; use make clean for local generated files')
-        raise ValueError('Run rtk proxy make first to configure and install this site')
+        raise ValueError('Run make first to configure and install this site')
     if args.action == 'fclean':
         # Validate the later local reset before any installed resource is deleted.
         choice_reset(ROOT, args.site_config)
         generated_paths(ROOT)
-    if code := subprocess.run(['rtk', 'proxy', 'bash', 'deploy/bootstrap-access.sh'], cwd=ROOT).returncode:
+    if code := subprocess.run(['bash', 'deploy/bootstrap-access.sh'], cwd=ROOT).returncode:
         return code
     if code := controller.main():
         return code

@@ -44,7 +44,7 @@ def private_keyring(root):
         yield
     finally:
         try:
-            subprocess.run(['rtk', 'proxy', 'gpgconf', '--homedir', str(directory),
+            subprocess.run(['gpgconf', '--homedir', str(directory),
                             '--kill', 'gpg-agent'], check=True, capture_output=True, timeout=15)
         finally:
             if previous is None:
@@ -110,7 +110,7 @@ def server(runtime, node, root, *, signup=False):
     instance = root / 'instances/default'
     # Do not inherit provider credentials or a personal Paperclip configuration.
     environment = {
-        'PATH': f'{node.parent}:{Path(shutil.which("rtk")).parent}:/usr/local/bin:/usr/bin:/bin', 'HOME': str(root),
+        'PATH': f'{node.parent}:/usr/local/bin:/usr/bin:/bin', 'HOME': str(root),
         'PAPERCLIP_HOME': str(root), 'PAPERCLIP_CONFIG': str(instance / 'config.json'),
         'PAPERCLIP_INSTANCE_ID': 'default', 'PAPERCLIP_DEPLOYMENT_MODE': 'authenticated',
         'PAPERCLIP_DEPLOYMENT_EXPOSURE': 'private', 'PAPERCLIP_AUTH_DISABLE_SIGN_UP': str(not signup).lower(),
@@ -120,7 +120,7 @@ def server(runtime, node, root, *, signup=False):
     }
     entry = runtime / 'node_modules/@paperclipai/server/dist/index.js'
     with (root / 'server.log').open('ab') as log:
-        process = subprocess.Popen(['rtk', 'proxy', str(node), str(entry)],
+        process = subprocess.Popen([str(node), str(entry)],
                                    cwd=root, env=environment, stdout=log, stderr=log, start_new_session=True)
         try:
             anonymous = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -185,7 +185,7 @@ def login(client, password):
 def seed(client, runtime, node, root, environment, password):
     client.request('/auth/sign-up/email', {'email': 'recovery@example.invalid',
                    'password': password, 'name': 'Recovery fixture'})
-    claim = subprocess.run(['rtk', 'proxy', str(node),
+    claim = subprocess.run([str(node),
         str(runtime / 'node_modules/paperclipai/dist/index.js'), 'auth', 'bootstrap-ceo',
         '--config', str(root / 'instances/default/config.json')], env=environment,
         cwd=root, capture_output=True, text=True, timeout=60)
@@ -463,8 +463,8 @@ def main():
     for runtime in [args.runtime, *([args.previous_runtime] if args.previous_runtime else [])]:
         if not (runtime / 'node_modules/@paperclipai/server/dist/index.js').is_file():
             parser.error('Supply installed Paperclip runtimes')
-    if not args.node.is_file() or not shutil.which('rtk'):
-        parser.error('Supply the pinned Node executable and install RTK')
+    if not args.node.is_file():
+        parser.error('Supply the pinned Node executable')
     os.umask(0o077)
     root = Path(tempfile.mkdtemp(prefix='zelab-paperclip-check-'))
     record(root)

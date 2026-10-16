@@ -23,7 +23,7 @@ def main():
     for argv in ([sys.executable, '-m', 'venv', str(ROOT / '.venv')],
                  [str(PYTHON), '-m', 'pip', 'install', '--disable-pip-version-check', '--no-cache-dir',
                   '--require-hashes', '-r', str(LOCK)]):
-        code = subprocess.run(['rtk', 'proxy', *argv], cwd=ROOT).returncode
+        code = subprocess.run([*argv], cwd=ROOT).returncode
         if code:
             return code
     READY.touch()

@@ -176,7 +176,7 @@ def read_env(env_path):
 
 def check_private_inputs(site):
     if not site.get("operator_user"):
-        raise ValueError("Set operator_user in config/site.yaml (rtk proxy make writes it for you)")
+        raise ValueError("Set operator_user in config/site.yaml (make writes it for you)")
     paths = ["private_dir", "deploy_key", "guest_known_hosts", "vm_disk", "vm_data", "vm_root",
              "paperclip_home", "projects_dir", "backup_dir", "hermes_install_dir"]
     for name in paths:
@@ -349,10 +349,10 @@ def main():
             raise SystemExit("Host prerequisites failed; see docs/SETUP.md.")
         sys.path.insert(0, str(ROOT / "implementation"))
         from runtime import maintenance_lock
-        result = subprocess.run(shell.rtk(*shell.as_root(sys.executable, ROOT / "implementation/runtime.py",
+        result = subprocess.run(shell.command(*shell.as_root(sys.executable, ROOT / "implementation/runtime.py",
                                                           "--prepare-lock")))
         if result.returncode:
-            raise SystemExit("Cannot prepare the deployment lock; verify unattended sudo and the root-owned RTK prerequisite.")
+            raise SystemExit("Cannot prepare the deployment lock; verify unattended sudo.")
         lock = maintenance_lock()
     with lock, tempfile.TemporaryDirectory(prefix="zelab-inputs-") as directory:
         passwords = os.environ.get('ZELAB_PASSWORD_DIR')
@@ -364,7 +364,7 @@ def main():
                                         'zelab_controller_python': sys.executable,
                                         'zelab_install_site_json': str(variables)}))
         variables.chmod(0o600)
-        command = ["rtk", "proxy", str(ROOT / ".venv/bin/ansible-playbook"), *args.playbooks, "-e", "@" + str(variables), *native_args]
+        command = [str(ROOT / ".venv/bin/ansible-playbook"), *args.playbooks, "-e", "@" + str(variables), *native_args]
         if readonly:
             return subprocess.run(command, env=env).returncode
         if full_site and restore_install_resources(variables):
@@ -380,7 +380,7 @@ def restore_install_resources(variables):
     # A second Ctrl-C must not strand the temporary resources during cleanup.
     previous = {sig: signal.signal(sig, signal.SIG_IGN) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     try:
-        return subprocess.run(shell.rtk(*shell.as_root(sys.executable, ROOT / 'deploy/install_resources.py',
+        return subprocess.run(shell.command(*shell.as_root(sys.executable, ROOT / 'deploy/install_resources.py',
                                                        'restore', '--site-json', variables))).returncode
     finally:
         for sig, handler in previous.items():
@@ -400,7 +400,7 @@ def logged_run(command, env, private_dir):
 
     def stopped(_signum, _frame):
         raise KeyboardInterrupt
-    # Wrappers such as `rtk proxy` turn Ctrl-C into SIGTERM; summarize either way.
+    # Summarize both terminal interrupts and termination by a supervising process.
     previous = signal.signal(signal.SIGTERM, stopped)
     process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     try:
@@ -427,7 +427,7 @@ def logged_run(command, env, private_dir):
         print(f"  Cause: {cause or 'Ansible exited with status ' + str(returncode)}", file=sys.stderr)
         if path:
             print(f"  Private log: {path}", file=sys.stderr)
-        print("  Next: fix the cause above, then run: rtk proxy make", file=sys.stderr)
+        print("  Next: fix the cause above, then run: make", file=sys.stderr)
     return returncode
 
 

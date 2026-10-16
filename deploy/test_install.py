@@ -204,7 +204,6 @@ class InstallerTest(unittest.TestCase):
                                             "import sys; print('download detail'); print('tool error', file=sys.stderr); sys.exit(2)"])
             self.assertEqual(code, 2)
             self.assertEqual(terminal.getvalue(), "")
-            # rtk relays stdout and stderr separately, so their lines may interleave.
             self.assertIn("download detail", "".join(tail))
             self.assertIn("tool error", runner.log.path.read_text())
 
@@ -245,11 +244,11 @@ class InstallerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             runner.log.open(directory)
             with patch.object(runner, "capture", return_value=(0, ["", "Guide: file:///tmp/guide.html",
-                              "Open on your Mac (run these locally):", "  rtk proxy open ~/Downloads/zelab-guide.html"])), \
+                              "Open on your Mac (run these locally):", "  open ~/Downloads/zelab-guide.html"])), \
                  redirect_stdout(io.StringIO()) as terminal:
                 runner.after_failure()
         self.assertIn("Guide: file:///tmp/guide.html", terminal.getvalue())
-        self.assertIn("rtk proxy open ~/Downloads/zelab-guide.html", terminal.getvalue())
+        self.assertIn("open ~/Downloads/zelab-guide.html", terminal.getvalue())
         self.assertNotIn("in your browser", terminal.getvalue())
 
     def test_failure_keeps_a_static_guide_when_snapshot_cannot_be_generated(self):

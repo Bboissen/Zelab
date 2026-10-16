@@ -36,7 +36,7 @@ def run_play(directory, *, tasks=(), roles=(), variables=None, host='localhost')
     playbook.write_text(yaml.safe_dump([{
         'hosts': host, 'connection': 'local', 'gather_facts': False, 'become': False,
         'vars': variables or {}, 'tasks': list(tasks), 'roles': list(roles)}]))
-    return subprocess.run(['rtk', 'proxy', str(ROOT / '.venv/bin/ansible-playbook'), '-i', host + ',',
+    return subprocess.run([str(ROOT / '.venv/bin/ansible-playbook'), '-i', host + ',',
                            str(playbook)], capture_output=True, text=True, env=ENVIRONMENT)
 
 

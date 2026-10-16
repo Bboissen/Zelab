@@ -167,7 +167,7 @@ class PrivateInputsTest(unittest.TestCase):
         site["vm_isolated"] = True
         self.site.write_text(yaml.safe_dump(site))
         result = subprocess.run(
-            ["rtk", "proxy", sys.executable, "deploy/run.py", "--site-config", str(self.site), "--env-file", str(self.env), "deploy/site.yaml"],
+            [sys.executable, "deploy/run.py", "--site-config", str(self.site), "--env-file", str(self.env), "deploy/site.yaml"],
             text=True, capture_output=True,
         )
         self.assertNotEqual(result.returncode, 0)

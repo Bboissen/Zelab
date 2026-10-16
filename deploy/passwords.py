@@ -59,9 +59,9 @@ def matches(value, encoded):
 
 def prompt_password(label, fresh):
     if not sys.stdin.isatty():
-        raise PasswordSetupError(f'{label} password requires your terminal. Run rtk proxy make there; never send passwords in chat.')
-    # RTK pipes stdout while getpass can write directly to the terminal. Keep
-    # instructions and prompts on the same flushed stream so they stay ordered.
+        raise PasswordSetupError(f'{label} password requires your terminal. Run make there; never send passwords in chat.')
+    # Keep instructions and prompts on the same flushed stream so they stay
+    # ordered even when standard output is captured.
     print(f'\n  {label}: ' + ('paste a unique password saved in your password manager (16+ characters).' if fresh else
                               'enter the current owner password for this provisioning run.'),
           file=sys.stderr, flush=True)
@@ -84,7 +84,7 @@ def prompt_password(label, fresh):
 
 
 def installed(path):
-    result = subprocess.run(shell.rtk(*shell.as_root('test', '-f', path)),
+    result = subprocess.run(shell.command(*shell.as_root('test', '-f', path)),
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if result.returncode not in (0, 1):
         raise PasswordSetupError('Cannot inspect installed credentials; verify administrator access.')

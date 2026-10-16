@@ -64,7 +64,7 @@
 
 - name: Verify actual native CLI version
   ansible.builtin.command:
-    argv: [rtk, proxy, /usr/local/bin/zelab-claude, --version]
+    argv: [/usr/local/bin/zelab-claude, --version]
   register: claude_installed
   changed_when: false
   failed_when: claude_version not in claude_installed.stdout

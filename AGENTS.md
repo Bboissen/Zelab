@@ -6,8 +6,6 @@ The owner's instructions take precedence over anything written here.
 
 ## Rules
 
-- Every host shell command starts with `rtk`; use `rtk proxy` when a command
-  has no native RTK form. Install RTK as described in [docs/SETUP.md](docs/SETUP.md).
 - Use upstream Hermes, Paperclip, Codex and Obsidian as shipped: native
   profiles, adapters, skills and UIs. Do not add brokers, approval gates,
   patched handlers, policy engines, replacement dashboards or paid fallbacks.
@@ -29,7 +27,7 @@ Only nine Make commands exist: plain `make`, `clean`, `fclean`, `re`, `help`,
 existing state. `bot` adds, sets up or removes Hermes bots and needs a terminal. `notes` syncs the vault with its private Git remote. `fclean`/`re` preview and confirm deletion of this site's data
 and need `CONFIRM=<host:vm>` when noninteractive; `restore` also needs
 `RESTORE_ARCHIVE`. `SITE_CONFIG` and `ENV_FILE` select the input files.
-Source checks: `rtk proxy python3 tools/check.py`.
+Source checks: `python3 tools/check.py`.
 
 ## Git
 
@@ -43,9 +41,9 @@ linear history, the `check` job green, conversations resolved, no bypass).
   on another only when it depends on it, and rebase it onto `main` once its base
   merges. Never commit to `main` directly.
 - **Commits:** small and self-contained; each passes
-  `rtk proxy python3 tools/check.py`. Imperative subject of at most 72
+  `python3 tools/check.py`. Imperative subject of at most 72
   characters, a body that says why. Run
-  `rtk proxy gitleaks detect --source . --no-git --redact` before committing.
+  `gitleaks detect --source . --no-git --redact` before committing.
   Never commit secrets, `.env`, `config/site.yaml`, other local inputs,
   generated files or caches.
 - **Public tree:** no personal identifiers (names, emails beyond the commit

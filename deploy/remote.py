@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the Linux installer over SSH and bring its standalone guide to this device.
 
-The client uses Python's standard library, Make, RTK and OpenSSH on macOS/Linux.
+The client uses Python's standard library, Make and OpenSSH on macOS/Linux.
 The server must already have the Zelab checkout and its documented prerequisites.
 No local configuration or credentials are uploaded. SSH aliases/config are used.
 """
@@ -22,8 +22,7 @@ from console import heading, paint
 def remote_command(directory, argv):
     # POSIX syntax works with bash, zsh and other login shells: use sh explicitly
     # for cwd/PATH handling, and quote once for each SSH shell boundary.
-    script = ('PATH="$HOME/.local/bin:$PATH"; export PATH; '
-              f"cd {shlex.quote(directory)} && exec {shlex.join(argv)}")
+    script = f"cd {shlex.quote(directory)} && exec {shlex.join(argv)}"
     return shlex.join(["sh", "-c", script])
 
 
@@ -33,7 +32,7 @@ def open_guide(path):
         return False
     if command == "xdg-open" and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
         return False
-    return subprocess.run(["rtk", "proxy", command, str(path)],
+    return subprocess.run([command, str(path)],
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
 
@@ -50,19 +49,19 @@ def run_remote(args):
         if not shutil.which(tool):
             raise ValueError(f"Install OpenSSH: {tool} is required on this device.")
 
-    ssh = ["rtk", "proxy", "ssh", "-o", "ConnectTimeout=15"]
-    scp = ["rtk", "proxy", "scp", "-o", "ConnectTimeout=15"]
+    ssh = ["ssh", "-o", "ConnectTimeout=15"]
+    scp = ["scp", "-o", "ConnectTimeout=15"]
     if args.port:
         ssh.extend(["-p", args.port])
         scp.extend(["-P", args.port])
-    colors = ["rtk", "proxy", "env", "NO_COLOR=" + os.environ["NO_COLOR"]] if "NO_COLOR" in os.environ else []
+    colors = ["env", "NO_COLOR=" + os.environ["NO_COLOR"]] if "NO_COLOR" in os.environ else []
     heading("ZELAB REMOTE INSTALLER")
     print(f"  Server: {args.host}\n  Checkout: {args.directory}\n", flush=True)
     guide_only = args.action == "guide"
     status = 0
     if not guide_only:
         inputs = [f"SITE_CONFIG={args.site_config}", f"ENV_FILE={args.env_file}"]
-        command = [*colors, "rtk", "proxy", "make", "--no-print-directory", "GUIDE_MODE=remote", *inputs]
+        command = [*colors, "make", "--no-print-directory", "GUIDE_MODE=remote", *inputs]
         # A real stdin terminal allows one-time sudo authentication on the server.
         terminal = ["-t"] if sys.stdin.isatty() else ["-T"]
         status = subprocess.run([*ssh, *terminal, args.host, remote_command(args.directory, command)]).returncode
@@ -72,15 +71,15 @@ def run_remote(args):
     # guide action this single doctor run also reports blockers on stderr.
     code = ("import os,subprocess,sys; "
             "p='.venv/bin/python' if os.path.isfile('.venv/.controller-ready') else 'python3'; "
-            "sys.exit(subprocess.call(['rtk','proxy',p,'deploy/doctor.py','--guide-path-only',"
+            "sys.exit(subprocess.call([p,'deploy/doctor.py','--guide-path-only',"
             "'--site-config',sys.argv[1],'--env-file',sys.argv[2],*sys.argv[3:]]))")
-    path_command = [*colors, "rtk", "proxy", "python3", "-c", code, args.site_config, args.env_file,
+    path_command = [*colors, "python3", "-c", code, args.site_config, args.env_file,
                     *(["--brief"] if guide_only else [])]
     snapshot = subprocess.run([*ssh, "-T", args.host, remote_command(args.directory, path_command)],
                               stdout=subprocess.PIPE, stderr=None if guide_only else subprocess.PIPE, text=True)
     path = snapshot.stdout.strip()
     if snapshot.returncode or not path.startswith("/") or "\n" in path or "\r" in path:
-        print("\n  Could not retrieve the server guide. Rerun rtk proxy make on the server.")
+        print("\n  Could not retrieve the server guide. Rerun make on the server.")
         return status or 1
 
     destination = args.guide_destination.expanduser().resolve()
@@ -93,7 +92,7 @@ def run_remote(args):
     try:
         copy = subprocess.run([*scp, "--", f"{args.host}:{path}", str(temporary)])
         if copy.returncode:
-            print("\n  Guide copy failed. Rerun rtk proxy make on the server for manual copy instructions.")
+            print("\n  Guide copy failed. Rerun make on the server for manual copy instructions.")
             return status or copy.returncode
         temporary.chmod(0o600)
         temporary.replace(destination)

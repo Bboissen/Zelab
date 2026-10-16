@@ -90,7 +90,7 @@ class RecoverySafetyTest(unittest.TestCase):
     def test_lifecycle_cannot_acquire_backup_lock_until_released(self):
         with tempfile.TemporaryDirectory() as directory:
             lock = Path(directory) / 'maintenance.lock'
-            command = ['rtk', 'proxy', sys.executable, '-c',
+            command = [sys.executable, '-c',
                        'from pathlib import Path; from runtime import maintenance_lock; '
                        'import sys; \nwith maintenance_lock(Path(sys.argv[1])): pass', str(lock)]
             with maintenance_lock(lock):

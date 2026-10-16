@@ -7,6 +7,59 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Public source review and native commands: 2026-10-16
+
+At 20:44 UTC, GitHub reported the source repository as public and anonymous
+browser access succeeded. Public heads, tags and retained pull request heads
+were fetched into a fresh, disposable bare repository: Gitleaks scanned all
+56 reachable commits with no leaks found. No private checkpoint refs were
+advertised. Searches of historical blobs and commit messages found no known
+private site identifiers. Reviewed address and ID matches were QEMU defaults,
+network ranges, synthetic fixtures, dependency versions or public citations.
+The 23 public issue/PR entries and eight issue comments contained no known
+private site identifiers either. GitHub account identity, commit attribution
+and older command examples remain public metadata/history; this is not an
+anonymity guarantee or a rewrite of published history.
+
+Make, deployment subprocesses, recovery fixtures, CI and all operator guides
+now invoke native commands directly. Installation no longer copies an extra
+command wrapper into the privileged executable path. The README and shared
+SVG diagram distinguish encrypted transport from local HTTP, shared guest
+credentials, whole-vault access, ticketed host execution and privileged tiers.
+They also state that guest root can change the guest's firewall; no root-level
+network-denial guarantee has been demonstrated for X1.
+
+Source checks passed: 273 tests, public source checks and playbook parsing,
+with only `/usr/bin:/bin` on the subprocess search path. `make help`, SVG XML
+parsing and visual inspection passed. The working-tree Gitleaks scan passed.
+These are repository checks, not deployment acceptance.
+
+Repository changes are source, documentation, fixtures and CI. Production host
+changes: none; guest changes: none. Fresh installation, full live reapply,
+chat-to-team delivery, live recovery and root-level network acceptance:
+**NOT RUN** for this change.
+
+## Dependency alert applicability review: 2026-10-16
+
+GitHub reported 13 open Dependabot alerts in the universal Hermes `uv.lock`
+after the public-source review. They are distinct from personal-data or secret
+leaks. The production-inventory CI audits passed, but they do not assess every
+optional extra or the local Hermes application itself.
+
+| Alerts | Evidence | Finding |
+| --- | --- | --- |
+| Three Tornado alerts, including two high severity | `tornado==6.5.8` is reachable only through the optional `python-telegram-bot[webhooks]` dependency; no hard-dependency parent; absent from the qualified 108-package runtime inventory | Outside that qualified selection. Enabling this extra needs a new audit; the universal lock still contains the affected package |
+| Nine Hermes alerts, including the high-severity WebSocket DNS rebinding advisory | The editable lock root reports `hermes-agent==0.0.0`. For each advisory with a referenced source fix, GitHub's commit comparison reports that fix as an ancestor of pinned source `3637c512fc3211bdccb61b7140d09ac1018508ba` | Version metadata matches older advisory ranges even though the referenced fixes are included. Ancestry is source evidence, not a replay of every exploit |
+| One Hermes Feishu webhook resource-exhaustion alert | [GHSA-pmqc-57g8-c22c](https://github.com/advisories/GHSA-pmqc-57g8-c22c), [upstream issue 29154](https://github.com/NousResearch/hermes-agent/issues/29154); the referenced [fix PR 73406](https://github.com/NousResearch/hermes-agent/pull/73406) remains open and unmerged | **OPEN security finding** for Feishu webhook handling. No fix was adopted or qualified; this review does not accept or resolve it |
+
+The nine ancestry checks covered GHSA-33qv-c5qm-799v, GHSA-xq8w-9jvx-gm3v,
+GHSA-mv8x-fg99-32mf, GHSA-cv5c-mh6j-wvp9, GHSA-wm96-9gfh-vvgq,
+GHSA-pgp4-xr4j-h5cg, GHSA-238w-f66p-w349, GHSA-99f9-j8r3-p853 and
+GHSA-4pqm-j46f-795x. None of the 13 GitHub alerts was dismissed. Source pins,
+dependency manifests and deployed settings are unchanged. Live installed-extra
+inventory and exploitation tests: **NOT RUN**. Additional owner-installed
+plugins and chat platforms are outside the recorded inventory qualification.
+
 ## Quiet Discord tool progress: 2026-10-16
 
 Every bot now receives Hermes' native per-platform setting
@@ -185,7 +238,7 @@ application E2E: **NOT RUN**.
 
 ## Chat without commands: 2026-10-16
 
-In the family Discord, a bot asked chat members to approve a Python heredoc it wrote
+In the live Discord, a bot asked chat members to approve a Python heredoc it wrote
 to read Paperclip: chat sessions had the terminal, and Hermes' default `smart`
 approval escalated the command to Allow/Deny buttons. Chat now runs no commands.
 Each chat platform `make bot` sets up gets Hermes' native `platform_toolsets` without

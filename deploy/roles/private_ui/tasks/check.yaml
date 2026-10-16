@@ -1,7 +1,7 @@
 # Read-only: also used by preflight before any installation work.
 - name: Inspect authenticated tailnet identity
   ansible.builtin.command:
-    argv: [rtk, proxy, tailscale, status, --json]
+    argv: [tailscale, status, --json]
   register: ui_tail_status
   changed_when: false
   no_log: true
@@ -17,7 +17,7 @@
 
 - name: Inspect existing native Serve configuration without resetting it
   ansible.builtin.command:
-    argv: [rtk, proxy, tailscale, serve, status, --json]
+    argv: [tailscale, serve, status, --json]
   register: ui_tail_serve
   changed_when: false
   no_log: true

@@ -73,7 +73,7 @@ class Sync:
     def git(self, *args, cwd=None, check=True):
         env = self.env()
         # The vault belongs to the notes account; the operator edits it through an ACL.
-        result = subprocess.run(['rtk', 'proxy', 'git', '-c', f'safe.directory={self.vault}',
+        result = subprocess.run(['git', '-c', f'safe.directory={self.vault}',
                                  '-c', f'safe.directory={self.git_dir}', *args],
                                 cwd=cwd or self.vault, env=env, capture_output=True, text=True)
         if check and result.returncode:
@@ -93,9 +93,9 @@ class Sync:
         self.home.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(self.home, 0o700)
         if not self.vault.is_dir() or not os.access(self.vault, os.R_OK | os.W_OK | os.X_OK):
-            raise Stop(f'{self.vault} is not readable and writable by this account; run rtk proxy make first.')
+            raise Stop(f'{self.vault} is not readable and writable by this account; run make first.')
         if not self.key.exists():
-            subprocess.run(['rtk', 'proxy', 'ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'zelab-notes-sync',
+            subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'zelab-notes-sync',
                             '-f', str(self.key)], check=True, stdout=subprocess.DEVNULL)
         if not self.known_hosts.exists():
             meta = self.github('https://api.github.com/meta')
@@ -185,7 +185,7 @@ class Sync:
         result = self.git('merge', '--ff-only', '--quiet', target, check=False)
         if result.returncode:
             raise Stop('An agent edited a note the laptop also changed, after this run saved the agents\' work. '
-                       'Nothing was overwritten; run rtk proxy make notes again.\n'
+                       'Nothing was overwritten; run make notes again.\n'
                        + (result.stderr or result.stdout).strip()[-400:])
 
     def merge_aside(self, incoming, unrelated):
@@ -259,7 +259,7 @@ LAPTOP = """
     git clone {remote} ~/Notes/zelab
     cd ~/Notes/zelab && printf '.obsidian/\\n.trash/\\n.DS_Store\\n' >> .git/info/exclude
     Desktop Obsidian: Open folder as vault, pick ~/Notes/zelab, keep Restricted mode on.
-  Then: rtk proxy make notes here, git pull / git push there. Workflow: docs/NOTES.md
+  Then: make notes here, git pull / git push there. Workflow: docs/NOTES.md
 """
 
 
@@ -275,7 +275,7 @@ def ask(question, default=True):
 def gh(*args):
     """The operator's own GitHub CLI login, if any; never prints tokens."""
     try:
-        return subprocess.run(['rtk', 'proxy', 'gh', *args], capture_output=True, text=True, timeout=60)
+        return subprocess.run(['gh', *args], capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         return subprocess.CompletedProcess(args, 1, '', '')
 
@@ -345,23 +345,23 @@ def wizard(site, site_config, offered):
     if offered and (home / DECLINED).exists():
         return
     if not sys.stdin.isatty():
-        print('  Desktop notes are not set up; in a terminal: rtk proxy make notes')
+        print('  Desktop notes are not set up; in a terminal: make notes')
         return
     from console import heading
     heading('NOTES ON YOUR LAPTOP')
     print('  Agents keep their notes in the server vault. To read and edit them in desktop Obsidian on')
     print('  your laptop, the vault syncs with a private GitHub repository each time you run')
-    print('  rtk proxy make notes. Obsidian settings and plugins never sync.')
+    print('  make notes. Obsidian settings and plugins never sync.')
     if not ask('Set it up now?'):
         if offered:
             home.mkdir(mode=0o700, parents=True, exist_ok=True)
             (home / DECLINED).write_text('make notes sets it up later\n')
-        print('  Later: rtk proxy make notes')
+        print('  Later: make notes')
         return
     login = gh_login()
     repository = choose_repository(login)
     if not repository:
-        print('  Later: rtk proxy make notes')
+        print('  Later: make notes')
         return
     owner, repo = repository.split('/')
     remote = f'git@github.com:{owner}/{repo}.git'
@@ -383,7 +383,7 @@ def wizard(site, site_config, offered):
             print(f'\n  Add this key at {sync.key_page()} and tick "Allow write access":\n\n  {sync.public_key()}\n')
             input('  Press Enter once it is added: ')
     if not sync.reachable():
-        raise Stop(f'The deploy key still cannot reach {repository}; run rtk proxy make notes to try again.')
+        raise Stop(f'The deploy key still cannot reach {repository}; run make notes to try again.')
     save_remote(site_config, remote)
     (home / DECLINED).unlink(missing_ok=True)
     print(f'  Saved notes_sync_remote in {site_config.name}. First sync:')
@@ -395,7 +395,7 @@ def main(argv=None):
     venv = ROOT / '.venv/bin/python'
     if sys.prefix != str(ROOT / '.venv'):
         if not venv.exists():
-            raise SystemExit('Run rtk proxy make first: make notes works on an installed site.')
+            raise SystemExit('Run make first: make notes works on an installed site.')
         os.execv(venv, [str(venv), __file__, *(sys.argv[1:] if argv is None else argv)])
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--site-config', type=Path, default=ROOT / 'config/site.yaml')
@@ -419,7 +419,7 @@ def main(argv=None):
     except Stop as error:
         raise SystemExit(f'  {error}') from None
     except (KeyboardInterrupt, EOFError):
-        raise SystemExit('\n  Stopped; nothing else changed. Run rtk proxy make notes to continue.') from None
+        raise SystemExit('\n  Stopped; nothing else changed. Run make notes to continue.') from None
     return 0
 
 

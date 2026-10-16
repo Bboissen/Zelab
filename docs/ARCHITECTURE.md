@@ -1,34 +1,18 @@
 # Architecture
 
-```mermaid
-flowchart LR
-  Owner[Owner: laptop / phone] -->|Tailscale or localhost, authenticated| UIs
-  Chat[Discord, Telegram, Slack...] -->|one bot identity per profile| Gateway
-  subgraph VM[KVM guest: Debian, 2 vCPU / 4 GiB / 20 GiB]
-    Gateway[Shared Hermes gateway]
-    Gateway --> P1[Profile: bot A]
-    Gateway --> P2[Profile: bot B]
-    HermesUI[Hermes dashboard]
-    Mount[/var/lib/zelab-notes: whole vault/]
-  end
-  subgraph Host[Linux server]
-    UIs[Tailscale Serve] --> Paperclip
-    UIs --> HermesUI
-    Paperclip[Paperclip + embedded PostgreSQL] -->|SSH environment per tier| Accounts[zelab-team-&lt;tier&gt; accounts: the Claude Code team]
-    Vault[(Vault: Projects/&lt;slug&gt;/, Server/)]
-    History[(Root-only git history)] -. every 5 min .- Vault
-    Sync[make notes: git dir and deploy key in private_dir] --- Vault
-  end
-  Sync <-->|SSH, deliberate push/pull| Remote[(Private GitHub repo)]
-  Remote <-->|git pull / push| Laptop[Desktop Obsidian on the owner's laptop]
-  P1 -->|task_bridge key, own projects| Paperclip
-  Paperclip -->|hermes_gateway adapter: /p/&lt;bot&gt;| Gateway
-  Mount <-->|SFTP share of the whole vault| Vault
-```
+![Zelab placement and protected links](assets/architecture.svg)
 
-Two links cross the guest boundary, and only where the guest firewall allows:
-the Paperclip API port, and the notes SFTP port. The vault history and every
-host account stay on the host.
+The [README connection table](../README.md#where-everything-runs) describes the
+transport, authentication and limits of each main link. The diagram separates
+provider services, owner devices, the KVM guest and host services. Guest-to-host
+application traffic has two permitted destinations: the Paperclip API and the
+notes SFTP listener. QEMU separately forwards host-loopback ports into the
+guest for deployment SSH, the Hermes API and dashboard. The HTTP links have
+no TLS; tailnet HTTPS terminates at Tailscale Serve.
+
+Vault history and team accounts stay on the host. The vault is deliberately
+shared with the guest, and tickets can deliberately trigger host team work.
+Docker and full-sudo tiers can control the host, including its private state.
 
 ## Components
 
@@ -130,7 +114,9 @@ All backends bind to host loopback. Tailscale Serve publishes the three UIs as
 HTTPS on the tailnet only; existing Serve routes are never replaced and Funnel
 is refused. The guest reaches the host only on the Paperclip API port and the
 notes SFTP port; private ranges, link-local and IPv6 are rejected by nftables
-inside the guest. Project SSH keys carry `from=` and `restrict`, and an
+inside the guest. These rules constrain normal bot traffic; guest root can
+change them. This is not a host-enforced network boundary against guest root.
+Project SSH keys carry `from=` and `restrict`, and an
 `AllowUsers` entry is added only when the host already uses one.
 
 ## Resources

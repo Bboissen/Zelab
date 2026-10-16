@@ -18,7 +18,6 @@ import pwd
 import shlex
 import shutil
 import socket
-import stat
 import subprocess
 import sys
 
@@ -40,7 +39,6 @@ SUPPORTED_OS = {
     ("ubuntu", "26.04"): date(2031, 5, 31),
 }
 BASELINE = "Debian 13 or Ubuntu 24.04/26.04 LTS (x86_64)"
-ROOT_RTK = Path(shell.ROOT_RTK)
 ROOT = Path(__file__).resolve().parents[1]
 GIB = 2**30
 # Pinned Debian image, Hermes/Paperclip dependencies and the Obsidian image.
@@ -100,15 +98,6 @@ def report_checks(checks):
             print(f"{mark('FAIL')} {check.name}: {check.detail}")
             ready = False
     return ready
-
-
-def trusted_root_rtk(path=ROOT_RTK):
-    try:
-        metadata = path.lstat()
-    except OSError:
-        return False
-    return (stat.S_ISREG(metadata.st_mode) and metadata.st_uid == 0
-            and not metadata.st_mode & 0o022 and bool(metadata.st_mode & 0o111))
 
 
 def command_succeeds(argv):
@@ -182,7 +171,7 @@ def host_checks():
               "The locked ansible-core 2.21 controller needs Python 3.12 or newer"),
         Check("Python venv", importlib.util.find_spec("venv") is not None
               and importlib.util.find_spec("ensurepip") is not None,
-              "rtk proxy make adds python3-venv; or run: sudo apt install python3-venv"),
+              "make adds python3-venv; or run: sudo apt install python3-venv"),
         Check("Native supervision", Path("/run/systemd/system").is_dir(), "The host must boot with systemd"),
         Check("KVM", Path("/dev/kvm").is_char_device(),
               "Enable virtualization (VT-x/AMD-V) in firmware and load the kvm module"),
@@ -190,7 +179,7 @@ def host_checks():
     ])
     # sbin need not be on the normal operator's PATH.
     search_path = os.environ.get("PATH", "") + ":/usr/local/sbin:/usr/sbin:/sbin"
-    commands = {"make": "make", "sudo": "sudo", "docker": "Docker Engine", "sshd": "openssh-server", "rtk": "RTK"}
+    commands = {"make": "make", "sudo": "sudo", "docker": "Docker Engine", "sshd": "openssh-server"}
     missing = [label for command, label in commands.items() if shutil.which(command, path=search_path) is None]
     checks.append(Check("Host commands", not missing, "Install: " + ", ".join(missing)))
     return checks
@@ -198,11 +187,10 @@ def host_checks():
 
 def admin_checks():
     phase = phase_of("admin")
-    trusted = trusted_root_rtk()
-    elevated = trusted and command_succeeds(shell.as_root("/usr/bin/python3", "-c",
-                                                          "import os,sys; sys.exit(os.geteuid() != 0)"))
+    elevated = command_succeeds(shell.as_root("/usr/bin/python3", "-c",
+                                             "import os,sys; sys.exit(os.geteuid() != 0)"))
     checks = [Check("Unattended administration", elevated,
-                    "rtk proxy make asks for your sudo password once",
+                    "make asks for your sudo password once",
                     pending=True, phase=phase)]
     if elevated:
         for name, argv, detail in (
@@ -292,26 +280,26 @@ def connection_checks(site, elevated):
     if facts is None:
         checks = [Check("Hermes bots", False, "Available after installation", pending=True, phase=phase)]
     elif not facts:
-        checks = [Check("Hermes bots", False, "Add one: rtk proxy make bot", pending=True, phase=phase)]
+        checks = [Check("Hermes bots", False, "Add one: make bot", pending=True, phase=phase)]
     else:
         checks = [Check("Hermes bots", True, f"{len(facts)} bot(s)", phase=phase)]
     for bot in facts or []:
         name = bot["name"]
         checks.append(Check(f"{name}: model sign-in", bot["signed_in"],
-                            f"rtk proxy make bot, then set up {name} (a)", pending=True, phase=phase))
+                            f"make bot, then set up {name} (a)", pending=True, phase=phase))
         checks.append(Check(f"{name}: chat app", bool(bot["chats"]),
-                            f"rtk proxy make bot, then set up {name} (b)", pending=True, phase=phase))
+                            f"make bot, then set up {name} (b)", pending=True, phase=phase))
         checks.append(Check(f"{name}: persona", bot["soul"],
-                            f"Still Hermes' generic persona: rtk proxy make bot, then set up {name} (c)",
+                            f"Still Hermes' generic persona: make bot, then set up {name} (c)",
                             pending=True, phase=phase))
         checks.append(Check(f"{name}: task key", bot["task_key"],
                             ("Add a project to config/projects.yaml (copy config/projects.example.yaml if needed), "
                              "rerun make, then " if not site.get("zelab_projects") else "")
-                            + f"rtk proxy make bot, then set up {name} (d)", pending=True, phase=phase))
+                            + f"make bot, then set up {name} (d)", pending=True, phase=phase))
     synced = bool(site.get("notes_sync_remote"))
     checks.append(Check("Desktop notes", synced,
-                        "Synced with a private GitHub repository: rtk proxy make notes" if synced else
-                        "Optional: rtk proxy make notes sets up desktop Obsidian", pending=True, phase=phase_of("notes")))
+                        "Synced with a private GitHub repository: make notes" if synced else
+                        "Optional: make notes sets up desktop Obsidian", pending=True, phase=phase_of("notes")))
     tiers = sorted(site.get("zelab_tiers", {}))
     checks.append(Check("Team tiers", bool(tiers),
                         "SSH environments: " + ", ".join(f"{tier} host" for tier in tiers) if tiers else
@@ -326,10 +314,10 @@ def connection_checks(site, elevated):
 def load_site(site_path, env_path):
     """Return validated inputs, or a reason they are unavailable (never secrets)."""
     if importlib.util.find_spec("yaml") is None:
-        return None, "Site checks need the controller; rtk proxy make creates it"
+        return None, "Site checks need the controller; make creates it"
     from run import read_inputs
     if not site_path.exists():
-        return None, f"{site_path} does not exist yet; rtk proxy make creates it from this host"
+        return None, f"{site_path} does not exist yet; make creates it from this host"
     try:
         return read_inputs(site_path, env_path), None
     except ValueError as error:
@@ -434,7 +422,7 @@ def status_snapshot(checks, destination, site=None):
     if by_item["proof"][0] == "PENDING":
         by_item["proof"] = ("MANUAL", "Not provable by automation")
     for item in ITEMS:
-        by_item.setdefault(item.key, ("UNKNOWN", "Checked once rtk proxy make has created config/site.yaml"))
+        by_item.setdefault(item.key, ("UNKNOWN", "Checked once make has created config/site.yaml"))
     destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     with os.fdopen(os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as output:
@@ -457,7 +445,7 @@ def laptop_copy_command(path):
     if ":" in host:
         host = f"[{host}]"
     user = pwd.getpwuid(os.getuid()).pw_name
-    command = shlex.join(["rtk", "proxy", "scp", "-P", port, f"{user}@{host}:{path}"])
+    command = shlex.join(["scp", "-P", port, f"{user}@{host}:{path}"])
     return command + " ~/Downloads/zelab-guide.html"
 
 
@@ -466,7 +454,7 @@ def open_in_browser(path):
     if ssh_session() or not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")) \
             or not shutil.which("xdg-open"):
         return False
-    subprocess.Popen(["rtk", "proxy", "xdg-open", str(path)], stdin=subprocess.DEVNULL,
+    subprocess.Popen(["xdg-open", str(path)], stdin=subprocess.DEVNULL,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     return True
 
@@ -478,12 +466,12 @@ def print_guide(path, mode="auto", open_browser=False):
     heading("OPEN YOUR SETUP GUIDE")
     if remote:
         print("  From an SSH session: run these on your laptop, in a new terminal.\n")
-        print("    rtk proxy mkdir -p ~/Downloads")
+        print("    mkdir -p ~/Downloads")
         print("    " + laptop_copy_command(path))
         print("\n  macOS:")
-        print("    rtk proxy open ~/Downloads/zelab-guide.html")
+        print("    open ~/Downloads/zelab-guide.html")
         print("  Linux:")
-        print("    rtk proxy xdg-open ~/Downloads/zelab-guide.html")
+        print("    xdg-open ~/Downloads/zelab-guide.html")
         print("\n  Next time, use make REMOTE_HOST=user@server REMOTE_DIR=/absolute/checkout on the laptop.")
     else:
         opened = open_browser and open_in_browser(path)
@@ -527,7 +515,7 @@ def main(argv=None):
         pass  # the failed step already explained itself
     elif blockers:
         print(f"\n{mark('FAIL')} Blocked: fix the lines marked {mark('FAIL')} (the guide explains each), "
-              "then rerun: rtk proxy make")
+              "then rerun: make")
     elif args.after_install and site:
         print_installed(site, waiting, {check.name: check.detail for check in checks if check.pending})
     elif not args.brief:

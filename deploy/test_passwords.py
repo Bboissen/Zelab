@@ -199,12 +199,12 @@ class PasswordTest(unittest.TestCase):
             with self.assertRaises(getpass.GetPassWarning):
                 passwords.prompt_password('Hermes', fresh=True)
 
-    def test_real_rtk_terminal_never_echoes_either_password_entry(self):
+    def test_real_terminal_never_echoes_either_password_entry(self):
         master, slave = pty.openpty()
         self.addCleanup(os.close, master)
         program = ('import sys; sys.path.insert(0,"deploy"); import passwords; '
                    'passwords.prompt_password("Hermes",fresh=True); print("PROMPT_COMPLETE")')
-        child = subprocess.Popen(['rtk', 'proxy', sys.executable, '-c', program],
+        child = subprocess.Popen([sys.executable, '-c', program],
                                  stdin=slave, stdout=slave, stderr=slave, start_new_session=True,
                                  cwd=Path(__file__).resolve().parents[1])
         os.close(slave)

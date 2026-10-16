@@ -92,7 +92,7 @@ class RestoreCommandTest(unittest.TestCase):
         self.environment = patch.dict(os.environ, GNUPGHOME=str(self.gpg_home))
         self.environment.start()
         self.addCleanup(self.environment.stop)
-        self.addCleanup(lambda: subprocess.run(['rtk', 'proxy', 'gpgconf', '--homedir',
+        self.addCleanup(lambda: subprocess.run(['gpgconf', '--homedir',
                                               str(self.gpg_home), '--kill', 'gpg-agent'], capture_output=True))
         self.key = self.base / 'key'
         self.key.write_text(secrets.token_urlsafe(32))
@@ -124,7 +124,7 @@ class RestoreCommandTest(unittest.TestCase):
         self.destination = self.base / 'restored'
 
     def command(self, *args):
-        result = subprocess.run(['rtk', 'proxy', *map(str, args)], capture_output=True)
+        result = subprocess.run([*map(str, args)], capture_output=True)
         self.assertEqual(result.returncode, 0, 'Disposable native recovery command failed')
         return result
 

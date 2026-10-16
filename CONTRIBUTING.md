@@ -8,11 +8,10 @@ roles, systemd and Compose over a new service or integration layer.
 ## Local checks
 
 Install Python 3.12 or newer with venv support, Make, Git, GNU tar, GnuPG,
-`qemu-img` (the `qemu-utils` package; no KVM needed) and
-[RTK](https://github.com/rtk-ai/rtk), then run:
+`qemu-img` (the `qemu-utils` package; no KVM needed), then run:
 
 ```bash
-rtk proxy python3 tools/check.py
+python3 tools/check.py
 ```
 
 This bootstraps the hash-locked controller, runs the unit suites, checks the
@@ -22,7 +21,7 @@ The first run downloads the controller from PyPI; later runs reuse it. CI runs
 the same command plus the npm, pip and Node bridge checks in
 [.github/workflows/check.yaml](.github/workflows/check.yaml).
 
-Run host commands through RTK. Python uses four spaces, YAML two, Make recipes
+Python uses four spaces, YAML two, Make recipes
 tabs. Tests must use temporary fixtures, never a contributor's `.env`, login or
 host services.
 
@@ -44,7 +43,7 @@ authenticated API boundary, install its locked npm dependencies in a disposable
 directory and run:
 
 ```bash
-rtk proxy .venv/bin/python tools/check_paperclip.py --runtime /absolute/runtime --node /absolute/pinned/node
+.venv/bin/python tools/check_paperclip.py --runtime /absolute/runtime --node /absolute/pinned/node
 ```
 
 See [SECURITY.md](SECURITY.md) for sensitive reports and

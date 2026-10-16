@@ -53,7 +53,7 @@ def acl_entries(user, perms):
 
 
 def run(*argv, check=True, quiet=True):
-    return subprocess.run(['rtk', 'proxy', *map(str, argv)], check=check, text=True,
+    return subprocess.run([*map(str, argv)], check=check, text=True,
                           stdout=subprocess.PIPE if quiet else None, stderr=subprocess.PIPE if quiet else None)
 
 

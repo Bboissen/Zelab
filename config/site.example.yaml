@@ -1,4 +1,4 @@
-# Example only. `rtk proxy make` writes config/site.yaml for you from
+# Example only. `make` writes config/site.yaml for you from
 # this host (operator, SSH listener, tailnet name, free HTTPS ports). Every
 # other value comes from config/defaults.yaml; add a key to override one.
 
@@ -12,7 +12,7 @@ worker_ssh_port: 22
 # Plain make discovers an enrolled tailnet. A copied example remains private
 # on localhost; enable Tailscale after entering this host's actual DNS name.
 ui_tailscale_enabled: false
-# ui_tailscale_hostname:  # from: rtk proxy tailscale status --json
+# ui_tailscale_hostname:  # from: tailscale status --json
 ui_tail_hermes_port: 443
 ui_tail_paperclip_port: 8443
 ui_tail_obsidian_port: 9443

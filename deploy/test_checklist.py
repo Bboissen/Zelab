@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class ChecklistTest(unittest.TestCase):
     def test_public_html_matches_the_checklist_data(self):
         self.assertEqual((ROOT / 'docs/checklist.html').read_text(), checklist.render_html(),
-                         'Regenerate with: rtk proxy .venv/bin/python deploy/checklist.py --html docs/checklist.html')
+                         'Regenerate with: .venv/bin/python deploy/checklist.py --html docs/checklist.html')
 
     def test_setup_guide_lists_every_checklist_item_in_order(self):
         guide = (ROOT / 'docs/SETUP.md').read_text()
@@ -31,9 +31,14 @@ class ChecklistTest(unittest.TestCase):
         targets = {name for line in targets for name in line.split()}
         self.assertEqual(targets, {'all', 'clean', 'fclean', 're', 'help', 'backup', 'restore', 'bot', 'notes'})
         for doc in ['README.md', 'docs/SETUP.md', 'docs/OPERATIONS.md']:
-            for command in re.findall(r'rtk proxy make ([a-z][a-z-]*)', (ROOT / doc).read_text()):
-                with self.subTest(doc=doc, command=command):
-                    self.assertIn(command, targets)
+            # Match command examples, not prose such as "make asks for a password".
+            text = (ROOT / doc).read_text()
+            examples = re.findall(r'(?<!`)`([^`\n]+)`(?!`)', text)
+            examples += re.findall(r'^```(?:sh|bash)\n(.*?)^```', text, re.M | re.S)
+            for example in examples:
+                for command in re.findall(r'^make ([a-z][a-z-]*)', example, re.M):
+                    with self.subTest(doc=doc, command=command):
+                        self.assertIn(command, targets)
 
     def test_html_status_snapshot_escapes_details(self):
         page = checklist.render_html({'host': ('PASS', '<script>alert(1)</script>')}, 'now',
@@ -125,7 +130,7 @@ class FailureSummaryTest(unittest.TestCase):
         self.assertIn('Phase: Install pinned native Paperclip on the host', result.stderr)
         self.assertIn('Step:  paperclip : Wait for the native health endpoint', result.stderr)
         self.assertIn('Cause: Status code was -1 → retry', result.stderr)
-        self.assertIn('Next: fix the cause above, then run: rtk proxy make', result.stderr)
+        self.assertIn('Next: fix the cause above, then run: make', result.stderr)
 
     def test_terminated_install_still_reports_where_it_stopped(self):
         script = ("import time\nprint('PLAY [Install pinned unmodified Hermes in the adopted guest] ***', flush=True)\n"

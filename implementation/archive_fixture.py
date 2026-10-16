@@ -4,7 +4,7 @@ import subprocess
 
 
 def run(test, *args):
-    result = subprocess.run(['rtk', 'proxy', *map(str, args)], capture_output=True)
+    result = subprocess.run([*map(str, args)], capture_output=True)
     test.assertEqual(result.returncode, 0, 'Disposable archive command failed')
     return result
 

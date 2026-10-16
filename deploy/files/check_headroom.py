@@ -14,7 +14,7 @@ from pathlib import Path
 
 def free_gib(location):
     if location == 'docker':
-        found = subprocess.run(['rtk', 'proxy', 'docker', 'info', '--format', '{{.DockerRootDir}}'],
+        found = subprocess.run(['docker', 'info', '--format', '{{.DockerRootDir}}'],
                                capture_output=True, text=True).stdout.strip()
         location = found or '/var/lib/docker'
     path = Path(location)

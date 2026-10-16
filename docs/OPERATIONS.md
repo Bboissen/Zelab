@@ -6,7 +6,7 @@ repository root as the configured operator.
 
 ## Routine commands
 
-Run from the checkout with `rtk proxy`. Only these nine Make commands exist:
+Run from the checkout. Only these nine Make commands exist:
 
 | Command | Role |
 | --- | --- |
@@ -21,7 +21,7 @@ Run from the checkout with `rtk proxy`. Only these nine Make commands exist:
 | `make notes` | Sync the server vault with its private Git remote, for desktop Obsidian ([NOTES.md](NOTES.md)) |
 
 `make` includes readiness checks, resumable provisioning, private logs and the
-guide. Source checks are developer tooling: `rtk proxy python3 tools/check.py`.
+guide. Source checks are developer tooling: `python3 tools/check.py`.
 
 A successful `make` ends by deleting what the current pins no longer use:
 consumed downloads and the Hermes build tree in `/var/cache/zelab`, superseded
@@ -75,7 +75,7 @@ Wrong/missing confirmation removes nothing. Writers stop and notes exports
 unmount first; deletion refuses symlinks, mounts and preserved paths.
 
 From a laptop, use the same install command:
-`rtk proxy make REMOTE_HOST=user@server REMOTE_DIR=/absolute/checkout`.
+`make REMOTE_HOST=user@server REMOTE_DIR=/absolute/checkout`.
 Optional `REMOTE_PORT` and `GUIDE_DEST` select port/local guide path. No laptop
 inputs or credentials are uploaded. Run maintenance commands on the server.
 
@@ -260,8 +260,8 @@ The host takes a git snapshot of the vault every 5 minutes into a root-only
 directory the guest cannot reach. To bring back a folder as it was:
 
 ```sh
-rtk proxy sudo git --git-dir=/var/lib/zelab-vault-history log --oneline -- Projects/<slug>
-rtk proxy sudo git --git-dir=/var/lib/zelab-vault-history checkout <commit> -- Projects/<slug>
+sudo git --git-dir=/var/lib/zelab-vault-history log --oneline -- Projects/<slug>
+sudo git --git-dir=/var/lib/zelab-vault-history checkout <commit> -- Projects/<slug>
 ```
 
 The restored files appear in the guest at once, and on the laptop after the next
@@ -269,7 +269,7 @@ The restored files appear in the guest at once, and on the laptop after the next
 history snapshots every change, synced or not.
 
 Administration backends bind to localhost; Tailscale Serve supplies private HTTPS.
-No LAN proxy or public tunnel is required. Passwords remain required locally.
+No LAN relay or public tunnel is required. Passwords remain required locally.
 
 Fresh `make` asks for the UI passwords with hidden terminal input and
 confirmation. Keep them in your password manager. Hermes retains a native
@@ -285,9 +285,9 @@ must run interactively; it never invents a replacement owner password.
 ## Backup and recovery
 
 ```sh
-rtk proxy make backup
-rtk proxy make restore
-rtk proxy make restore RESTORE_ARCHIVE=/absolute/path/backup.tar.gpg
+make backup
+make restore
+make restore RESTORE_ARCHIVE=/absolute/path/backup.tar.gpg
 ```
 
 Backups go to `backup_dir` (default `~/backups/Zelab`); encryption uses
@@ -388,7 +388,7 @@ For component qualification, install the candidate's locked npm dependencies in
 a disposable directory and run:
 
 ```bash
-rtk proxy .venv/bin/python tools/check_paperclip.py --runtime /absolute/candidate-runtime --node /absolute/pinned-node --recovery
+.venv/bin/python tools/check_paperclip.py --runtime /absolute/candidate-runtime --node /absolute/pinned-node --recovery
 ```
 
 Optionally add `--previous-runtime /absolute/previous-runtime` to exercise a

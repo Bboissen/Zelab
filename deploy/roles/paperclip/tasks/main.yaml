@@ -94,8 +94,6 @@
 - name: Verify published server build matches selected source commit
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/node"
       - --input-type=module
       - -e
@@ -170,8 +168,6 @@
 - name: Verify an unrelated host account cannot open the embedded database socket
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - runuser
       - -u
       - nobody
