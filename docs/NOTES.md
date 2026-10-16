@@ -14,6 +14,19 @@ Nothing syncs on its own. The root-only vault history on the server
 (`/var/lib/zelab-vault-history`, a snapshot every five minutes) is separate: it is
 still your undo for anything an agent does, synced or not.
 
+Before indexing notes, `make notes` restores the deployment operator's and installed
+team tiers' native read/write ACLs in the vault. Agent tools can create or atomically
+replace a note with mode `0600`, masking the inherited ACLs even when its parent is
+configured correctly. This repair runs on every sync using the operator's existing
+unattended sudo rights; keep running `make notes` as the operator, not root. No manual
+permission repair or full reapply is needed after updating Zelab.
+
+The repair never reads note contents or changes ownership. It refuses symlinked vault
+paths, skips symlinks, hard links, special files and entries on another device, and
+uses open descriptors so a renamed path cannot redirect its ACL change. Git, credentials
+and network sync continue to run as the operator. A skipped unreadable entry can still
+stop Git; replace such a link with a regular note before retrying.
+
 ## Two sections, two direct writers
 
 - `Hermes/<bot>/`: personal notes, research, ideas and preparation before a project exists.

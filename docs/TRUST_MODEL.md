@@ -106,6 +106,13 @@ only when the owner runs it. Agents can write anything in the vault, so:
 - **The sync's Git directory, hooks, config and deploy key** live in `private_dir/notes-sync`,
   owned by the operator, outside the vault and the guest. The operator's own Git
   config is not loaded.
+- **Shared file access:** before indexing, the operator uses its existing unattended
+  sudo rights to restore native vault ACLs for itself and installed team tiers.
+  Mode `0600` writes can mask inherited entries. The repair reads no note contents,
+  changes no ownership, refuses symlinked vault paths and skips symlinks, hard links,
+  special files and other-device entries. Descriptor-based updates prevent a path
+  replacement from redirecting an ACL change. Git and network operations remain
+  unprivileged; no additional sudo grant or agent authority is added.
 - **What travels:** `.obsidian/`, Git files (`.gitignore`, `.gitattributes`...) and symlinks are
   never committed, and a remote that carries them is refused before anything
   reaches the vault. Obsidian plugins and snippets are code that would run on the
