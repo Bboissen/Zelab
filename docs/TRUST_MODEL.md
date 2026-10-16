@@ -26,7 +26,7 @@ Paperclip API exception from guest to host and the loopback Hermes run API
 also use HTTP, authenticated with task keys and profile API keys respectively.
 They rely on the host/VM boundary for network privacy, with no TLS on those
 local hops. Team SSH, notes SFTP and notes Git sync use encrypted transport.
-See the [connection table](../README.md#where-everything-runs).
+See the [connection table](ARCHITECTURE.md#connections).
 
 The outbound nftables policy is installed **inside** the guest. It constrains
 normal bot processes; guest root can remove or change it. KVM still separates

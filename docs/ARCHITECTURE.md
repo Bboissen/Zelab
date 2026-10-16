@@ -2,9 +2,9 @@
 
 ![Zelab placement and protected links](assets/architecture.svg)
 
-The [README connection table](../README.md#where-everything-runs) describes the
-transport, authentication and limits of each main link. The diagram separates
-provider services, owner devices, the KVM guest and host services. Guest-to-host
+The diagram follows the main work and notes flows. The connection table below
+describes transport, authentication and limits, including external model
+services and dashboard routes omitted from the overview. Guest-to-host
 application traffic has two permitted destinations: the Paperclip API and the
 notes SFTP listener. QEMU separately forwards host-loopback ports into the
 guest for deployment SSH, the Hermes API and dashboard. The HTTP links have
@@ -13,6 +13,26 @@ no TLS; tailnet HTTPS terminates at Tailscale Serve.
 Vault history and team accounts stay on the host. The vault is deliberately
 shared with the guest, and tickets can deliberately trigger host team work.
 Docker and full-sudo tiers can control the host, including its private state.
+
+## Connections
+
+| Link | Protection | Limit |
+| --- | --- | --- |
+| Your devices → administration UIs | Tailnet-only HTTPS through Tailscale Serve, plus native app authentication; public Funnel is refused | Tailnet permissions and app logins both matter. TLS ends at Serve |
+| Serve → Paperclip / Hermes dashboard | HTTP on host loopback; Hermes is reached through a loopback QEMU port forward | These local hops have no TLS; they trust the host and VM boundary |
+| Chat / model services ↔ agents | Provider TLS, bot tokens, model logins and Hermes chat allowlists | Providers receive the messages or prompts sent to them; TLS does not prevent prompt injection |
+| Hermes profiles → Paperclip tools | Each keyed profile uses the official Paperclip MCP server in the guest over stdio; it calls the host API over HTTP with that bot's scoped task key | MCP provides ticket tools, not run dispatch. No TLS on the guest-to-host HTTP hop. Keyless profiles have this MCP entry disabled |
+| Paperclip → Hermes runs | HTTP through a host-loopback QEMU forward, with a separate API key per profile | Keys select profiles; all profiles share one guest account |
+| Paperclip → host team | SSH with a key per tier, restricted by source address and native SSH options | The tier account grants command execution; the key is not a command allowlist |
+| Guest ↔ vault | SSHFS over key-authenticated SFTP, pinned host key, chroot, no shell or forwarding | Every bot can read, edit and delete the whole vault |
+| Vault ↔ desktop notes | Deliberate SSH Git sync through a private repository; server deploy key and Git metadata stay outside the vault | Notes leave the server for GitHub and your laptop; keep Obsidian plugins that execute note content off |
+| Vault → local history | Root-only Git snapshots every five minutes, outside the shared vault | Protects against direct bot edits; host root can alter it. Use encrypted backups too |
+
+The guest firewall permits public internet traffic, DNS/DHCP for QEMU, and the
+Paperclip API and notes SFTP exceptions. It rejects other private networks,
+tailnet addresses and IPv6 for normal bot traffic. These rules live inside the
+guest; guest root can change them. Read the [trust model](TRUST_MODEL.md) for
+the exact boundaries.
 
 ## Components
 
