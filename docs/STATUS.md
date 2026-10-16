@@ -126,6 +126,7 @@ Record PASS, FAIL or NOT RUN with timestamp, steps and sanitized evidence.
 | G1 | In a project's Discord channel, "@bot do research on X" ends with a Paperclip ticket and notes with sources under `Projects/<slug>/` in Obsidian | NOT RUN |
 | G2 | A bot hands a chat question to the PM by child ticket; the PM splits it across the team; members do the work on their tier accounts; the bot is woken and answers in the same channel without the owner | NOT RUN |
 | T1 | make hires the default team once (lead first, others reporting to it, Claude CLI engine, Opus 5.5, persona as AGENTS.md) and a second make hires nobody and leaves edited instructions alone | NOT RUN |
+| T3 | After the lead is terminated, `make` hires a new lead, moves the orphaned members under it and lists the tickets the old lead held; after a Claude login expires, `make bot` option 4 renews the same connection and every member runs again | NOT RUN |
 | T2 | The onboarding ticket is filed once; the PM splits it; sysadmin and devops write `Server/` (no secret values, nothing changed on the host) | NOT RUN |
 | G3 | A ticket the owner assigns to a bot in Paperclip is done by that bot and answered on the ticket | NOT RUN |
 | G4 | Two bots hand work over by chat @mention and by ticket | NOT RUN |

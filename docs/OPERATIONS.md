@@ -104,7 +104,11 @@ first and the others reporting to it. Its first `AGENTS.md` is
 generated section about this server; Paperclip versions it and `make` never
 rewrites it. Runs use the owner's Claude sign-in (`make bot`, option 4, or when
 Paperclip asks on the first task). Removing a member from the file does not
-fire it: terminate it in Paperclip.
+fire it: terminate it in Paperclip. A member still in the file is hired again
+on the next `make` after it is terminated (Paperclip cannot resume a terminated
+agent). Members whose manager was terminated move under the live lead, and
+`make` lists open tickets the terminated member still holds; members you put
+under another manager or at the top level stay there.
 
 After hiring, change a member's harness, model and AI connection in Paperclip.
 `make` preserves those choices. When switching Claude Code to Codex, also select
@@ -114,7 +118,11 @@ one, so it shows a compatibility error in between. **Responsible user's
 connection** requires that user's personal connection; it does not select the
 company-shared subscription. `make bot` option 4 completes a Claude sign-in only
 for Claude members still using the initial binding; it preserves other explicit
-connections and harnesses.
+connections and harnesses. When a subscription login expires ("OAuth access
+token has expired"), option 4 signs the existing company-shared connection in
+again (Paperclip's reconnect), so every agent bound to it keeps working. `make`
+moves Claude members off a Claude connection that needs a new sign-in onto the
+connected company-shared one.
 
 Once the lead is hired, `make` files the team's first ticket for it, once per site
 (`config/team/ONBOARDING.md`, Paperclip's `idempotencyKey`, and the marker

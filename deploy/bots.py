@@ -942,9 +942,10 @@ class Bots:
         declared = self.site['zelab_team']['members']
         environments = self.paperclip.ids.get('environments') or {}
         missing = sorted((name for name in declared if name not in members), key=lambda n: not declared[n]['lead'])
-        if not missing:
-            return
         lead = team_lead(self.site)
+        if not missing:
+            self.reparent(members, lead)
+            return
         team = self.site['zelab_team']
         projects = self.site.get('zelab_projects', {})
         binding = team_binding(self.paperclip.ai_connections())
@@ -967,20 +968,48 @@ class Bots:
                                   'heartbeat': {'enabled': False, 'wakeOnDemand': True, 'maxConcurrentRuns': 1}},
                 'metadata': {'zelab_team': name}})
         print('done')
+        self.reparent(members, lead)
         if binding is TEAM_CONNECTION:
             print('  The team runs on your Claude subscription: sign in once with rtk proxy make bot, option 4,')
             print('  then quit it; the team is switched to that connection.')
 
-    def bind_team(self):
-        """Complete explicit Claude sign-in for members still on the initial binding."""
-        binding = team_binding(self.paperclip.ai_connections())
+    def reparent(self, members, lead):
+        """Put members whose manager was terminated back under the live lead; other managers are the owner's choice."""
+        if lead not in members:
+            return
+        agents = self.paperclip.agents()
+        live = {agent['id'] for agent in agents if agent.get('status') != 'terminated'}
+        for name, agent in sorted(members.items()):
+            if name != lead and agent.get('reportsTo') and agent['reportsTo'] not in live:
+                self.paperclip.call('PATCH', f"/agents/{agent['id']}", {'reportsTo': members[lead]['id']})
+                agent['reportsTo'] = members[lead]['id']
+                print(f'  {name} now reports to {lead}.')
+        gone = {agent['id'] for agent in agents if agent.get('status') == 'terminated'
+                and (agent.get('metadata') or {}).get('zelab_team') in members}
+        if gone:
+            held = [issue.get('identifier') or issue['id']
+                    for issue in self.paperclip.call('GET', f'/companies/{self.paperclip.company}/issues') or []
+                    if issue.get('assigneeAgentId') in gone and issue.get('status') not in ('done', 'cancelled')]
+            if held:
+                print(f"  Open tickets still assigned to a terminated team member: {', '.join(sorted(held))}.")
+                print('  Reassign or cancel them in Paperclip.')
+
+    def bind_team(self, initial=True):
+        """Move Claude members to the connected shared Claude connection: members bound to a Claude connection
+        that needs a new sign-in, and, after an explicit sign-in, members still on the initial binding."""
+        connections = self.paperclip.ai_connections()
+        binding = team_binding(connections)
         if binding is TEAM_CONNECTION:
             return
+        broken = {connection['id'] for connection in connections
+                  if connection.get('provider') == 'anthropic' and connection.get('status') != 'connected'}
         members, _ = self.team()
         moved = []
         for name, agent in sorted(members.items()):
             runtime = agent.get('runtimeConfig') or {}
-            if agent.get('adapterType') == 'claude_local' and runtime.get('aiConnection') == TEAM_CONNECTION:
+            current = runtime.get('aiConnection')
+            stale = isinstance(current, dict) and current.get('connectionId') in broken
+            if agent.get('adapterType') == 'claude_local' and (stale or (initial and current == TEAM_CONNECTION)):
                 self.paperclip.call('PATCH', f"/agents/{agent['id']}", {'runtimeConfig': {**runtime, 'aiConnection': binding}})
                 moved.append(name)
         if moved:
@@ -1007,6 +1036,7 @@ class Bots:
         profiles, agents = self.state()
         self.profile_hygiene('check')
         self.hire_team(agents)
+        self.bind_team(initial=False)
         self.onboard()
         projects, (members, others) = self.paperclip.projects(), self.team()
         replacements = project_replacements(self.site, projects)
@@ -1148,6 +1178,11 @@ class Bots:
         provider, label = AI_PROVIDERS[choice]
         intent = {'provider': provider, 'method': 'subscription', 'name': label, 'ownership': 'shared',
                   'agentIds': [], 'allAgents': True}
+        # Signing in again renews the existing connection, so every agent bound to it keeps working.
+        existing = [c for c in self.paperclip.ai_connections()
+                    if (c.get('provider'), c.get('method'), c.get('ownership')) == (provider, 'subscription', 'shared')]
+        if existing:
+            intent['connectionId'] = next((c for c in existing if c.get('status') != 'connected'), existing[0])['id']
         path = f'/companies/{self.paperclip.company}/ai-connections/local'
         attempt = self.paperclip.call('POST', path + '/attempts', {**intent, 'restart': True})
         print('  Running Paperclip\'s sign-in command as its service account; approve the code it prints.')

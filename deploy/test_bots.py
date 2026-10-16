@@ -239,6 +239,124 @@ class BotTest(unittest.TestCase):
         self.assertEqual(calls, [('PATCH', '/agents/initial', {
             'runtimeConfig': {'aiConnection': bots.team_binding([connection]), 'heartbeat': {'enabled': False}}})])
 
+    def test_claude_connection_needing_sign_in_moves_members_to_the_connected_one(self):
+        broken = {'id': 'old', 'grantId': 'old-grant', 'provider': 'anthropic', 'method': 'subscription',
+                  'ownership': 'shared', 'status': 'needs_attention'}
+        connected = {**broken, 'id': 'new', 'grantId': 'new-grant', 'status': 'connected'}
+        stale = {**bots.TEAM_CONNECTION, 'mode': 'shared', 'connectionId': 'old', 'grantId': 'old-grant'}
+        members = {'pm': {'id': 'pm', 'adapterType': 'claude_local', 'runtimeConfig': {'aiConnection': dict(stale)}},
+                   'initial': {'id': 'initial', 'adapterType': 'claude_local',
+                               'runtimeConfig': {'aiConnection': dict(bots.TEAM_CONNECTION)}}}
+        calls = []
+
+        class Paperclip:
+            def ai_connections(self):
+                return [broken, connected]
+
+            def call(self, method, path, body):
+                calls.append((method, path))
+                members[path.rsplit('/', 1)[1]].update(body)
+
+        runner = bots.Bots.__new__(bots.Bots)
+        runner.paperclip = Paperclip()
+        runner.team = lambda: (members, [])
+        runner.bind_team(initial=False)
+        runner.bind_team(initial=False)
+        self.assertEqual(calls, [('PATCH', '/agents/pm')])
+        self.assertEqual(members['pm']['runtimeConfig']['aiConnection'], bots.team_binding([connected]))
+        self.assertEqual(members['initial']['runtimeConfig']['aiConnection'], bots.TEAM_CONNECTION)
+
+    def test_signing_in_again_renews_the_existing_shared_connection(self):
+        connections = [{'id': 'fine', 'provider': 'anthropic', 'method': 'subscription', 'ownership': 'shared',
+                        'status': 'connected'},
+                       {'id': 'expired', 'provider': 'anthropic', 'method': 'subscription', 'ownership': 'shared',
+                        'status': 'needs_attention'},
+                       {'id': 'codex', 'provider': 'openai', 'method': 'subscription', 'ownership': 'shared',
+                        'status': 'needs_attention'}]
+        bodies = []
+
+        class Paperclip:
+            company = 'c1'
+
+            def ai_connections(self):
+                return connections
+
+            def call(self, method, path, body=None):
+                bodies.append((path.rsplit('/', 1)[1], body))
+                return {'command': 'true', 'sessionId': 's1'} if path.endswith('/attempts') else {'status': 'ready'}
+
+        runner = bots.Bots.__new__(bots.Bots)
+        runner.site = {**SITE, 'paperclip_user': 'zelab-paperclip', 'paperclip_home': '/var/lib/zelab-paperclip'}
+        runner.paperclip = Paperclip()
+        runner.bind_team = lambda: None
+        with patch('builtins.input', return_value='claude'), patch.object(bots.subprocess, 'run'), \
+                patch('sys.stdout'):
+            runner.host_sign_in()
+        self.assertEqual([path for path, _ in bodies], ['attempts', 'check', 'local'])
+        self.assertTrue(all(body['connectionId'] == 'expired' for _, body in bodies))
+        connections[1]['status'] = 'connected'
+        bodies.clear()
+        with patch('builtins.input', return_value='claude'), patch.object(bots.subprocess, 'run'), \
+                patch('sys.stdout'):
+            runner.host_sign_in()
+        self.assertEqual({body['connectionId'] for _, body in bodies}, {'fine'})
+
+    def test_a_terminated_lead_is_rehired_and_its_orphans_report_to_the_new_one(self):
+        agents = [
+            {'id': 'old-pm', 'name': 'pm', 'adapterType': 'claude_local', 'status': 'terminated',
+             'metadata': {'zelab_team': 'pm'}},
+            {'id': 'backend', 'name': 'backend', 'adapterType': 'claude_local', 'status': 'paused',
+             'reportsTo': 'old-pm', 'metadata': {'zelab_team': 'backend'}},
+            {'id': 'data', 'name': 'data', 'adapterType': 'claude_local', 'status': 'idle',
+             'reportsTo': None, 'metadata': {'zelab_team': 'data'}},
+            {'id': 'mobile', 'name': 'mobile', 'adapterType': 'claude_local', 'status': 'idle',
+             'reportsTo': 'backend', 'metadata': {'zelab_team': 'mobile'}}]
+        issues = [{'id': 'i1', 'identifier': 'ZEL-8', 'assigneeAgentId': 'old-pm', 'status': 'blocked'},
+                  {'id': 'i2', 'identifier': 'ZEL-1', 'assigneeAgentId': 'old-pm', 'status': 'done'}]
+        hired, patched = [], []
+
+        class Paperclip:
+            company = 'c1'
+            ids = {'environments': {'dev host': 'env-dev'}}
+
+            def agents(self):
+                return agents
+
+            def ai_connections(self):
+                return []
+
+            def hire(self, body):
+                hired.append(body)
+                agent = {**body, 'id': 'new-pm', 'status': 'idle'}
+                agents.append(agent)
+                return agent
+
+            def call(self, method, path, body=None):
+                if method == 'GET':
+                    return issues
+                patched.append((path, body))
+                next(a for a in agents if a['id'] == path.rsplit('/', 1)[1]).update(body)
+
+        runner = bots.Bots.__new__(bots.Bots)
+        runner.site = {**SITE, 'zelab_tiers': {'dev': {'account': 'zelab-team-dev', 'preset': 'repo-dev', 'paths': []}},
+                       'zelab_team': {'model': 'claude-opus-5-5', 'effort': 'high', 'members': {
+                           'pm': {'title': 'Product Manager', 'role': 'pm', 'tier': 'dev', 'lead': True},
+                           'backend': {'title': 'Backend Engineer', 'role': 'engineer', 'tier': 'dev', 'lead': False},
+                           'data': {'title': 'Data', 'role': 'researcher', 'tier': 'dev', 'lead': False},
+                           'mobile': {'title': 'Mobile', 'role': 'engineer', 'tier': 'dev', 'lead': False}}}}
+        runner.paperclip = Paperclip()
+        runner.team = lambda: bots.team_agents(runner.site, agents, Paperclip.ids)
+        with patch('sys.stdout') as out:
+            runner.hire_team({})
+            runner.hire_team({})
+        self.assertEqual([(body['name'], body['reportsTo']) for body in hired], [('pm', None)])
+        self.assertEqual(patched, [('/agents/backend', {'reportsTo': 'new-pm'})])
+        self.assertEqual(agents[2]['reportsTo'], None)
+        self.assertEqual(agents[3]['reportsTo'], 'backend')
+        printed = ''.join(str(call.args[0]) for call in out.write.call_args_list if call.args)
+        self.assertIn('ZEL-8', printed)
+        self.assertNotIn('ZEL-1', printed)
+
     def test_onboarding_ticket_is_filed_once_for_the_lead(self):
         calls = []
 
@@ -334,6 +452,9 @@ class ReconcileTest(unittest.TestCase):
 
             def projects(self):
                 return outer.project_rows
+
+            def ai_connections(self):
+                return []
 
             def keys(self, agent):
                 return outer.active
