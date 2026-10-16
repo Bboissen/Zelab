@@ -392,7 +392,9 @@ class Paperclip:
         return self.call('GET', f'/companies/{self.company}/agents') or []
 
     def projects(self):
-        return self.call('GET', f'/companies/{self.company}/projects') or []
+        # Native HTTP listing hides archived projects unless explicitly asked.
+        # Reconciliation needs their IDs/history; grants still exclude them.
+        return self.call('GET', f'/companies/{self.company}/projects?includeArchived=true') or []
 
     def secret(self, name, key, value):
         existing = [s for s in self.call('GET', f'/companies/{self.company}/secrets') or [] if s.get('name') == name]
