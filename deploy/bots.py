@@ -893,7 +893,7 @@ class Bots:
             print('  then quit it; the team is switched to that connection.')
 
     def bind_team(self):
-        """Point every team member at the company-shared Claude connection once it exists."""
+        """Complete explicit Claude sign-in for members still on the initial binding."""
         binding = team_binding(self.paperclip.ai_connections())
         if binding is TEAM_CONNECTION:
             return
@@ -901,7 +901,7 @@ class Bots:
         moved = []
         for name, agent in sorted(members.items()):
             runtime = agent.get('runtimeConfig') or {}
-            if runtime.get('aiConnection') != binding:
+            if agent.get('adapterType') == 'claude_local' and runtime.get('aiConnection') == TEAM_CONNECTION:
                 self.paperclip.call('PATCH', f"/agents/{agent['id']}", {'runtimeConfig': {**runtime, 'aiConnection': binding}})
                 moved.append(name)
         if moved:
@@ -928,7 +928,6 @@ class Bots:
         profiles, agents = self.state()
         self.profile_hygiene('check')
         self.hire_team(agents)
-        self.bind_team()
         self.onboard()
         projects, (members, others) = self.paperclip.projects(), self.team()
         replacements = project_replacements(self.site, projects)

@@ -45,6 +45,14 @@ disposable guest and scratch Paperclip (wizards excluded).
 
 ## v1.1 acceptance
 
+Host-agent harness switching (2026-10-16): the checksum-verified pinned
+Paperclip UI retains the old AI binding when the adapter changes. Choosing the
+matching shared connection replaces its provider and grant together. Reapply
+regressions cover retaining native harness, model and connection selections,
+including responsible-user bindings, and completing explicit Claude sign-in
+without overwriting a changed harness or connection. Authenticated live UI
+switch/save and inference after switching: **NOT RUN**.
+
 Bot reconciliation regression coverage (2026-10-16): unattended plain `make`
 invokes refresh; explicit project replacements migrate scoped grants; generated
 instructions omit inaccessible projects; interrupted rotations converge;

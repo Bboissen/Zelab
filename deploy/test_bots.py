@@ -172,6 +172,39 @@ class BotTest(unittest.TestCase):
                          {'provider': 'anthropic', 'method': 'subscription', 'mode': 'shared',
                           'connectionId': 'c2', 'grantId': 'g2'})
 
+    def test_claude_sign_in_preserves_changed_harnesses_and_explicit_connections(self):
+        connection = {'id': 'claude', 'grantId': 'grant', 'provider': 'anthropic',
+                      'method': 'subscription', 'ownership': 'shared', 'status': 'connected'}
+        explicit = {**bots.TEAM_CONNECTION, 'mode': 'shared', 'connectionId': 'chosen', 'grantId': 'chosen-grant'}
+        members = {
+            'initial': {'id': 'initial', 'adapterType': 'claude_local',
+                        'runtimeConfig': {'aiConnection': dict(bots.TEAM_CONNECTION), 'heartbeat': {'enabled': False}}},
+            'codex': {'id': 'codex', 'adapterType': 'codex_local',
+                      'runtimeConfig': {'aiConnection': {'provider': 'openai', 'method': 'subscription',
+                                                       'mode': 'shared', 'connectionId': 'codex', 'grantId': 'cg'}}},
+            'switching': {'id': 'switching', 'adapterType': 'codex_local',
+                          'runtimeConfig': {'aiConnection': dict(bots.TEAM_CONNECTION)}},
+            'explicit': {'id': 'explicit', 'adapterType': 'claude_local', 'runtimeConfig': {'aiConnection': explicit}},
+            'legacy': {'id': 'legacy', 'adapterType': 'claude_local', 'runtimeConfig': {}},
+        }
+        calls = []
+
+        class Paperclip:
+            def ai_connections(self):
+                return [connection]
+
+            def call(self, method, path, body):
+                calls.append((method, path, body))
+                members[path.rsplit('/', 1)[1]].update(body)
+
+        runner = bots.Bots.__new__(bots.Bots)
+        runner.paperclip = Paperclip()
+        runner.team = lambda: (members, [])
+        runner.bind_team()
+        runner.bind_team()
+        self.assertEqual(calls, [('PATCH', '/agents/initial', {
+            'runtimeConfig': {'aiConnection': bots.team_binding([connection]), 'heartbeat': {'enabled': False}}})])
+
     def test_onboarding_ticket_is_filed_once_for_the_lead(self):
         calls = []
 
@@ -249,7 +282,7 @@ class ReconcileTest(unittest.TestCase):
         self.runner.state = lambda: ({'scout': self.profile}, {'scout': self.agent})
         self.runner.team = lambda: ({}, [])
         self.runner.hire_team = lambda _: None
-        self.runner.bind_team = self.runner.onboard = lambda: None
+        self.runner.onboard = lambda: None
         self.runner.profile_hygiene = lambda action: None
         self.project_rows = [{'id': 'p-old', 'name': 'Old Lab'}, {'id': 'p-new', 'name': 'Homelab'},
                              {'id': 'p-other', 'name': 'Another Project'}]
@@ -331,6 +364,30 @@ class ReconcileTest(unittest.TestCase):
         self.assertEqual(self.created, [{'kind': 'task_bridge', 'projectIds': ['p-new'],
                                          'allowedAssigneeAgentIds': ['a1']}])
         self.assertEqual(self.writes, written)
+
+    def test_make_preserves_native_team_harness_model_and_connection_choices(self):
+        members = {
+            'pm': {'id': 'host-pm', 'adapterType': 'codex_local', 'status': 'idle',
+                   'adapterConfig': {'model': 'chosen-codex-model'},
+                   'runtimeConfig': {'aiConnection': {'provider': 'openai', 'method': 'subscription',
+                                                    'mode': 'shared', 'connectionId': 'codex', 'grantId': 'cg'}}},
+            'backend': {'id': 'host-backend', 'adapterType': 'claude_local', 'status': 'idle',
+                        'adapterConfig': {'model': 'chosen-claude-model'},
+                        'runtimeConfig': {'aiConnection': dict(bots.TEAM_CONNECTION)}},
+        }
+        before = json.loads(json.dumps(members))
+        self.runner.site['zelab_team'] = {'members': {
+            'pm': {'title': 'Product Manager', 'lead': True},
+            'backend': {'title': 'Backend Engineer', 'lead': False}}}
+        self.runner.team = lambda: (members, [])
+        self.runner.paperclip.ai_connections = lambda: [
+            {'id': 'claude', 'grantId': 'grant', 'provider': 'anthropic', 'method': 'subscription',
+             'ownership': 'shared', 'status': 'connected'}]
+        self.runner.refresh()
+        self.runner.refresh()
+        self.assertEqual(members, before)
+        self.assertFalse(any(method == 'PATCH' and path.startswith('/agents/host-')
+                             for method, path, _ in self.calls))
 
     def test_interrupted_rotation_recreates_latest_scope_and_revokes_both_old_keys(self):
         self.active.append({**self.active[0], 'id': 'candidate', 'createdAt': '2026-01-02',

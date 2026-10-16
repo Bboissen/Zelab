@@ -96,6 +96,9 @@ remain the owner's choice; explicit `project_replacements` in
 Replaced projects are archived only after their open tickets are resolved;
 their notes and tickets are retained.
 
+Team defaults apply when hiring. Subsequent harness, model and AI connection
+changes in Paperclip remain authoritative during reapplies.
+
 A private fingerprint covers each profile's persona, configuration, managed
 skills and qualified component pins, including the resolved dependency inputs.
 On first adoption and after a change,

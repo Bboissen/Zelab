@@ -106,6 +106,16 @@ rewrites it. Runs use the owner's Claude sign-in (`make bot`, option 4, or when
 Paperclip asks on the first task). Removing a member from the file does not
 fire it: terminate it in Paperclip.
 
+After hiring, change a member's harness, model and AI connection in Paperclip.
+`make` preserves those choices. When switching Claude Code to Codex, also select
+the shared Codex subscription under **AI connection**, then choose a Codex model
+and save. The pinned UI retains the previous connection until you select the new
+one, so it shows a compatibility error in between. **Responsible user's
+connection** requires that user's personal connection; it does not select the
+company-shared subscription. `make bot` option 4 completes a Claude sign-in only
+for Claude members still using the initial binding; it preserves other explicit
+connections and harnesses.
+
 Once the lead is hired, `make` files the team's first ticket for it, once per site
 (`config/team/ONBOARDING.md`, Paperclip's `idempotencyKey`, and the marker
 `private_dir/team-onboarding.json`): map the server, read-only, into the vault
