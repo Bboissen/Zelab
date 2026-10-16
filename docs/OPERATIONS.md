@@ -98,10 +98,17 @@ Do not mutate the same state manually during maintenance.
 | Sign the team in | Paperclip's own local subscription sign-in for Claude Code and Codex, one harness at a time, saved as company-shared AI connections; shows each harness's state and members | Paperclip |
 | Remove a bot | After you type its name: terminate its Paperclip agent (its keys are revoked), `hermes profile export` (no logins or tokens) to `profile-exports/`, `hermes profile delete` | Hermes, Paperclip |
 
+After the model and chat setup steps, make bot restarts the shared gateway to
+load the completed native settings, including every allowlisted user and the
+home-channel options. This happens before persona and task-key prompts, so a
+later interrupted or failed step cannot leave an adapter using an unfinished
+allowlist. If the gateway has active work, setup stops and leaves the restart
+pending; finish that work and rerun make bot.
+
 On quit, make bot rewrites each bot's `zelab` skill (projects with their IDs and
 vault folders, the other bots with their agent IDs) and widens task keys to
-every current bot; it restarts the shared gateway once when a bot was added,
-signed in, connected to a chat app or removed.
+every current bot; it restarts the shared gateway again if further integration
+changes or removals require it.
 
 Task keys are optional. A bot without one still chats; `make` refreshes its
 integration and skill and leaves task-key setup pending in the guide. Its
