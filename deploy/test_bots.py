@@ -1,6 +1,8 @@
 """make bot building blocks: names, the guest probe, Paperclip agent matching and the zelab skill."""
 
 import importlib.util
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -159,12 +161,26 @@ class BotTest(unittest.TestCase):
         self.assertEqual(({m: a['id'] for m, a in members.items()}, [a['id'] for a in others]), ({'pm': 'h1'}, ['h3']))
         self.assertEqual(bots.assignees(site, {'marvin': {'id': 'b1'}}, members), ['b1', 'h1'])
         self.assertEqual(bots.assignees(site, {'marvin': {'id': 'b1'}}, {}), ['b1'])
-        text = bots.skill(site, 'marvin', {'marvin': {'id': 'b1'}}, [], members, others)
+        projects = [{'id': 'p1', 'name': 'My Project'}]
+        text = bots.skill(site, 'marvin', {'marvin': {'id': 'b1'}}, projects, members, others)
         self.assertIn('Only **pm** takes work from you', text)
         self.assertIn('the right expert: helper.', text)
         self.assertIn('`assigneeAgentId` `h1`', text)
         self.assertIn('`blockedByIssueIds`', text)
-        self.assertIn('without an assignee', bots.skill(site, 'marvin', {}, []))
+        self.assertIn('without an assignee', bots.skill(site, 'marvin', {}, projects))
+
+    def test_skill_without_a_key_or_projects_explains_setup_without_ticket_tools(self):
+        site = {**SITE, 'zelab_team': {'members': {'pm': {'title': 'PM', 'lead': True}}}}
+        members = {'pm': {'id': 'team-lead'}}
+        for projects, task_key in (([{'id': 'p1', 'name': 'My Project'}], False), ([], True), ([], False)):
+            with self.subTest(projects=projects, task_key=task_key):
+                text = bots.skill(site, 'scout', {}, projects, members, task_key=task_key)
+                self.assertNotIn('paperclipCreateIssue', text)
+                self.assertNotIn('Create the job', text)
+                self.assertNotIn('`p1`', text)
+                self.assertIn('owner needs to give you a task key', text)
+                self.assertIn('no terminal or files', text)
+                self.assertIn('No commands', text)
 
     def test_chat_has_no_command_tools_and_reaches_paperclip_through_its_mcp_server(self):
         settings = bots.chat_settings()
@@ -200,6 +216,14 @@ class BotTest(unittest.TestCase):
         self.assertEqual(lock['packages']['node_modules/@paperclipai/mcp-server']['version'], version)
         self.assertTrue(all(entry.get('resolved', '').startswith('https://registry.npmjs.org/') and entry.get('integrity')
                             for name, entry in lock['packages'].items() if name))
+
+    def test_keyless_chat_disables_paperclip_but_keeps_command_tools_unavailable(self):
+        settings = bots.chat_settings(task_key=False)
+        self.assertEqual(settings['mcp_servers.paperclip'], {'enabled': False})
+        for platform in bots.CHAT_PLATFORMS:
+            tools = settings[f'platform_toolsets.{platform}']
+            self.assertEqual(tools, [tool for tool in bots.CHAT_TOOLSETS if tool != 'paperclip'])
+            self.assertNotIn('terminal', tools)
 
     def test_team_prefers_the_connected_shared_claude_connection(self):
         personal = {'id': 'c1', 'grantId': 'g1', 'provider': 'anthropic', 'method': 'subscription',
@@ -528,6 +552,89 @@ class ReconcileTest(unittest.TestCase):
                 return 0, ''
 
         self.runner.paperclip, self.runner.guest = Paperclip(), Guest()
+
+    def test_keyless_profile_keeps_reconciliation_and_skill_without_key_writes_or_warning(self):
+        self.profile['task_key'] = False
+        self.active = [{'id': 'revoked', 'name': bots.KEY_NAME, 'revokedAt': 'date'},
+                       {'id': 'unmanaged', 'name': 'Another key'}]
+        self.passthrough = ['CUSTOM_KEY']
+        self.agent['adapterConfig']['apiBaseUrl'] = 'http://127.0.0.1:1/p/scout'
+        self.chat['platform_toolsets.discord'] = ['terminal']
+        with patch.object(self.runner, 'write_key') as write_key, redirect_stdout(io.StringIO()) as output:
+            self.runner.refresh()
+        write_key.assert_not_called()
+        self.assertEqual(self.created, [])
+        self.assertFalse(any(code in (bots.SET_ENV, bots.BRIDGE_READY) for code, _ in self.writes))
+        self.assertTrue(any(code == bots.COPY_SKILL for code, _ in self.writes))
+        self.assertTrue(set(bots.TASK_ENV).issubset(self.passthrough))
+        self.assertEqual(self.agent['adapterConfig']['apiBaseUrl'], bots.bot_url(SITE, 'scout'))
+        self.assertEqual(self.chat, bots.chat_settings(task_key=False))
+        text = next(value for (code, _), value in self.writes.items() if code == bots.WRITE_FILE)
+        self.assertIn('cannot file tickets yet', text)
+        self.assertNotIn('paperclipCreateIssue', text)
+        self.assertEqual(output.getvalue(), '')
+
+    def test_keyless_profile_does_not_stop_a_later_keyed_profile(self):
+        self.runner.state = lambda: ({'alpha': {'task_key': False}, 'scout': self.profile},
+                                    {'alpha': {'id': 'a0'}, 'scout': self.agent})
+        keys = self.runner.paperclip.keys
+        self.runner.paperclip.keys = lambda agent: [] if agent == 'a0' else keys(agent)
+        self.runner.refresh()
+        skills = {args[0]: value for (code, args), value in self.writes.items() if code == bots.WRITE_FILE}
+        self.assertEqual(len(skills), 2)
+        self.assertNotIn('paperclipCreateIssue', skills[f'{bots.HERMES_HOME}/profiles/alpha/skills/zelab/zelab/SKILL.md'])
+        self.assertIn('`p-new`', skills[f'{bots.HERMES_HOME}/profiles/scout/skills/zelab/zelab/SKILL.md'])
+        self.assertEqual(self.created[0]['allowedAssigneeAgentIds'], ['a0', 'a1'])
+
+    def test_zero_projects_and_a_keyless_profile_finish(self):
+        self.runner.site['zelab_project_replacements'] = {}
+        self.project_rows, self.active = [], []
+        self.profile['task_key'] = False
+        self.runner.refresh()
+        self.assertEqual(self.created, [])
+        self.assertTrue(any(code == bots.WRITE_FILE for code, _ in self.writes))
+
+    def test_task_key_skip_explains_chat_only_and_creates_no_key(self):
+        self.runner.paperclip.agents = lambda: [{**self.agent, 'adapterType': 'hermes_gateway'}]
+        with patch('builtins.input', return_value=''), patch.object(self.runner, 'write_key') as write_key, \
+                redirect_stdout(io.StringIO()) as output:
+            self.runner.task_key('scout')
+        write_key.assert_not_called()
+        self.assertEqual(self.created, [])
+        self.assertIn('scout has no task key: it can chat but not file tickets. '
+                      'Add one later with make bot → 2 → scout → d.', output.getvalue())
+
+    def test_task_key_without_projects_points_to_the_optional_example(self):
+        self.runner.paperclip.agents = lambda: [{**self.agent, 'adapterType': 'hermes_gateway'}]
+        self.project_rows = []
+        with patch('builtins.input', side_effect=AssertionError('No project to select')), \
+                redirect_stdout(io.StringIO()) as output:
+            self.runner.task_key('scout')
+        self.assertEqual(self.created, [])
+        self.assertIn('No Paperclip projects yet', output.getvalue())
+        self.assertIn('copy config/projects.example.yaml to config/projects.yaml', output.getvalue())
+
+    def test_writing_a_task_key_enables_paperclip_for_a_keyless_profile(self):
+        self.active = []
+        self.chat = bots.chat_settings(task_key=False)
+        self.runner.write_key('scout', {'scout': self.agent}, ['p-new'])
+        self.assertEqual(self.chat, bots.chat_settings())
+        self.assertTrue(self.runner.restart_needed)
+        self.assertEqual(len(self.created), 1)
+
+    def test_refresh_still_stops_for_scope_decisions_and_unhired_profiles(self):
+        scopes = ({'kind': 'custom'},
+                  {'kind': 'task_bridge', 'projectIds': ['p-old'], 'custom': True},
+                  {'kind': 'task_bridge', 'projectIds': ['missing']},
+                  {'kind': 'task_bridge', 'projectIds': []})
+        for scope in scopes:
+            with self.subTest(scope=scope):
+                self.active[0]['scope'] = scope
+                with self.assertRaises(bots.Stop):
+                    self.runner.refresh()
+        self.runner.state = lambda: ({'scout': self.profile}, {})
+        with self.assertRaisesRegex(bots.Stop, 'no Paperclip agent'):
+            self.runner.refresh()
 
     def test_make_migrates_keys_and_skill_then_archives_without_deleting_anything(self):
         self.runner.refresh()

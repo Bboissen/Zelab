@@ -4,6 +4,7 @@
 # projects: the key is the project's slug, its vault folder Projects/<slug>/.
 #   name: the Paperclip project name (default: the slug).
 # A project is only where tickets and notes go; it grants no host rights.
+# Projects are optional: bots can chat without one, but tickets need a project and task key.
 # Removing a project here keeps its Paperclip project, tickets and vault folder.
 # project_replacements: explicitly migrate bot grants from retired projects to
 # declared projects. make archives a replaced project only when it has no open
@@ -17,12 +18,13 @@
 #           Docker. A path must be reachable by the account: not inside a closed
 #           home folder (make stops if it is). Recursive rights on a big tree
 #           take a long time on the first run.
-projects:
-  homelab:
-    name: Homelab
-  research: {}
+projects: {}
+# To add your own project, replace the empty map above with:
+# projects:
+#   my-project:
+#     name: My Project
 # tiers:
 #   ops:
-#     paths: [/srv/compose]
+#     paths: [/srv/my-project]
 # project_replacements:
-#   old-lab: homelab
+#   old-project: my-project

@@ -305,7 +305,9 @@ def connection_checks(site, elevated):
                             f"Still Hermes' generic persona: rtk proxy make bot, then set up {name} (c)",
                             pending=True, phase=phase))
         checks.append(Check(f"{name}: task key", bot["task_key"],
-                            f"rtk proxy make bot, then set up {name} (d)", pending=True, phase=phase))
+                            ("Add a project to config/projects.yaml (copy config/projects.example.yaml if needed), "
+                             "rerun make, then " if not site.get("zelab_projects") else "")
+                            + f"rtk proxy make bot, then set up {name} (d)", pending=True, phase=phase))
     synced = bool(site.get("notes_sync_remote"))
     checks.append(Check("Desktop notes", synced,
                         "Synced with a private GitHub repository: rtk proxy make notes" if synced else

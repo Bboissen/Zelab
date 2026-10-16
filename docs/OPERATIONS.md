@@ -103,6 +103,12 @@ vault folders, the other bots with their agent IDs) and widens task keys to
 every current bot; it restarts the shared gateway once when a bot was added,
 signed in, connected to a chat app or removed.
 
+Task keys are optional. A bot without one still chats; `make` refreshes its
+integration and skill and leaves task-key setup pending in the guide. Its
+Paperclip MCP entry stays disabled until a verified key is written. With no
+projects, add one to `config/projects.yaml` first and rerun `make`, then use
+`make bot` → 2 → the bot's name → d.
+
 ## Projects and the team
 
 `config/projects.yaml` (copy `config/projects.example.yaml`; kept out of Git)
@@ -313,9 +319,9 @@ in local `config/projects.yaml`:
 
 ```yaml
 projects:
-  homelab: {name: Homelab}
+  my-project: {name: My Project}
 project_replacements:
-  old-lab: homelab
+  old-project: my-project
 ```
 
 `make` migrates existing bot grants through that mapping, then archives the old

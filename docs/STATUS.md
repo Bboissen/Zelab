@@ -7,6 +7,39 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Optional task keys and projects: 2026-10-16
+
+A hired bot without an active managed task key no longer stops plain `make` or
+the exit from `make bot`. Reconciliation still refreshes its bundled skill,
+adapter, chat tools, terminal credential passthrough and Zelab skill, then
+continues to the next bot. Keyless skills explain that the owner must give the
+bot a task key before ticketed work. The guide keeps setup pending, with project
+setup first when no projects are declared. The public project example declares
+`projects: {}`; existing local project inputs are unchanged.
+
+Checked the installed Hermes checkout at `3637c512` and the pinned Paperclip MCP
+server `2026.1005.0`. Starting the MCP executable with a synthetic URL and an
+empty API key exits 1 with `Missing PAPERCLIP_API_KEY`. Hermes' pinned
+`tools/mcp_tool_config.py` preserves unresolved `${VAR}` references; starting
+the MCP executable with those literal references and closed stdin exits 0
+without stderr, but does not prove usable ticket access. The pinned discovery
+code logs failed connections and retries after a cooldown. In isolated native
+Hermes discovery under temporary guest homes (19:16 UTC), the empty key returned
+no tools and logged a connection failure after three attempts; a second immediate
+discovery added no warnings. Unresolved references exposed the three tools
+without warnings. The `enabled: false` entry returned no tools or warnings on
+both passes. Zelab now uses that native disabled entry without
+Paperclip in the chat toolsets for keyless profiles, and enables it after a
+verified key is written.
+
+Source regressions cover keyless profiles, a later keyed bot, zero projects,
+skip guidance, chat-only skills, MCP activation and retained scope/hire stops.
+The full source suite and gitleaks passed. Full-site `make` with five keyless
+bots, a real chat turn, and interactive task-key creation followed by the guide
+update: **NOT RUN**; the owner password and interactive project choice were not
+available to this agent. The runtime probes used synthetic settings, no model,
+no chat messages and no production API calls.
+
 ## Team harness per member: 2026-10-16
 
 `config/team.yaml` now declares a default `harness` (`claude` or `codex`) with a
