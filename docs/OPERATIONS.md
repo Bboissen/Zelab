@@ -88,6 +88,10 @@ Do not mutate the same state manually during maintenance.
 `make bot` opens a terminal menu; it refuses to run without one. A fresh plain
 `make` asks how many bots to set up and runs the same steps for each.
 
+Discord hides tool-call progress messages for every bot through Hermes' native
+`display.platforms.discord.tool_progress: false` setting. Normal bot replies
+still appear. Installation, plain `make` and `make bot` apply this default.
+
 | Menu | What runs | Native to |
 | --- | --- | --- |
 | Add a bot | `hermes profile create <name> --description <role>`; a new `API_SERVER_KEY` in the profile; Paperclip's task-bridge skill copied into it; `terminal.env_passthrough` for the bridge variables; the `paperclip` MCP server, chat tools without commands (`platform_toolsets`) and `tools.tool_search.enabled: off` through `hermes config set`; Paperclip `/agent-hires` plus approval for a `hermes_gateway` agent at `/p/<name>` | Hermes, Paperclip |

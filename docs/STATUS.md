@@ -7,6 +7,26 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Quiet Discord tool progress: 2026-10-16
+
+Every bot now receives Hermes' native per-platform setting
+`display.platforms.discord.tool_progress: false` during installation and
+reconciliation. In the pinned `gateway/display_config.py`, this resolves to
+explicit `off`, ahead of global and legacy environment settings. The gateway
+loads this display configuration for each turn.
+
+Applied to all six live profiles at 20:16–20:18 UTC using Hermes' native
+configuration setter. For each profile, its effective gateway config resolved
+to `off` even with a synthetic verbose environment fallback. The unmodified
+native event dispatcher received three representative tool events and queued
+zero tool messages; two normal reply events still reached a local test sink.
+Other settings, including skill auto-loading, were retained. The probe sent no
+Discord messages and made no model or Paperclip calls.
+
+Repository changes are the installer setting and operations/status docs. Guest
+changes are the six native display settings; host changes: none. A real Discord
+turn after this setting and a full-site reapply: **NOT RUN**.
+
 ## Bot project instructions during setup: 2026-10-16
 
 A live bot had Paperclip's create-ticket tool and a valid scoped key, but no

@@ -625,6 +625,7 @@ def chat_settings(*, task_key=True):
     toolsets = CHAT_TOOLSETS if task_key else [tool for tool in CHAT_TOOLSETS if tool != 'paperclip']
     # Deferred tool search would hide the three Paperclip tools behind a lookup step.
     return {'mcp_servers.paperclip': server, 'tools.tool_search.enabled': 'off', 'skills.auto_load': ['zelab'],
+            'display.platforms.discord.tool_progress': False,
             **{f'platform_toolsets.{platform}': toolsets for platform in CHAT_PLATFORMS}}
 
 
