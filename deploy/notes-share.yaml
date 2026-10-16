@@ -6,7 +6,7 @@
     - role: notes_host
       when: notes_enabled | default(false) | bool
 
-- name: Mount explicitly shared notes in the Hermes guest
+- name: Mount the vault in the Hermes guest
   hosts: guest
   gather_facts: false
   become: true

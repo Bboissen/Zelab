@@ -6,7 +6,7 @@ modified. The native installer and Hermes PM still own dependency installation,
 hash verification, generation selection and optional tools.
 
 Security updates: PyJWT 2.15.0, httpx2/httpcore2 2.12.0, multidict 6.9.1,
-oauthlib 4.0.0 and urllib3 2.8.0. The core/client pair must move together. The
+oauthlib 4.0.0, urllib3 2.8.0 and MCP/MCP types 2.2.0. The core/client pair must move together. The
 remaining upstream selections are retained; this is not a blanket dependency
 upgrade. `uv.lock` was resolved using native `python3 -m pm.build_env --lock-only`.
 
@@ -32,3 +32,35 @@ local package-manifest edits. The dependency revision is part of installation
 markers, so a security update is applied even when the Hermes commit is unchanged.
 The next ordinary installer run loads the new native generation and restarts
 the gateway/dashboard. No additional service or per-request check is added.
+
+## MCP 2.2.0 qualification: 2026-10-16
+
+The [upstream OAuth credential-binding advisory](https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-qx49-fqc8-xw99)
+affects MCP 2.0.0 and is fixed in 2.2.0. Only `mcp` and `mcp-types` changed
+versions in the native resolved lock. Their wheel SHA-256 values were checked
+against the upstream PyPI metadata; native PM verified installation from that
+lock. Other package versions and the Hermes source pin are unchanged.
+
+Qualified in a disposable archive of the pinned source in the Debian guest,
+using native Python 3.14.7 and PM, separate `HERMES_HOME`, `HERMES_RUNTIME_DIR`
+and cache directories, and extras `all` plus `ddgs`. The installed inventory has
+108 registry distributions. The native dev group was built separately for tests;
+its packages are not added to the deployment inventory.
+
+- 202 upstream tests passed, one file per process: `test_mcp_tool.py`,
+  `test_mcp_oauth.py`, `test_mcp_oauth_integration.py`,
+  `test_mcp_oauth_issuer_binding.py`, `test_mcp_oauth_issuer_origin.py`,
+  `test_mcp_streamable_http_arity.py`, `test_mcp_sse_transport.py` and
+  `test_mcp_sse_fallback.py` under `tests/tools/`. Point `npm_config_cache` at a
+  disposable directory outside the test process's home so the upstream home I/O
+  guard stays enabled when tests inspect the npx cache.
+- Native Hermes `MCPServerTask` discovered and called an echo tool on a real
+  disposable MCP server over stdio and Streamable HTTP. No provider credentials,
+  inference or production MCP configuration were used.
+- `pip-audit` 2.10.1 found no known vulnerabilities in the regenerated inventory;
+  the unchanged Paperclip production npm lock also passed its moderate audit.
+
+The manifest retains the preceding qualified hashes so ordinary `make` can
+upgrade that known installation while still rejecting unrecognized edits.
+Context freshness includes these dependency inputs as well as `versions.yaml`.
+The production dependency upgrade and Discord acceptance are **NOT RUN**.

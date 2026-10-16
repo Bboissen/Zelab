@@ -2,9 +2,7 @@
 """Create config/site.yaml once from facts discovered on this host.
 
 Only values that differ per host are written; everything else comes from
-config/defaults.yaml. Existing site inputs are retained; interactive harness
-selection updates only worker_harness when the installer invokes --select-harness.
---hermes-model offers the native Hermes model picker; it changes no site input.
+config/defaults.yaml. Existing site inputs are retained.
 """
 
 import argparse
@@ -13,10 +11,7 @@ import ipaddress
 import os
 from pathlib import Path
 import pwd
-import subprocess
-import sys
 
-from console import heading, paint
 import shell
 
 
@@ -68,7 +63,7 @@ def choose_tail_ports(serve, owned_backends):
 
 
 def ssh_listener(effective):
-    """Choose the existing host SSH listener that local workers will use."""
+    """Choose the existing host SSH listener that project host accounts will use."""
     ports, addresses = [], []
     for line in (effective or "").splitlines():
         key, _, value = line.partition(" ")
@@ -115,7 +110,7 @@ def render(facts, today):
         "",
         f"operator_user: {facts['operator_user']}",
         "",
-        "# Existing host SSH listener used by local Paperclip workers.",
+        "# Existing host SSH listener Paperclip uses to reach project host accounts.",
         f"worker_ssh_host: {facts['worker_ssh_host']}",
         f"worker_ssh_port: {facts['worker_ssh_port']}",
         "",
@@ -129,101 +124,15 @@ def render(facts, today):
         lines += ["# Tailscale was not running. UIs stay on localhost until you enroll this",
                   "# host, then set ui_tailscale_enabled: true and ui_tailscale_hostname.",
                   "ui_tailscale_enabled: false"]
-    lines += [
-        "",
-        "# Discord: needed before the first Discord test, not for installation.",
-        "# Enable Developer Mode in Discord, then right-click to Copy ID.",
-        "discord_owner_id: ''      # your numeric Discord user ID",
-        "discord_channel_id: ''    # a private test channel for Research",
-        "",
-    ]
+    lines.append("")
     return "\n".join(lines)
-
-
-def select_harness(site_path):
-    """Offer the saved choice on each terminal run; retain unattended inputs."""
-    import yaml
-    from run import load_yaml
-    site = load_yaml(site_path)
-    saved = site.get('worker_harness', 'none')
-    # 'both' was removed with the single-worker layout; a terminal run replaces it.
-    if saved not in ('codex', 'claude', 'none') and not (saved == 'both' and sys.stdin.isatty()):
-        raise ValueError('worker_harness must be codex, claude or none')
-    choice = saved
-    labels = {'codex': 'Codex', 'claude': 'Claude Code', 'none': 'skipped', 'both': 'both (no longer offered)'}
-    if sys.stdin.isatty():
-        heading('Optional Paperclip worker')
-        print('  1. Codex\n  2. Claude Code\n  3. Skip for now')
-        print('  Codex or Claude Code creates one Operations worker, fully configured except')
-        print('  its model, with a waiting task that proves host access and sudo.')
-        print('  Skip creates no worker, no worker account and no Discord host tasks.')
-        print(f'  Current selection: {labels[saved]}')
-        choices = {'1': 'codex', 'codex': 'codex', '2': 'claude', 'claude': 'claude',
-                   'claude code': 'claude', '3': 'none', 'none': 'none', 'skip': 'none'}
-        default = {'codex': 1, 'claude': 2, 'none': 3}.get(saved)
-        if default:
-            choices[''] = saved
-        while True:
-            answer = input(f'  Choose [1/2/3{f", default {default}" if default else ""}]: ').strip().lower()
-            if answer in choices:
-                choice = choices[answer]
-                break
-            print('  Enter 1 (Codex), 2 (Claude Code) or 3 (skip).')
-    # Replace only the value, keeping comments, permissions and unrelated inputs.
-    if 'worker_harness' not in site:
-        with site_path.open('a') as output:
-            output.write(f'\n# Optional Paperclip worker harness: codex, claude or none.\nworker_harness: {choice}\n')
-    elif choice != saved:
-        original = site_path.read_text()
-        document = yaml.compose(original)
-        value = next(value for key, value in document.value if key.value == 'worker_harness')
-        start, end = value.start_mark.index, value.end_mark.index
-        if original[start:end] not in (saved, f"'{saved}'", f'"{saved}"'):
-            raise ValueError('Use a direct worker_harness scalar in the site file before changing this selection')
-        site_path.write_text(original[:start] + choice + original[end:])
-    print(f'  Paperclip worker harness: {paint(labels[choice], "bold")} (saved in {site_path})')
-
-
-def select_hermes_model(site_path, env_path):
-    """Offer the native picker in a terminal once Hermes runs without a provider login."""
-    import doctor
-    from run import read_inputs
-    if not sys.stdin.isatty():
-        return
-    site = read_inputs(site_path, env_path)
-    guest = doctor.guest_facts(site)
-    if not guest or guest['hermes_auth']:
-        return
-    heading('Hermes model provider')
-    print('  Hermes answers only after you sign it in to a provider and choose a model.')
-    print('  For a ChatGPT plan, choose OpenAI Codex: it prints a link and a code to')
-    print('  approve on any device, then lists the models. Skip to do it later from the guide.')
-    while True:
-        answer = input('  Open the Hermes model picker now? [Y/n]: ').strip().lower()
-        if answer in ('', 'y', 'yes'):
-            break
-        if answer in ('n', 'no', 'skip'):
-            return
-        print('  Enter y to open the picker or n to skip.')
-    try:
-        subprocess.run(doctor.hermes_picker(site))
-    except KeyboardInterrupt:
-        print()
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site-config", type=Path, default=ROOT / "config/site.yaml")
     parser.add_argument("--env-file", type=Path, default=ROOT / ".env")
-    parser.add_argument('--select-harness', action='store_true')
-    parser.add_argument('--hermes-model', action='store_true')
     args = parser.parse_args(argv)
-    if args.hermes_model:
-        select_hermes_model(args.site_config, args.env_file)
-        return 0
-    if args.select_harness:
-        select_harness(args.site_config)
-        return 0
     if args.site_config.exists() or args.site_config.is_symlink():
         return 0
     facts = discover(operator())
@@ -233,14 +142,13 @@ def main(argv=None):
         output.write(text)
     print(f"Created {args.site_config} from this host:")
     print(f"  operator: {facts['operator_user']}")
-    print(f"  worker SSH listener: {facts['worker_ssh_host']}:{facts['worker_ssh_port']}"
+    print(f"  host SSH listener: {facts['worker_ssh_host']}:{facts['worker_ssh_port']}"
           + ("" if facts["_ssh_discovered"] else " (default; sshd settings were not readable)"))
     if facts["ui_tailscale_enabled"]:
         urls = ", ".join(str(facts[name]) for name in TAIL_ROUTES)
         print(f"  tailnet: {facts['ui_tailscale_hostname']} (HTTPS ports {urls})")
     else:
         print("  tailnet: not running; UIs will be localhost-only for now")
-    print("  Discord IDs: pending (only needed before the first Discord test)")
     return 0
 
 

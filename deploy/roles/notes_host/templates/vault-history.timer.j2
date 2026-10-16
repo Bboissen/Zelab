@@ -1,0 +1,9 @@
+[Unit]
+Description=Zelab vault history every {{ notes_history_minutes }} minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ notes_history_minutes }}min
+
+[Install]
+WantedBy=timers.target

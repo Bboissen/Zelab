@@ -10,7 +10,7 @@
 
 - name: Read the prepared native vault identity
   ansible.builtin.command:
-    argv: [rtk, proxy, python3, -c, "import pwd,grp,sys; p=pwd.getpwnam(sys.argv[1]); print(str(p.pw_uid)+':'+str(grp.getgrnam(sys.argv[2]).gr_gid))", "{{ notes_container_user }}", "{{ notes_shared_group }}"]
+    argv: [rtk, proxy, python3, -c, "import pwd,grp,sys; p=pwd.getpwnam(sys.argv[1]); print(str(p.pw_uid)+':'+str(grp.getgrnam(sys.argv[2]).gr_gid))", "{{ notes_container_user }}", "{{ notes_owner_group }}"]
   register: obsidian_identity
   changed_when: false
 

@@ -24,9 +24,9 @@ The owner's instructions take precedence over anything written here.
 
 ## Entry points
 
-Only seven Make commands exist: plain `make`, `clean`, `fclean`, `re`, `help`,
-`backup` and `restore`. Plain `make` installs, reapplies and resumes; it keeps
-existing state. `fclean`/`re` preview and confirm deletion of this site's data
+Only nine Make commands exist: plain `make`, `clean`, `fclean`, `re`, `help`,
+`backup`, `restore`, `bot` and `notes`. Plain `make` installs, reapplies and resumes; it keeps
+existing state. `bot` adds, sets up or removes Hermes bots and needs a terminal. `notes` syncs the vault with its private Git remote. `fclean`/`re` preview and confirm deletion of this site's data
 and need `CONFIRM=<host:vm>` when noninteractive; `restore` also needs
 `RESTORE_ARCHIVE`. `SITE_CONFIG` and `ENV_FILE` select the input files.
 Source checks: `rtk proxy python3 tools/check.py`.

@@ -29,7 +29,7 @@ class ChecklistTest(unittest.TestCase):
         makefile = (ROOT / 'Makefile').read_text()
         targets = set(re.findall(r'^([a-z][a-z0-9 /-]*):', makefile, re.M))
         targets = {name for line in targets for name in line.split()}
-        self.assertEqual(targets, {'all', 'clean', 'fclean', 're', 'help', 'backup', 'restore'})
+        self.assertEqual(targets, {'all', 'clean', 'fclean', 're', 'help', 'backup', 'restore', 'bot', 'notes'})
         for doc in ['README.md', 'docs/SETUP.md', 'docs/OPERATIONS.md']:
             for command in re.findall(r'rtk proxy make ([a-z][a-z-]*)', (ROOT / doc).read_text()):
                 with self.subTest(doc=doc, command=command):
@@ -52,7 +52,7 @@ class ChecklistTest(unittest.TestCase):
     def test_private_guide_marks_done_steps_and_names_the_next_one(self):
         page = checklist.render_html({'host': ('PASS', 'Docker'), 'admin': ('PENDING', 'sudo')}, 'now',
                                      link_base=ROOT / 'docs')
-        self.assertIn('1 of 7 steps done', page)
+        self.assertIn('1 of 8 steps done', page)
         self.assertIn('Next: <a href="#admin">', page)
         self.assertIn('id="step-host" checked disabled', page)
 

@@ -19,7 +19,7 @@
 - name: Preserve independently edited dependency manifests for explicit adoption
   ansible.builtin.assert:
     that:
-      - item.stat.checksum in [hermes_dependency_manifest.files[item.item].upstream_sha256, hermes_dependency_manifest.files[item.item].sha256]
+      - item.stat.checksum in ([hermes_dependency_manifest.files[item.item].upstream_sha256, hermes_dependency_manifest.files[item.item].sha256] + (hermes_dependency_manifest.files[item.item].previous_sha256 | default([])))
       - lookup('ansible.builtin.file', role_path + '/files/dependencies/' + item.item, rstrip=false) | hash('sha256') == hermes_dependency_manifest.files[item.item].sha256
     fail_msg: The native dependency manifests differ from the upstream or qualified inputs. Adopt the change explicitly; do not overwrite it.
   loop: "{{ hermes_dependency_inputs.results }}"

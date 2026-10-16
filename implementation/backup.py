@@ -31,9 +31,8 @@ COMPATIBILITY_FIELDS = (
     'operator_user', 'vm_instance', 'vm_service', 'vm_user', 'vm_disk',
     'vm_data', 'vm_root', 'guest_user', 'guest_ssh_port', 'guest_dashboard_port',
     'guest_api_port', 'private_dir', 'paperclip_home', 'paperclip_user',
-    'paperclip_port', 'paperclip_db_port', 'worker_ops_home', 'worker_ops_user',
-    'worker_code_home', 'worker_code_user', 'worker_ssh_host', 'worker_ssh_port',
-    'notes_vault_dir', 'notes_sftp_port', 'obsidian_state_dir',
+    'paperclip_port', 'paperclip_db_port', 'projects_dir', 'worker_ssh_host', 'worker_ssh_port',
+    'notes_vault_dir', 'vault_history_dir', 'notes_sftp_port', 'obsidian_state_dir',
     'obsidian_backend_port', 'obsidian_username', 'dashboard_username',
     'ui_tailscale_hostname',
 )
@@ -41,9 +40,10 @@ COMPATIBILITY_FIELDS = (
 
 def selected_paths(site, repository, require_existing=True):
     required = [Path(site[name]) for name in ['vm_data', 'vm_root', 'paperclip_home',
-                'notes_vault_dir', 'obsidian_state_dir', 'private_dir']]
-    # Skip has no worker home, and sites before the single-worker layout keep a Coding home.
-    workers = [Path(site[name]) for name in ['worker_ops_home', 'worker_code_home']]
+                'notes_vault_dir', 'vault_history_dir', 'private_dir']]
+    # A site without a team may never have created projects_dir, and one that never
+    # ran the browser Obsidian has no obsidian_state_dir.
+    workers = [Path(site['projects_dir']), Path(site['obsidian_state_dir'])]
     workers = [path for path in workers if not require_existing or path.exists()]
     for path in required + workers:
         absolute_path(str(path), 'persistent state')
@@ -56,7 +56,6 @@ def selected_paths(site, repository, require_existing=True):
     for name in [site.get('obsidian_config_dir', '/etc/zelab-obsidian'),
                  site.get('vm_bootstrap_dir', ''), site.get('deploy_key', ''),
                  site.get('guest_known_hosts', ''),
-                 site.get('worker_codex_auth_source', ''),
                  f"/etc/systemd/system/{site['vm_service']}.service",
                  f"/etc/systemd/system/{site['vm_service']}.service.d",
                  *(str(repository / name) for name in SOURCE_PINS)]:
@@ -128,8 +127,8 @@ def main():
         raise SystemExit('Backup requires actual administrator access')
     os.umask(0o077)
     site = read_inputs(args.site_config, args.env_file)
-    if site.get('notes_enabled') is not True or site.get('obsidian_enabled') is not True:
-        raise ValueError('Application backup requires the complete native core site')
+    if site.get('notes_enabled') is not True:
+        raise ValueError('Application backup requires the notes vault (notes_enabled)')
     repository = Path(__file__).resolve().parents[1]
     key = recovery_key(args.key_file or Path(site['private_dir']) / 'backup-passphrase')
     destination = Path(absolute_path(site.get('backup_dir'), 'backup_dir'))

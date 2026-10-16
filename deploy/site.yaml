@@ -10,12 +10,10 @@
 - import_playbook: install-hermes.yaml
 - import_playbook: build-hermes.yaml
 - import_playbook: install-paperclip.yaml
-- import_playbook: host-workers.yaml
+- import_playbook: host-tools.yaml
+- import_playbook: host-projects.yaml
 - import_playbook: finish-hermes.yaml
-- import_playbook: research-profile.yaml
-- import_playbook: bot-pool.yaml
-- import_playbook: paperclip-workers.yaml
-- import_playbook: hermes-bridge.yaml
+- import_playbook: paperclip-projects.yaml
 - import_playbook: hermes-gateway.yaml
 - import_playbook: hermes-api.yaml
 - import_playbook: obsidian.yaml

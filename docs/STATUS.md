@@ -1,264 +1,107 @@
 # Status
 
 Zelab is experimental. This page separates what has been exercised from what
-has not, so nobody mistakes a passing installer for a verified system.
+has not. An HTTP 200, a parsed configuration or a unit test is not acceptance;
+anything not exercised live is NOT RUN.
 
-## Verified on the reference site
+Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip `2026.1005.0`, Debian 13
+`20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
-- Fresh installation from pinned downloads through plain `make`, a zero-change
-  second apply, and resumption after an interrupted install.
-- Overlapped fresh install (2026-10-14, after `fclean`): 734 s of deployment
-  stages against 965–1268 s (median 1056 s) for the five previous fresh runs,
-  all services ready. Afterwards `/var/cache/zelab` held only the 3 MB dashboard
-  archive, npm caches were gone, `disk.qcow2` was 3.6 GiB for 3.5 GiB used in
-  the guest, and five install logs remained. A zero-change second apply with
-  the new layout is NOT RUN.
-- Owner sign-in to Hermes, Paperclip and Obsidian over Tailscale Serve;
-  anonymous requests are refused on every route; former LAN listeners are gone.
-- A Discord request from the owner created a Paperclip task, the `zelab-ops`
-  worker executed it on the host with sudo, and the result returned to the
-  originating channel with host identity and timestamp.
-- Operations restarted an owned transient service through unattended sudo.
-- Restricted tool accounts cannot read owner secrets, Private notes, the
-  coordinator port, the host SSH listener or the tailnet; public HTTPS works.
-- Shared notes round-trip between a host worker, Hermes and Obsidian, including
-  rename, attachment and revocation of a temporary audience grant.
-- Encrypted backup, authenticated isolated extraction, and restore activation
-  with rollback on fixture sites; recovered Paperclip, Hermes login and notes.
-- Native bridge isolation on a disposable Paperclip instance: unrelated task
-  reads denied, retries reuse the task before and after completion.
-- Dependency audits: zero known advisories in the qualified Hermes inventory
-  and the Paperclip npm lock at the pinned versions.
+## Final v1.1 dependency qualification: 2026-10-16
 
-## Not yet verified
+MCP and MCP types 2.2.0 replace 2.0.0 in the qualified dependency manifests;
+all other locked package versions and the upstream source pins stay unchanged.
+Native PM built the `all` + `ddgs` runtime in disposable guest state, and the
+regenerated 108-package inventory passed `pip-audit` 2.10.1. A separate native
+dev environment passed 202 upstream MCP/OAuth tests. Hermes discovered and
+called a real synthetic tool over both stdio and Streamable HTTP. No production
+credentials, inference or live bot configuration were used. The production
+Paperclip npm lock passed its moderate audit. See the
+[dependency qualification](../deploy/roles/hermes/files/dependencies/README.md).
 
-- Live whole-site restore and execution of a recovered worker task.
-- A second real bot identity, specialist allocation from the pool, and denial
-  tests with a non-owner Discord user.
-- MacBook and iPhone device checks beyond browser login; IPv6 denial.
-- Mixed-workload resource measurement and host reboot ordering.
-- The single-worker layout (2026-10-14): one fully configured Operations worker,
-  its Backlog proof task, skip without a worker or task bridge, and the removal
-  of Coding. Covered by unit and Ansible fixture tests against a fake Paperclip
-  API; NOT RUN on a live fresh install, and the proof task has not run.
-- Second round (2026-10-14), fixture-tested only and NOT RUN live: parallel
-  reserve admission checks, active-only gateway checks, one gateway unit lookup
-  per run, a whole-vCPU guest restart until Hermes answers, shared download,
-  task-key, owner sign-in, dotenv seed and headroom steps, and restore on sites
-  without a coding (or any) worker home. A live `make` reapply and a live
-  restore remain to be run.
-- Removal of superseded artifacts by the end-of-run prune: a fresh install
-  (2026-10-14) had nothing superseded, so only the fixture tests exercise it.
-  Removal of an earlier Obsidian image is NOT RUN; the listing, and the
-  retention of the pinned image, are verified against the live host.
-- An unprivileged coding worker; none is created until the upstream low-trust
-  sandbox is supported.
-- Reapplying the hardened bridge (inert submission principal, event-derived
-  idempotency) on a site installed before that change; the migration path is
-  implemented and unit-tested, not yet exercised live.
-- Authenticated Discord → host task execution using the optional harness setup.
-  Fresh installation with both harnesses is qualified below. The earlier
-  reference-site worker flow used Codex;
-  Claude Code binary verification does not establish end-to-end task execution.
+Reapply now recognizes the previous qualified metadata while continuing to
+reject unknown local edits. Bot context freshness also covers dependency-only
+upgrades. Production dependency installation and Discord acceptance: **NOT RUN**.
 
-## Credential and harness reapply: 2026-10-13
+## v1.1 qualification: 2026-10-15
 
-- PASS: plain `make` completed on the reference site with `worker_harness: both`;
-  checksum-pinned Codex `0.162.0` and Claude Code `2.1.287` are installed. The
-  existing native Codex worker settings and paused Coding account were retained.
-- PASS: Hermes migrated the existing password to its native scrypt hash, with
-  no plaintext password in the guest's root-owned 0600 dashboard environment.
-  Native login established a session that read protected profile state;
-  anonymous profile access remains denied. No login password was rotated.
-- PASS: Obsidian retained its root-owned 0600 native startup password; both
-  anonymous denial and authenticated access were checked during reapply.
-- PASS: guest deployment/root passwords and host VM/coordinator/worker passwords
-  are locked. Effective guest SSH password and keyboard-interactive authentication
-  are disabled. Live PostgreSQL connections from `nobody` and `zelab-code` are denied.
-- PASS: native Paperclip Test Environment for Operations, followed by task `ZEL-1`
-  (`7ffc6b3c-c070-4146-be22-002b31f7ff88`). Its native Codex run
-  `4145492f-6253-4c72-9c73-dc7da2f51e19` succeeded; command-event output matched
-  the actual host, worker account, UID and workspace, and the task finished `done`.
-  This was a scoped API → Paperclip → SSH → Codex test; Discord was not exercised.
-- PASS: full source suite (141 deployment tests, 34 recovery tests, playbook
-  syntax and public-source checks), plus 11 focused credential tests after the
-  additional cleanup/terminal regressions. A real RTK PTY test confirmed hidden
-  input. No UI password values were found in this session's installer logs.
-- PASS: temporary RAM password working files were removed when `make` exited.
-  Legacy deployment copies remain pending the owner's terminal confirmation
-  of password-manager custody; this agent did not assume they were saved.
-- NOT RUN: live fresh-site password entry, live cleanup after vault custody,
-  Claude Code subscription sign-in/task execution, browser/device acceptance,
-  Discord delivery and whole-site restore of this migrated state.
-- Host limitation: Ubuntu 25.04 is outside the supported deployment baseline
-  and reached end of life on 2026-01-15; the credential checks do not establish
-  OS security maintenance. See the [Ubuntu announcement](https://lists.ubuntu.com/archives/ubuntu-announce/2026-January/000320.html).
+Run in a disposable guest with the current pins (2 vCPU / 4 GiB / 20 GiB, Hermes
+installed like `deploy/roles/hermes`) and a scratch Paperclip from the pinned lock,
+with a stub OpenAI-compatible model on the host that echoes its model name and
+the profile's SOUL marker. The live site was not touched.
 
-Follow-up prompt correction: instructions and hidden prompts now share the same
-flushed terminal stream. A matching confirmation returns immediately, without
-the redundant password-manager/Enter prompt. PASS: 12 focused credential tests,
-including real RTK terminal ordering, hidden input and advancing from Hermes to
-Paperclip without a third prompt. Host/guest service changes: none. Live fresh
-installation with this prompt correction: NOT RUN.
+| # | Question | Result |
+| --- | --- | --- |
+| 1 | Can Paperclip's Hermes adapter address one profile of a shared gateway? | **PASS.** Hermes multiplexes profiles by default: the default profile's API listener serves every profile at `/p/<profile>/…`, each authenticated by that profile's own `API_SERVER_KEY` (other profiles' keys and the default key get 401; an unknown profile 404). Paperclip's `hermes_gateway` adapter has no profile field, and `apiBaseUrl …/p/<profile>` works unchanged. Two hired agents' tickets (QUA-1, QUA-2) were answered by their own profile: `model=stub-alpha soul=SOUL-MARKER-alpha` and `…beta…`. |
+| 2 | Does each profile keep its own subscription login? | **Source: yes, with one caveat; live: NOT RUN** (moved to validation on the real install, owner's choice). Logins are stored in the profile's `auth.json`; a profile with no entry falls back to the default profile's and refreshes it there, so the default profile stays without a login. |
+| 3 | Does one gateway run several Discord bots at once? | **Source: yes; live: NOT RUN** (moved to validation). One adapter per profile token; a duplicated token is refused; token changes are picked up on rescan. |
+| 4 | How is a Hermes command run for one profile? | `hermes -p <profile> …` (sets `HERMES_HOME` to the profile). `hermes -p gamma config set` changed only gamma's `config.yaml`. `setup model` refuses without a terminal. `profile create --description`; `profile export` omits `auth.json` and `.env`; `profile delete` keeps no copy. |
+| 5 | What do 5 idle profiles cost? | **PASS.** One gateway process, 296 MB RSS; guest 720 MiB used of 3922, load 0.3, 3.2 GB disk. Hermes' pinned agent-browser and Chromium need Debian libraries; two headless tabs raised used memory to 971 MiB (2950 MiB still available). |
 
-## Worker workspace sync failure: 2026-10-14
+Also checked: Paperclip's bundled task-bridge helper, copied into a profile by
+`make bot` and run as that profile with its key, created QUA-3 in the key's
+project; `make bot`'s add, task key, skill refresh and remove ran against the
+disposable guest and scratch Paperclip (wizards excluded).
 
-- FAIL: an Operations run on the reference site stopped before Codex started:
-  `tar: /var/lib/zelab-ops/workspace: Cannot open: Permission denied`
-  (`adapter_failed`).
-- Cause: the agent's `cwd` and the project workspace pointed at the worker's own
-  folder. Paperclip's SSH driver treats `cwd` as a coordinator-side source: it
-  clears the remote `remoteWorkspacePath`, copies the source into it, and copies
-  it back after the run. `zelab-paperclip` cannot read the `0700` worker folder,
-  and with both paths identical a readable copy would have deleted it.
-- Repository fix: the source is `paperclip_home/worker-workspaces/ops`, owned by
-  `zelab-paperclip`; the SSH target stays `/var/lib/zelab-ops/workspace`.
-  Reapply moves an agent `cwd` or project workspace still set to the earlier
-  worker path, and leaves other owner edits alone.
-- PASS: `deploy/test_worker_harness.py` (10 tests) covers fresh workers and the
-  move of an earlier worker path, then a zero-change reapply.
-- Host/guest changes by this fix: none yet.
-- NOT RUN: reapply on the reference site and an authenticated worker task after it.
+## v1.1 acceptance
 
-## Fresh-site worker creation failure: 2026-10-13
+Host-agent harness switching (2026-10-16): the checksum-verified pinned
+Paperclip UI retains the old AI binding when the adapter changes. Choosing the
+matching shared connection replaces its provider and grant together. Reapply
+regressions cover retaining native harness, model and connection selections,
+including responsible-user bindings, and completing explicit Claude sign-in
+without overwriting a changed harness or connection. Authenticated live UI
+switch/save and inference after switching: **NOT RUN**.
 
-- FAIL: the fresh install with `worker_harness: both` stopped creating Operations
-  at 21:19:24 UTC. The Paperclip journal records HTTP 422; Ansible's `no_log`
-  censored the task result, so the installer incorrectly referred to a private
-  log that also lacked the cause.
-- Cause: the installer attached an SSH environment to its inert `process`
-  placeholder. The installed pinned Paperclip package permits only local
-  environments for that adapter; Codex and Claude Code permit SSH.
-- Repository fix: inert workers have no default execution environment;
-  selecting a single harness attaches the declared SSH environment during
-  activation. Agent-creation failures report a numeric HTTP status with fixed
-  guidance, retaining credential and response-body protection. The failure
-  summary uses that diagnostic and retains the original failed step.
-- PASS: disposable API fixtures cover fresh placeholders, reapply, harness
-  activation, Coding pause, retained owner settings and censored HTTP failures;
-  failure-summary regressions cover safe rescue output and censored logs.
-- PASS: `rtk proxy python3 tools/check.py`: 149 deployment tests, 34 recovery
-  tests, playbook syntax, whitespace and public-source checks.
-- Host/guest changes by this fix: none. The failed install's cleanup log records
-  restoration to 1 vCPU, 2048 MiB RAM and 50% CPU quota.
-- NOT RUN: live resumed installation and authenticated worker task execution
-  after this correction. Resume with `rtk proxy make` in the owner's terminal;
-  enter the current Paperclip owner password there.
+Bot reconciliation regression coverage (2026-10-16): unattended plain `make`
+invokes refresh; explicit project replacements migrate scoped grants; generated
+instructions omit inaccessible projects; interrupted rotations converge;
+bundled skill updates retain identical-file timestamps; native settings and
+secret references survive routing repairs; open tickets prevent project
+archiving. Context tests cover first adoption, persona/skill/pin changes,
+unchanged reapplies, retries after failure, pagination and preserving Paperclip
+sessions and transcripts. Against the pinned live Hermes API, a synthetic
+Discord-source session was created, ended with `session_reset`, and read back
+with its row and metadata retained; the synthetic fixture was then removed.
+No model call, real chat boundary or outbound message was used. Read-only
+reconciliation preflight passed for the live profiles. Full live deployment
+and the complete Discord-to-team return path: **NOT RUN** for these changes.
 
-Harness prompt follow-up: interactive runs now offer the selection even when
-`worker_harness` exists, using its saved value as the default. Unattended runs
-visibly retain the saved choice, or skip when none exists. Only the selected
-scalar is updated; unrelated inputs, comments and file permissions are retained.
-PASS: nine configuration tests and a real RTK PTY exercise starting from `both`,
-showing the prompt and saving `claude`. Full source checks: 151 deployment tests,
-34 recovery tests, playbook syntax and public-source validation. Host/guest
-changes: none. Live install with the new prompt: NOT RUN. At this point `fclean`
-retained all site inputs; the cleanup correction below supersedes that behavior.
+Project retirement correction (2026-10-16): the owner's subsequent live `make`
+updated bot project grants and refreshed six profiles, retaining two old chat
+sessions, then failed archiving a retired project. Paperclip's pinned validator
+rejects an ISO timestamp with `+00:00`; it requires the UTC `Z` suffix. The old
+payload reproduced HTTP 400 in disposable native Paperclip state. With the
+corrected deployer payload, `tools/check_paperclip.py --project-retirement`
+passed archiving, retained ticket history, an untouched replacement project and
+an unchanged second pass. No production project was changed by that fixture.
+Successful full live reapply after the correction: **NOT RUN**.
 
-Cleanup correction: `clean` and successful `fclean` now clear local harness/model,
-resource, optional app and profile choices from the selected untracked site file.
-Host connections and installed resource identities/locations remain, as do `.env`
-path selectors. External and tracked input files are untouched. A failed or
-cancelled full reset keeps all choices.
+Record PASS, FAIL or NOT RUN with timestamp, steps and sanitized evidence.
 
-- PASS: 154 deployment tests, 34 recovery tests, playbook syntax, whitespace and
-  public-source checks; ten focused cleanup tests also passed after the final
-  ambiguous-YAML regression cases were added.
-- PASS: real repo-only `make clean` cleared `worker_harness` and the two Discord
-  input fields, removed the controller/caches, and preserved source files,
-  retained host/path settings and `.env`. VM/Paperclip active states matched
-  before and after; this is preservation evidence, not service acceptance.
-- Host/guest service or network changes: none. Live destructive `fclean` with
-  this correction and subsequent installation: NOT RUN.
+| ID | Criterion | Result |
+| --- | --- | --- |
+| G1 | In a project's Discord channel, "@bot do research on X" ends with a Paperclip ticket and notes with sources under `Projects/<slug>/` in Obsidian | NOT RUN |
+| G2 | A bot hands a chat question to the PM by child ticket; the PM splits it across the team; members do the work on their tier accounts; the bot is woken and answers in the same channel without the owner | NOT RUN |
+| T1 | make hires the default team once (lead first, others reporting to it, Claude CLI engine, Opus 5.5, persona as AGENTS.md) and a second make hires nobody and leaves edited instructions alone | NOT RUN |
+| T2 | The onboarding ticket is filed once; the PM splits it; sysadmin and devops write `Server/` (no secret values, nothing changed on the host) | NOT RUN |
+| G3 | A ticket the owner assigns to a bot in Paperclip is done by that bot and answered on the ticket | NOT RUN |
+| G4 | Two bots hand work over by chat @mention and by ticket | NOT RUN |
+| B1 | `make bot` adds a bot, signs it in to a model and a chat app through Hermes' menus and hires it in Paperclip, without restarting the guest | NOT RUN |
+| B2 | `make bot` changes an existing bot's model or chat app, and removes a bot (agent terminated, key revoked, profile archived) | NOT RUN |
+| B3 | A bot on Telegram (or another non-Discord app) works like a Discord bot | NOT RUN |
+| F1 | In one bot: code execution, browser, web extraction, an MCP server, a plugin with a Python dependency, a cron job and delegation work | NOT RUN |
+| X1 | As root in the guest: the host, LAN, tailnet, other host ports and IPv6 are unreachable; only the internet, the Paperclip API and the notes share answer | NOT RUN |
+| X2 | A bot's task key cannot create tickets outside its projects or read other tickets | NOT RUN |
+| X3 | After a bot wipes the vault, the owner restores it from the history | NOT RUN |
+| O1 | A second `make` changes nothing; a killed `make` resumes | NOT RUN |
+| O2 | `make backup`, `make fclean`, `make restore` bring back Paperclip, the vault and its history, every bot and its logins; a host task then runs | NOT RUN |
+| O3 | Source checks and gitleaks are clean; the docs describe v1.1 | NOT RUN |
+| N1 | With the browser Obsidian off: an agent reads and writes notes; `make` and a reboot keep the container and its route gone; root-only snapshots still run | NOT RUN |
+| N2 | `make notes`: a server edit reaches desktop Obsidian, a laptop edit reaches the server and an agent, a conflict keeps both versions, `.obsidian/` never travels, a public repository is refused | NOT RUN (unit-tested against a local bare remote) |
 
-## Fresh reset with both harnesses: 2026-10-14
+## Earlier versions
 
-The reported guide failure was an installer credential-lifecycle defect. The
-bridge checker still required the retired persistent owner-password file after
-provisioning had switched to temporary RAM files. `make` now prepares that input
-before bridge preflight and supplies the same directory through guide generation.
-Standalone checks distinguish a pending owner login from actual key/scope drift;
-explicit missing inputs, failed authentication and changed contracts still fail.
-
-Testing from a full reset under `umask 077` also exposed two artifact-permission
-defects: the host-built dashboard archive was unreadable by the controller, and
-embedded PostgreSQL tried to chmod its binaries inside Paperclip's read-only
-service filesystem. Provisioning now declares the public archive mode `0644`
-and native database executable modes `0755` before service startup. Upstream
-code and `ProtectSystem=strict` remain unchanged.
-
-- PASS: `rtk proxy python3 tools/check.py`: 166 deployment tests, 34 recovery
-  tests, playbook syntax, whitespace and public-source checks.
-- PASS: live `make fclean CONFIRM=homelab:zelab`, followed by plain `make` with
-  **3 — Both** selected in its real terminal menu. All three generated test UI
-  passwords went through hidden input and confirmation; no legacy deployment
-  password copies existed. The uninterrupted fresh run finished all five stages,
-  generated the guide, and exited zero in 997 seconds.
-- PASS: a second plain `make` retained **Both**, requested only the current
-  Paperclip owner password, completed the guide and exited zero in 558 seconds.
-  Authenticated bridge checks passed before deployment and after completion.
-  Fingerprints of all ten checked machine-credential/resource-ID files were
-  unchanged. Six profile audience-seeding commands report changes while Discord
-  IDs remain unset; all other deployment stages reported no changes.
-- PASS: authenticated native bridge inspection after installation; both fresh
-  workers are paused native process placeholders with no execution environment.
-  Codex `0.162.0` and Claude Code `2.1.287` both execute as `zelab-ops`.
-- PASS: temporary installer password files were removed; test password values
-  were absent from the installer log. Recovery copies of the generated test UI
-  passwords are operator-owned `0600` files in the private acceptance directory.
-- PASS: cleanup preserved 29 unrelated containers, one other Serve route and
-  52 unrelated accounts. The pre-test encrypted backup was verified by decrypted
-  comparison and retained as `zelab-applications-20261013T222004.610702Z.tar.gpg`.
-- Repository changes: credential handoff and safe bridge diagnostics, explicit
-  artifact permissions, regression tests and this qualification criterion.
-- Host changes: the requested reset recreated Paperclip and its database,
-  worker accounts and both pinned CLIs, notes/SFTP, Obsidian and owned UI routes.
-- Guest changes: a fresh pinned Hermes guest and profiles; installation resources
-  returned to 1 vCPU, 2048 MiB RAM and 50% CPU quota before final verification.
-- Fresh-install evidence: private log
-  `install-20261013T230215.809349Z.log`; reapply:
-  `install-20261013T231900.607598Z.log`. Sanitized acceptance results are under
-  `private_dir/acceptance-20261014/`.
-- NOT RUN: authenticated Codex/Claude task execution, Discord delivery,
-  browser/device acceptance and restore of this newly generated state.
-
-## Acceptance checklist
-
-Record PASS, FAIL or NOT RUN with versions, timestamp and sanitized evidence.
-An HTTP 200 or a parsed configuration is not acceptance.
-
-Installer qualification requires a live `make fclean` → `make` cycle, selecting
-**Both** in the harness menu, followed by a second `make`. Both installations
-must exit zero with a completed guide and authenticated native bridge checks;
-both pinned CLIs must run. Exercise the fresh terminal password flow without
-legacy deployment password copies, verify temporary password cleanup, and
-record preservation of unrelated resources during `fclean`. Source tests and
-reapplying an older installation alone do not satisfy this criterion. Harness
-sign-in and task execution remain separate acceptance checks below.
-
-1. **Host diagnostics.** From an admitted owner conversation ask for running
-   containers, CPU, memory and disk. Require a Paperclip task, host (not guest)
-   measurements comparable with `lscpu`, `free`, `df` and `docker ps`, a reply
-   in the same conversation, and a successful follow-up status query.
-2. **Authority and denial.** Operations performs a reversible host change
-   without an approval stall. A non-owner cannot invoke Operations; a
-   restricted profile cannot obtain a bridge key, read owner auth or dispatch
-   privileged work, through terminal, file and child-process tools alike.
-3. **Identities.** Two profiles reply with separate personality, memory and
-   session history; a specialist can be allocated from the pool and retired
-   without duplicating a token consumer.
-4. **Failure behavior.** A failed worker, unreachable API and quota failure
-   produce truthful status; reconnects do not duplicate tasks.
-5. **Notes and UIs.** Shared notes round-trip; Private is unavailable to
-   shared-only profiles; UIs reject public, LAN and unauthenticated access over
-   IPv4 and IPv6.
-6. **Recovery.** Service and VM restarts keep identities, memories, tasks,
-   secrets and notes; a restore into an installed site completes a real task
-   and note flow; a pinned update can be rolled back with its matching backup.
-
-## Open work
-
-- Separate runtime identities per Hermes profile before enabling audiences
-  other than the owner.
-- Upstream sandbox support for Coding, then its audience denial tests.
-- Optional: interactive coding through T3 Code with private pairing.
+v1 (single Operations worker, Research and reserve profiles, custom ticket
+bridge) and the abandoned v2 (per-bot containers and a sync service) are
+recorded in Git history; their results do not carry over to v1.1.

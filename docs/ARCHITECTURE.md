@@ -3,73 +3,110 @@
 ```mermaid
 flowchart LR
   Owner[Owner: laptop / phone] -->|Tailscale or localhost, authenticated| UIs
-  Discord[Discord: owner, later friends / family] -->|Distinct bot identities| Gateway
-  subgraph VM[Small KVM guest: Debian]
-    Gateway[Native Hermes gateway]
-    Gateway --> Operations[Operations profile: owner-only]
-    Gateway --> Research[Research / reserve profiles: parked]
-    HermesUI[Native Hermes dashboard]
+  Chat[Discord, Telegram, Slack...] -->|one bot identity per profile| Gateway
+  subgraph VM[KVM guest: Debian, 2 vCPU / 4 GiB / 20 GiB]
+    Gateway[Shared Hermes gateway]
+    Gateway --> P1[Profile: bot A]
+    Gateway --> P2[Profile: bot B]
+    HermesUI[Hermes dashboard]
+    Mount[/var/lib/zelab-notes: whole vault/]
   end
   subgraph Host[Linux server]
     UIs[Tailscale Serve] --> Paperclip
-    UIs --> Obsidian[Obsidian container]
     UIs --> HermesUI
-    Paperclip[Paperclip coordinator + embedded PostgreSQL] --> Workers[Optional Codex / Claude Code workers]
-    Workers --> OS[Host OS / Docker / repositories]
-    Vault[(Notes vault)] <-->|/vault| Obsidian
-    Workers <--> Vault
+    Paperclip[Paperclip + embedded PostgreSQL] -->|SSH environment per tier| Accounts[zelab-team-&lt;tier&gt; accounts: the Claude Code team]
+    Vault[(Vault: Projects/&lt;slug&gt;/, Server/)]
+    History[(Root-only git history)] -. every 5 min .- Vault
+    Sync[make notes: git dir and deploy key in private_dir] --- Vault
   end
-  Operations -->|Task bridge, project-scoped key| Paperclip
-  Paperclip -->|Hermes API adapter, separate key| Gateway
-  Operations <-->|SSHFS: Private + Shared| Vault
-  Research <-->|SSHFS: Shared only| Vault
+  Sync <-->|SSH, deliberate push/pull| Remote[(Private GitHub repo)]
+  Remote <-->|git pull / push| Laptop[Desktop Obsidian on the owner's laptop]
+  P1 -->|task_bridge key, own projects| Paperclip
+  Paperclip -->|hermes_gateway adapter: /p/&lt;bot&gt;| Gateway
+  Mount <-->|SFTP share of the whole vault| Vault
 ```
+
+Two links cross the guest boundary, and only where the guest firewall allows:
+the Paperclip API port, and the notes SFTP port. The vault history and every
+host account stay on the host.
 
 ## Components
 
 | Component | Placement |
 | --- | --- |
-| Hermes | Unmodified upstream checkout in the guest, pinned by commit; one shared gateway runs every profile under the `zelab-hermes` account |
+| Hermes | Unmodified upstream checkout in the guest, pinned by commit, with its browser tools (agent-browser and Chromium pinned in Hermes' own lock); one shared gateway serves every profile under the `zelab-hermes` account |
+| Bots | One native Hermes profile each, created by `make bot`; each has its own model login, chat app token, `SOUL.md`, memory and sessions in its profile directory |
+| Hermes API | The gateway's single API server (port 8642 in the guest, forwarded to host loopback); a bot is reached at `/p/<bot>/` with that profile's own `API_SERVER_KEY` |
 | Hermes dashboard | Guest service on port 8640, basic-auth; forwarded to host loopback and published through Tailscale Serve |
 | Paperclip | Host service under `zelab-paperclip`, authenticated private mode, loopback only; embedded PostgreSQL reachable only by root, the operator and the service account (nftables) |
-| Host worker | One Paperclip agent, Operations, running as `zelab-ops` (unattended sudo) through Paperclip's SSH environment driver. Setup offers pinned Codex, Claude Code or skip: a harness creates the agent fully configured except its model, plus a Backlog task that proves host access and sudo; skip creates no worker, account or Discord task bridge. Existing native settings are retained. |
-| Notes | Host vault `/var/lib/zelab-vault/{Private,Shared}`; a dedicated notes-only SFTP listener on loopback; SSHFS mounts in the guest per audience |
-| Obsidian | linuxserver.io container pinned by digest, loopback-published, password from a file, vault bind-mounted |
+| Paperclip bot agents | One `hermes_gateway` agent per bot, hired with `/agent-hires` and approved by `make bot`; `apiBaseUrl` is `http://127.0.0.1:<guest_api_port>/p/<bot>` |
+| Task bridge | Paperclip's bundled `paperclip-task-bridge` skill, reconciled unchanged into each profile on every `make`; its `task_bridge` key, scoped to the projects the owner picks, is in the profile's `.env` and reaches the terminal tool through Hermes' `terminal.env_passthrough` |
+| Zelab skill | Reconciled on every `make`, listing only the bot's permitted projects (Paperclip IDs, vault folders), the team and other bots; no secrets |
+| Projects | `config/projects.yaml`: a Paperclip project and a vault folder each; no host rights |
+| Team tiers | `config/team.yaml`: one account `zelab-team-<tier>` per tier (`dev` repo-dev, `ops` docker, `root` full-sudo; home below `/var/lib/zelab-projects`), read/write on the vault, and the Paperclip SSH environment `<tier> host`; site paths in `config/projects.yaml` |
+| Team | Claude Code agents make hires once from `config/team.yaml` (PM as lead; frontend, backend, mobile, game, data on `dev`; devops on `ops`; sysadmin on `root`): Claude CLI engine, Opus 5.5, persona `config/team/<member>.md` plus `TEAM.md` as the first `AGENTS.md`; runs use the owner's Claude sign-in. Both pinned CLIs are installed as `codex` and `claude` |
+| Notes | Host vault `/var/lib/zelab-vault` with `Projects/<slug>/`; one notes-only SFTP listener on loopback exports the whole vault; the guest mounts it with SSHFS as the Hermes account |
+| Vault history | `/var/lib/zelab-vault-history`, a root-only git directory outside the vault, snapshotted by `zelab-vault-history.timer` every 5 minutes |
+| Desktop notes | Obsidian on the owner's laptop, on a clone of a private GitHub repository; `make notes` syncs the server vault with it on demand (Git directory, hooks, config and deploy key in `private_dir/notes-sync`, outside the vault and the guest; `.obsidian/`, Git files and symlinks never travel). See [NOTES.md](NOTES.md) |
+| Browser Obsidian (optional, off) | linuxserver.io container pinned by digest, loopback-published, password from a file, vault bind-mounted; `obsidian_enabled: false` retires it and its own Tailscale route |
 | Provisioning | Ansible roles under `deploy/`, systemd units, one Compose file; Python entry points in `deploy/` and `implementation/` |
 
 ## Flows
 
-1. The owner asks Operations in an admitted Discord conversation.
-2. Hermes runs the bundled `paperclip-task-bridge` skill. Task creation uses
-   `submit-task.mjs`, a stateless client that derives a Paperclip idempotency
-   key from Hermes' per-message identity, so retries never duplicate work.
-3. The task lands in the Operations project assigned to the `zelab-ops` worker.
-   Once a harness is selected and authenticated, Paperclip opens the SSH
-   environment and runs Codex or Claude Code there with real host access.
-   Each run copies Paperclip's own folder to the worker's `workspace` and
-   copies it back afterwards; the two folders are never the same path.
-4. Operations reads the result through the same scoped key and replies in the
-   originating conversation with host identity, timestamp and task ID.
-5. Paperclip can also assign work to Hermes through its native gateway adapter,
-   using a second, separately scoped key.
+1. **Chat to ticket (G1).** The owner asks a bot in a project's channel. The
+   bot reads its `zelab` skill, writes notes under `Projects/<slug>/`, and
+   files a ticket in that project with the task-bridge helper. The ticket is
+   assigned to the bot itself, so Paperclip runs it through the bot's
+   `hermes_gateway` agent; inside that run the bot comments and closes it,
+   passing the run ID Paperclip gives it.
+2. **Team work (G2).** From chat, a bot files a ticket for itself; when
+   Paperclip runs it, the bot opens a child ticket for the PM, the only team
+   member its key may assign. The PM splits it into tickets for the team, which
+   Paperclip runs as Claude Code over SSH on each member's tier account. When
+   children are done, Paperclip wakes their parent's owner
+   (`issue_children_completed`, with each child's summary): the PM closes its
+   ticket, then the bot answers the chat it noted on its own.
+3. **Owner to bot (G3).** A ticket the owner assigns to a bot in Paperclip is
+   dispatched to `/p/<bot>/v1/runs` of the shared gateway.
+4. **Bot to bot (G4).** By chat, a bot that allows bots (`DISCORD_ALLOW_BOTS`)
+   answers another bot's @mention; by ticket, a bot files work assigned to
+   another bot's agent ID, which its key allows.
 
 ## State
 
 | State | Location |
 | --- | --- |
 | Guest disk and cloud-init | `vm_data` (default `/var/lib/zelab-vm/data`) |
-| Hermes profiles, memory, logins, Discord token | `/var/lib/zelab/hermes/home` inside the guest |
-| Paperclip database, uploads, secrets key | `paperclip_home` (default `/var/lib/zelab-paperclip`) |
-| Coordinator-side worker workspace | `paperclip_home/worker-workspaces/ops` |
-| Worker home | `/var/lib/zelab-ops` (`/var/lib/zelab-code` only on sites from the earlier two-worker layout) |
-| Notes vault, Obsidian configuration | `/var/lib/zelab-vault`, `/var/lib/zelab-obsidian` |
-| Deployment keys, Hermes password hash, resource IDs and optional legacy recovery copies | `private_dir` (default `~/.local/state/zelab-deployment`) |
-| UI password working copies | Private temporary `/dev/shm/zelab-passwords-*` directory during `make`; removed on exit |
-| Obsidian native startup password | Root-owned `/etc/zelab-obsidian/password` |
+| Hermes profiles: logins, chat tokens, SOUL, memory, sessions, task key | `/var/lib/zelab/hermes/home/profiles/<bot>` inside the guest |
+| Archived profiles (no logins or tokens) | `/var/lib/zelab/hermes/home/profile-exports` inside the guest |
+| Paperclip database, uploads, secrets key, AI connections | `paperclip_home` (default `/var/lib/zelab-paperclip`) |
+| Team tier homes and workspaces | `projects_dir` (default `/var/lib/zelab-projects/<tier>`) |
+| Notes vault, its history, notes sync, browser Obsidian settings (kept when off) | `/var/lib/zelab-vault`, `/var/lib/zelab-vault-history`, `private_dir/notes-sync`, `/var/lib/zelab-obsidian` |
+| Deployment keys, project keys, Hermes password hash, resource IDs | `private_dir` (default `~/.local/state/zelab-deployment`) |
+| UI password working copies | Private temporary `/dev/shm/zelab-passwords-*` directory during `make`; removed on exit, and stale ones at the next start |
 
-Hermes memory stays in Hermes; task history stays in Paperclip; the vault holds
-durable human-readable notes. `make backup` archives all of the above together
-with the source pins, because a database dump or `.env` alone cannot rebuild a site.
+`make backup` archives all of the above together with the source pins, because
+a database dump or `.env` alone cannot rebuild a site.
+
+Plain `make` reconciles bots even without a terminal. It refreshes bundled
+skills, terminal credential passthrough and gateway routing, verifies each task
+key against Paperclip, and resumes an interrupted key rotation. Project grants
+remain the owner's choice; explicit `project_replacements` in
+`config/projects.yaml` migrate retired project grants to declared replacements.
+Replaced projects are archived only after their open tickets are resolved;
+their notes and tickets are retained.
+
+Team defaults apply when hiring. Subsequent harness, model and AI connection
+changes in Paperclip remain authoritative during reapplies.
+
+A private fingerprint covers each profile's persona, configuration, managed
+skills and qualified component pins, including the resolved dependency inputs.
+On first adoption and after a change,
+`make` ends old chat contexts through Hermes' native session API. Transcripts,
+logins, memory and Paperclip run sessions remain; the next chat starts with
+current instructions. Unchanged reapplies keep the current conversation. Busy
+Hermes work defers reconciliation with an actionable failure. Native team
+errors are reported for inspection; failed work is never replayed blindly.
 
 ## Network
 
@@ -77,30 +114,20 @@ All backends bind to host loopback. Tailscale Serve publishes the three UIs as
 HTTPS on the tailnet only; existing Serve routes are never replaced and Funnel
 is refused. The guest reaches the host only on the Paperclip API port and the
 notes SFTP port; private ranges, link-local and IPv6 are rejected by nftables
-inside the guest, and restricted tool UIDs are additionally blocked from the
-Paperclip port. Worker SSH keys carry `from=` and `restrict` options and an
+inside the guest. Project SSH keys carry `from=` and `restrict`, and an
 `AllowUsers` entry is added only when the host already uses one.
 
 ## Resources
 
-Defaults: 1 vCPU, 2 GiB guest RAM, 50 % CPU quota, 2304 MiB memory cap, no
-guest swap, 16 GiB disk; 8 GiB host RAM and 20 GiB disk reserves. A fresh
-install may temporarily borrow up to 70 % of idle CPU and RAM for the first
-boot and restores the normal limits afterwards (`vm_install_resource_fraction`).
-That restore restarts the guest; until Hermes answers it may use whole vCPUs,
-then the normal CPU quota is applied live (Hermes takes about a minute to start
-under a 50 % quota).
-Hermes web assets are built on the host, not inside the small guest.
-
-Install order overlaps host and guest work: once the guest is sized and booting,
-the Obsidian image pull, Hermes web build and Paperclip `npm ci` run as background
-Ansible jobs, and Paperclip installs while the guest prepares Hermes dependencies.
-Reserve profiles are created together and their admission checks run in
-parallel; the gateway stage rechecks only active profiles, since parked ones
-were checked with their restricted tools. Each role waits for its own job.
-A successful run ends with `prune.yaml`, which deletes downloads, build trees,
-releases and images the current pins no longer use; the guest disk uses
-`discard=unmap`, so space freed in the guest returns to the host.
+Defaults: 2 vCPU, 4 GiB guest RAM, 200 % CPU quota, 4352 MiB memory cap, no
+guest swap, 20 GiB disk; 8 GiB host RAM and 20 GiB disk reserves. Measured in
+qualification: one gateway with five idle profiles uses about 300 MB, the
+guest 720 MiB; a Chromium session adds about 240 MiB. Raising `vm_disk_gib`
+grows the disk (QMP `block_resize`) and the guest filesystem (`growpart`,
+`resize2fs`) without a restart. A fresh install may temporarily borrow up to
+70 % of idle CPU and RAM (`vm_install_resource_fraction`). Hermes web assets
+are built on the host. A successful run ends with `prune.yaml`, which deletes
+downloads, build trees, releases and images the current pins no longer use.
 
 ## Upstream references
 

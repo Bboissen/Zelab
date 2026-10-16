@@ -25,15 +25,15 @@ from archive_fixture import encrypt
 ROOT = Path(__file__).resolve().parents[1]
 
 
-CORE_FIELDS = ('vm_data', 'vm_root', 'vm_bootstrap_dir', 'paperclip_home', 'notes_vault_dir',
+CORE_FIELDS = ('vm_data', 'vm_root', 'vm_bootstrap_dir', 'paperclip_home', 'notes_vault_dir', 'vault_history_dir',
                'obsidian_state_dir', 'private_dir', 'notes_config_dir', 'obsidian_config_dir')
-WORKER_HOMES = ('worker_ops_home', 'worker_code_home')
+WORKER_HOMES = ('projects_dir',)
 
 
 class RestoreFixture:
-    """A disposable site; worker homes vary between the backup and the live site."""
+    """A disposable site; the project homes vary between the backup and the live site."""
 
-    backed_up = WORKER_HOMES  # earlier two-worker layout
+    backed_up = WORKER_HOMES
     live = WORKER_HOMES
 
     def setUp(self):
@@ -205,47 +205,35 @@ class RestoreSiteTest(RestoreFixture, unittest.TestCase):
 
 
 
-class SingleWorkerRestoreTest(RestoreFixture, unittest.TestCase):
-    """Current layout: Operations only, no Coding home on either side."""
-
-    backed_up = live = ('worker_ops_home',)
-
-    def test_restores_without_a_coding_home(self):
-        self.assertFalse(Path(self.site['worker_code_home']).exists())
-        self.assertEqual(self.restore(), 0)
-        self.assert_restored()
-        self.assertFalse(Path(self.site['worker_code_home']).exists())
-
-
-class SkippedWorkerRestoreTest(RestoreFixture, unittest.TestCase):
-    """worker_harness: none creates no worker home at all."""
+class NoHostProjectsRestoreTest(RestoreFixture, unittest.TestCase):
+    """A site without host projects has no projects_dir on either side."""
 
     backed_up = live = ()
 
-    def test_restores_without_any_worker_home(self):
+    def test_restores_without_project_homes(self):
         self.assertEqual(self.restore(), 0)
         self.assert_restored()
-        self.assertFalse(Path(self.site['worker_ops_home']).exists())
+        self.assertFalse(Path(self.site['projects_dir']).exists())
 
 
-class UncoveredWorkerHomeTest(RestoreFixture, unittest.TestCase):
-    """A worker home created after the backup must not be left half-restored."""
+class UncoveredProjectHomesTest(RestoreFixture, unittest.TestCase):
+    """Project homes created after the backup must not be left half-restored."""
 
-    backed_up, live = (), ('worker_ops_home',)
+    backed_up, live = (), ('projects_dir',)
 
-    def test_backup_missing_a_present_worker_home_is_refused(self):
-        with self.assertRaisesRegex(ValueError, 'does not cover.*worker_ops_home'):
+    def test_backup_missing_present_project_homes_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'does not cover.*projects_dir'):
             self.restore()
         self.assertEqual(self.events, [])
         self.assert_unchanged()
 
 
-class MissingLiveWorkerHomeTest(RestoreFixture, unittest.TestCase):
-    """A backed-up worker home needs the matching installed worker first."""
+class MissingLiveProjectHomesTest(RestoreFixture, unittest.TestCase):
+    """Backed-up project homes need the matching installed projects first."""
 
-    backed_up, live = ('worker_ops_home',), ()
+    backed_up, live = ('projects_dir',), ()
 
-    def test_backed_up_worker_home_absent_from_the_site_is_refused(self):
+    def test_backed_up_project_homes_absent_from_the_site_are_refused(self):
         with self.assertRaisesRegex(ValueError, 'complete installed site'):
             self.restore()
         self.assertEqual(self.events, [])

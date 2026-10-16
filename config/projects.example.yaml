@@ -1,0 +1,28 @@
+# Projects make creates, and this site's tier paths. Copy to config/projects.yaml
+# (kept out of Git), edit, then run `rtk proxy make`.
+#
+# projects: the key is the project's slug, its vault folder Projects/<slug>/.
+#   name: the Paperclip project name (default: the slug).
+# A project is only where tickets and notes go; it grants no host rights.
+# Removing a project here keeps its Paperclip project, tickets and vault folder.
+# project_replacements: explicitly migrate bot grants from retired projects to
+# declared projects. make archives a replaced project only when it has no open
+# tickets; its tickets and notes remain. No replacement is inferred from names.
+#
+# tiers: optional overrides of config/team.yaml's tiers for this host.
+#   preset: none of the tiers' rights change unless you set this
+#           (monitor-readonly | docker | repo-dev | full-sudo)
+#   paths:  directories the tier's account may use (read-only for monitor-readonly).
+#           Usually none: the sysadmin is root and devops sees containers through
+#           Docker. A path must be reachable by the account: not inside a closed
+#           home folder (make stops if it is). Recursive rights on a big tree
+#           take a long time on the first run.
+projects:
+  homelab:
+    name: Homelab
+  research: {}
+# tiers:
+#   ops:
+#     paths: [/srv/compose]
+# project_replacements:
+#   old-lab: homelab

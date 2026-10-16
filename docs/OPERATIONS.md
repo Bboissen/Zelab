@@ -6,7 +6,7 @@ repository root as the configured operator.
 
 ## Routine commands
 
-Run from the checkout with `rtk proxy`. Only these seven Make commands remain:
+Run from the checkout with `rtk proxy`. Only these nine Make commands exist:
 
 | Command | Role |
 | --- | --- |
@@ -14,9 +14,11 @@ Run from the checkout with `rtk proxy`. Only these seven Make commands remain:
 | `make clean` | Reset local deployment choices and remove generated controller/bytecode; keep installed data |
 | `make fclean` | Preview, confirm and remove this site's installation/application data, then reset local choices/generated files |
 | `make re` | Complete fclean, then install again; reset finishes before install even under parallel Make |
-| `make help` | Print the seven commands |
+| `make help` | Print the nine commands |
 | `make backup` | Create/verify an encrypted application backup and resume previously running services |
 | `make restore` | Select, authenticate, confirm and restore a backup to a compatible installed site |
+| `make bot` | Add, set up or remove Hermes bots; terminal only |
+| `make notes` | Sync the server vault with its private Git remote, for desktop Obsidian ([NOTES.md](NOTES.md)) |
 
 `make` includes readiness checks, resumable provisioning, private logs and the
 guide. Source checks are developer tooling: `rtk proxy python3 tools/check.py`.
@@ -30,18 +32,19 @@ blocks to the host so `disk.qcow2` shrinks. Shared tools stay while another Zela
 guest on the host may use them. A failed run removes nothing, so it can resume.
 
 `clean` removes `.venv` and Python caches and clears repo choices from the selected
-local, untracked site file: harness/model, VM resource limits and install boost,
-host reserve preferences, optional apps, profile counts/audiences and Discord IDs.
+local, untracked site file: VM resource limits and install boost, host reserve
+preferences and optional apps. `config/projects.yaml` is kept.
 Host connections, account identities, ports and installed resource paths remain
 so subsequent commands can find the same installed site. `.env` contains external
 path selectors and is retained. Public defaults/examples, tracked input files
 and input files outside this checkout are never reset. Ambiguous YAML
 merges/anchors/flow mappings are refused before cleanup; use plain top-level keys.
 
-`fclean`/`re` additionally delete Zelab's VM,
-profiles/logins, tasks, notes, Obsidian state, owned accounts/units/routes and
-project-installed software/cache. Host/path inputs, personal Codex login, backups, recovery
-key, private logs, host SSH/Tailscale and unrelated services are preserved.
+`fclean`/`re` additionally delete Zelab's VM, bots and their logins, tasks,
+notes and their history, Obsidian state, project accounts (with their sudo
+grants and path ACLs), owned units/routes and project-installed software/cache.
+Host/path inputs, `config/projects.yaml`, backups, recovery key, private logs,
+host SSH/Tailscale and unrelated services are preserved.
 A later `make` rebuilds the controller.
 
 `fclean` prints exact ownership evidence and data loss before asking for the
@@ -58,49 +61,83 @@ Private logs use 0600 files in 0700 directories. Deployment and native
 backup/restore/lifecycle helpers share a nonblocking maintenance lock.
 Do not mutate the same state manually during maintenance.
 
-## Inputs and ownership
+## Bots
 
-Setup offers `worker_harness: codex`, `claude` or `none` (skip), saving the
-choice in the site file. Every interactive run asks again with the saved choice
-as its default. Noninteractive setup retains the saved choice or defaults to skip;
-the removed `both` stops unattended runs until a terminal run replaces it. Only the
-selected pinned CLI is installed during Host workers.
+`make bot` opens a terminal menu; it refuses to run without one. A fresh plain
+`make` asks how many bots to set up and runs the same steps for each.
 
-A harness creates one Paperclip agent, **Operations**: its adapter, installed
-command (`/usr/local/bin/zelab-codex` or `zelab-claude`), `Zelab Operations host`
-SSH environment, adapter environment (Claude: `CLAUDE_CONFIG_DIR`,
-`DISABLE_UPDATES=1`, `DISABLE_AUTOUPDATER=1`), permissions and wake on demand are
-set, and it is active. Only the model is left to you; `worker_model` presets one,
-and otherwise the CLI default applies until you choose. The install also queues
-**Prove Operations host access and sudo** in Backlog, assigned to Operations.
-Backlog never wakes an agent; moving the task to Todo starts it.
+| Menu | What runs | Native to |
+| --- | --- | --- |
+| Add a bot | `hermes profile create <name> --description <role>`; a new `API_SERVER_KEY` in the profile; Paperclip's task-bridge skill copied into it; `terminal.env_passthrough` for the bridge variables; Paperclip `/agent-hires` plus approval for a `hermes_gateway` agent at `/p/<name>` | Hermes, Paperclip |
+| Model sign-in | `hermes -p <name> setup model`: Hermes' provider menu, including subscription logins | Hermes |
+| Chat app | `hermes -p <name> gateway setup`: Hermes' platform menu; the token is typed there. For Discord, make bot then asks whether other bots may hand work over by @mention (`DISCORD_ALLOW_BOTS=mentions`) | Hermes |
+| Persona | The profile's `SOUL.md`, edited in nano or pasted | Hermes file |
+| Task key | A `task_bridge` key for the projects you pick, allowed to assign to every bot; replaces and revokes the previous key | Paperclip |
+| Sign the team in | Paperclip's own local subscription sign-in for Claude (or Codex), saved as an AI connection | Paperclip |
+| Remove a bot | After you type its name: terminate its Paperclip agent (its keys are revoked), `hermes profile export` (no logins or tokens) to `profile-exports/`, `hermes profile delete` | Hermes, Paperclip |
 
-Skip creates no worker, worker account, sudo grant or Discord task bridge; the
-Operations project and the Hermes Operations remote agent remain. Choose a harness
-later and rerun `rtk proxy make` to add the worker. Existing worker adapters,
-models and logins remain as configured in Paperclip; a reapply refuses a worker
-moved off its SSH environment, because the adapter would then run as Paperclip's
-own account. Selecting `none` does not uninstall an existing CLI or remove a
-previously configured worker. Sites from the earlier two-worker layout keep
-their Coding agent until `make re`.
+On quit, make bot rewrites each bot's `zelab` skill (projects with their IDs and
+vault folders, the other bots with their agent IDs) and widens task keys to
+every current bot; it restarts the shared gateway once when a bot was added,
+signed in, connected to a chat app or removed.
 
-Claude Code login belongs to the Operations account, under its `.claude`
-directory; worker homes are backed up and deleted by a full clean. Personal
-operator logins remain outside that state. Claude worker auto-updates are
-disabled through native environment settings; version changes require a new
-[qualification](HARNESS_QUALIFICATION.md).
+## Projects and the team
+
+`config/projects.yaml` (copy `config/projects.example.yaml`; kept out of Git)
+declares projects by slug. Each `make` creates a missing Paperclip project with
+the declared name and the vault folder `Projects/<slug>/`. Projects grant no
+host rights; removing one keeps its Paperclip project, tickets and notes.
+
+`config/team.yaml` declares the rights tiers and the default team. Each tier is
+an account `zelab-team-<tier>` (home and workspace below `projects_dir`) with
+its preset's sudoers fragment, groups and recursive ACLs on its `paths`,
+read/write on the vault, an SSH key restricted to the host's own address, and
+the Paperclip SSH environment `<tier> host`. A site sets a tier's `paths` (or
+`preset`) under `tiers:` in `config/projects.yaml`. A removed tier loses its
+account, grants and environment on the next `make`, and so do the per-project
+accounts `zelab-p-<slug>` of earlier versions.
+
+`make` hires each member once as a Claude Code agent (`claude_local`, Claude
+CLI engine, the file's `model` and `effort`) on its tier's environment, the lead
+first and the others reporting to it. Its first `AGENTS.md` is
+`config/team/<member>.md`, then `config/team/TEAM.md` (shared rules), then a
+generated section about this server; Paperclip versions it and `make` never
+rewrites it. Runs use the owner's Claude sign-in (`make bot`, option 4, or when
+Paperclip asks on the first task). Removing a member from the file does not
+fire it: terminate it in Paperclip.
+
+After hiring, change a member's harness, model and AI connection in Paperclip.
+`make` preserves those choices. When switching Claude Code to Codex, also select
+the shared Codex subscription under **AI connection**, then choose a Codex model
+and save. The pinned UI retains the previous connection until you select the new
+one, so it shows a compatibility error in between. **Responsible user's
+connection** requires that user's personal connection; it does not select the
+company-shared subscription. `make bot` option 4 completes a Claude sign-in only
+for Claude members still using the initial binding; it preserves other explicit
+connections and harnesses.
+
+Once the lead is hired, `make` files the team's first ticket for it, once per site
+(`config/team/ONBOARDING.md`, Paperclip's `idempotencyKey`, and the marker
+`private_dir/team-onboarding.json`): map the server, read-only, into the vault
+folder `Server/` (Infrastructure.md, Runbooks/, Findings.md, Decisions.md).
+Every member and every bot's `zelab` skill points at that map.
+
+Bots may assign only the lead (the PM). The `zelab` skill lists the team and the
+recipe: the bot files a ticket for itself noting the chat to answer in, asks
+the lead with a child ticket when Paperclip runs it, and answers the chat with
+Hermes' `send_message` when Paperclip wakes it after the child is done
+(`issue_children_completed`). Agents you hire yourself on a `<tier> host`
+environment are listed too; run `make` afterwards so the skills know them.
 
 `config/defaults.yaml` holds public defaults. `config/site.yaml` (generated once
 by `make`, never overwritten) holds only host-specific values and any
-overrides; `discord_owner_id`/`discord_channel_id` may stay empty until the first
-Discord test (nobody is admitted meanwhile). Optional `.env` overrides:
+overrides. Optional `.env` overrides:
 
 | Variable | YAML field |
 | --- | --- |
 | `ZELAB_PRIVATE_DIR` | `private_dir` |
 | `ZELAB_DEPLOY_KEY` | `deploy_key` |
 | `ZELAB_KNOWN_HOSTS` | `guest_known_hosts` |
-| `ZELAB_CODEX_AUTH_FILE` | `worker_codex_auth_source` |
 
 Use absolute paths and private file permissions. No shell expansion or inline
 tokens. Unknown/duplicate `.env` keys and component port collisions are rejected.
@@ -110,27 +147,41 @@ explicitly choose an absent/empty override file for a separate guest test.
 | State | Default location |
 | --- | --- |
 | VM disk and cloud-init | `/var/lib/zelab-vm/{data,bootstrap}` |
-| Hermes native state inside VM | `/var/lib/zelab/hermes/home` |
-| Paperclip database, uploads, agent state | `/var/lib/zelab-paperclip` |
-| Host worker home | `/var/lib/zelab-ops` |
-| Durable notes | `/var/lib/zelab-vault/{Private,Shared}` |
-| Obsidian desktop configuration | `/var/lib/zelab-obsidian` |
+| Hermes native state inside VM (one profile per bot) | `/var/lib/zelab/hermes/home` |
+| Paperclip database, uploads, agent state, AI connections | `/var/lib/zelab-paperclip` |
+| Team tier homes | `/var/lib/zelab-projects/<tier>` |
+| Durable notes | `/var/lib/zelab-vault/Projects/<slug>` |
+| Vault history (root only) | `/var/lib/zelab-vault-history` |
+| Notes sync: Git directory, deploy key, GitHub host keys | `private_dir/notes-sync` (operator only) |
+| Browser Obsidian settings (kept when it is off) | `/var/lib/zelab-obsidian` |
 | Deployment keys, Hermes password hash and resource IDs | Configured `private_dir` |
-| Obsidian native startup password | `/etc/zelab-obsidian/password` (root-only) |
+| Browser Obsidian startup password | `/etc/zelab-obsidian/password` (root-only) |
 
 Hermes native memory stays in Hermes. Paperclip task state stays in Paperclip.
-The vault holds durable notes and runbooks, with task references where useful.
-Operations can access Private and Shared; Research gets Shared only.
-Reserves have no notes mount until selected in `notes_shared_profiles`.
+The vault holds durable notes, one folder per project; every bot sees all of it.
+
+### Restoring notes from the vault history
+
+The host takes a git snapshot of the vault every 5 minutes into a root-only
+directory the guest cannot reach. To bring back a folder as it was:
+
+```sh
+rtk proxy sudo git --git-dir=/var/lib/zelab-vault-history log --oneline -- Projects/<slug>
+rtk proxy sudo git --git-dir=/var/lib/zelab-vault-history checkout <commit> -- Projects/<slug>
+```
+
+The restored files appear in the guest at once, and on the laptop after the next
+`make notes` and `git pull`. The history and the notes sync are separate: the
+history snapshots every change, synced or not.
 
 Administration backends bind to localhost; Tailscale Serve supplies private HTTPS.
 No LAN proxy or public tunnel is required. Passwords remain required locally.
 
-Fresh `make` asks for three UI passwords with hidden terminal input and
+Fresh `make` asks for the UI passwords with hidden terminal input and
 confirmation. Keep them in your password manager. Hermes retains a native
 scrypt hash; Paperclip owner login is staged only for the provisioning run in
 a private RAM directory, so future applies request its current password.
-Obsidian retains the protected startup file its native container requires.
+A browser Obsidian, if turned on, retains the protected startup file its container requires.
 Existing deployment password copies are reused without rotation, and may be
 removed after a successful apply only when you confirm password-manager custody
 in the terminal. No input comes from chat, command arguments or shell-sourced `.env`.
@@ -153,8 +204,8 @@ overlap sources. The backup directory must be private to root/operator (0700 or
 an operator-only ACL). Retain backups for 90 days; there is no scheduled backup
 or automatic pruning.
 
-The archive includes VM/backing chain, coordinator state/keys, worker homes,
-vault, Obsidian state, deployment credentials, native host configuration and
+The archive includes VM/backing chain (every bot's profile and logins),
+coordinator state/keys, project homes, vault and its history, Obsidian state, deployment credentials, native host configuration and
 source/runtime pins. A database dump or `.env` alone cannot restore the site.
 
 Interactive `restore` lists backups and asks which to use. Noninteractive use
@@ -166,7 +217,8 @@ account UID/GID must match a compatible installed site. After `fclean`, run
 Different-host/version migration is separate.
 
 Restore previews exact application paths and requires the displayed site identity
-(`CONFIRM=<site>` noninteractively). Current inputs, personal Codex login,
+(`CONFIRM=<site>` noninteractively). Run `make` with the same `config/projects.yaml`
+before restoring, so the project accounts exist. Current inputs,
 SSH/Tailscale, other services, encrypted backups, recovery key and private logs
 stay. Application/VM state, notes/Obsidian configuration and the Paperclip
 environment are restored; host-wide SSH files and current systemd/network
@@ -187,6 +239,36 @@ file activation with mocked supervision; a full live restore with Discord
 acceptance remains unrun (see [STATUS.md](STATUS.md)).
 
 ## Updating and removing
+
+Every plain `make` also reconciles bot integration, before any terminal-only
+setup wizard. Existing native profiles keep their personas, logins, model
+choices and custom settings. Deployment-owned routing, bundled bridge skills,
+required terminal credential passthrough and scoped project tables are repaired.
+A second unchanged run does not rotate keys or end conversations.
+
+To retire a project, explicitly map its slug to a currently declared project
+in local `config/projects.yaml`:
+
+```yaml
+projects:
+  homelab: {name: Homelab}
+project_replacements:
+  old-lab: homelab
+```
+
+`make` migrates existing bot grants through that mapping, then archives the old
+project if it has no open tickets. It never deletes its tickets or vault folder.
+Without a declared replacement, existing grants are preserved. The generated
+skill advertises only the projects that the bot's actual key permits.
+
+The first reconciliation, and subsequent changes to a profile's persona,
+configuration, managed skills or qualified pins, end its old chat contexts
+using the native Hermes API. The transcripts remain in history; the next chat
+loads the current instructions. Paperclip run sessions are preserved. If Hermes
+has active work, let it finish and rerun `make`. A malformed private context
+receipt or an unreachable API fails the step rather than claiming freshness.
+An errored or paused team member is reported; inspect its native Paperclip run
+before retrying work, since it may already have changed data.
 
 Versions and hashes live in [versions.yaml](../versions.yaml). Qualify updates
 against native adapters, subscription inference and database recovery before
@@ -224,6 +306,12 @@ It never imports subscription credentials or submits inference. Successful
 fixtures are removed; failure diagnostics remain private under `/tmp`.
 This tests native coordinator persistence, not execution by a restored worker,
 Discord delivery, guest recovery or compatibility of arbitrary future releases.
+
+Run the same checker with `--project-retirement` instead of `--recovery` to
+exercise the deployer's archive request against the actual candidate API. It
+uses disposable projects and a closed ticket, checks that history survives and
+the replacement stays active, then repeats retirement to verify convergence.
+This catches API validation differences that a mocked owner client cannot.
 
 Host distribution upgrades are separate maintenance: take a backup first, keep
 console access, and reapply `make` afterwards. The installer reports an

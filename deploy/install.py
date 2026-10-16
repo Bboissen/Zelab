@@ -10,11 +10,13 @@ Python before the controller exists, so it needs only the standard library.
 import argparse
 import collections
 import datetime
+import fcntl
 import json
 import os
 from pathlib import Path
 import platform
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -42,17 +44,17 @@ STAGES = (
     ("Build pinned upstream Hermes", "Hermes build"),
     ("Install pinned unmodified Hermes", "Hermes"),
     ("Install pinned native Paperclip", "Paperclip"),
-    ("Provision native host worker", "Host workers"),
+    ("Install pinned host agent CLIs", "Host agent CLIs"),
+    ("Provision the team tier accounts", "Team tiers"),
     ("Finish pinned Hermes", "Hermes dashboard"),
-    ("Prepare a native Research profile", "Research profile"),
-    ("Prepare parked native bot", "Reserve bots"),
-    ("Configure native Paperclip host worker", "Paperclip agents"),
-    ("Install the native Hermes to Paperclip", "Task bridge"),
+    ("Configure native Paperclip projects", "Paperclip projects"),
+    ("Publish Paperclip's bundled task-bridge", "Paperclip projects"),
+    ("Install the task-bridge skill", "Paperclip projects"),
     ("Supervise the native shared Hermes gateway", "Hermes gateway"),
     ("Seed the native Hermes API", "Hermes API"),
-    ("Configure the native Paperclip Hermes gateway", "Hermes API"),
-    ("Prepare the host vault", "Shared notes"),
-    ("Mount explicitly shared notes", "Shared notes"),
+    ("Prepare the host vault", "Vault"),
+    ("Mount the vault", "Vault"),
+    ("Retire the browser Obsidian", "Obsidian"),
     ("Deploy the native Obsidian", "Obsidian"),
     ("Remove superseded", "Cleanup"),
 )
@@ -60,10 +62,10 @@ APPLICATION = re.compile(r'(\w+) [\w ]+?: (HTTP \d+ ready|HTTP \d+ needs attenti
 SECTIONS = (
     ("Prepare the host", {"Host packages"}),
     ("Build the Hermes VM and runtime", {"Hermes VM", "Downloads", "VM firewall", "Hermes build", "Hermes"}),
-    ("Install applications, workers and bots", {"Paperclip", "Host workers", "Hermes dashboard", "Research profile",
-                                              "Reserve bots", "Paperclip agents", "Task bridge",
-                                              "Hermes gateway", "Hermes API"}),
-    ("Connect shared notes and Obsidian", {"Shared notes", "Obsidian"}),
+    ("Install Paperclip, team tiers and Hermes", {"Paperclip", "Host agent CLIs", "Team tiers",
+                                                    "Hermes dashboard", "Paperclip projects",
+                                                    "Hermes gateway", "Hermes API"}),
+    ("Connect the vault", {"Vault", "Obsidian"}),
     ("Verify services and prepare your guide", {"Cleanup"}),
 )
 
@@ -304,24 +306,6 @@ class Installer:
             self.tool_failed("Ansible could not be installed", tail)
         self.screen.finish("PASS", "Ansible installed")
 
-    def worker_harness(self):
-        # Native input/output must reach the terminal: capture() hides prompts.
-        command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/configure.py',
-                   '--site-config', str(self.site_config), '--select-harness']
-        if subprocess.run(command, cwd=ROOT).returncode:
-            self.screen.start('Worker harness')
-            self.fail('selection could not be saved')
-
-    def hermes_model(self):
-        # Native picker and device-code login need the terminal; the guide covers a skip.
-        command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/configure.py', *self.inputs(), '--hermes-model']
-        # A handler, unlike SIG_IGN, is reset on exec, so Ctrl-C still reaches the picker.
-        previous = signal.signal(signal.SIGINT, lambda *_: None)
-        try:
-            subprocess.run(command, cwd=ROOT)
-        finally:
-            signal.signal(signal.SIGINT, previous)
-
     def open_log(self):
         """The log lives in the site's private directory once the inputs can be read."""
         code = ("import sys,json; sys.path.insert(0, 'deploy'); from pathlib import Path; from run import read_inputs; "
@@ -330,9 +314,30 @@ class Installer:
         result = subprocess.run(["rtk", "proxy", str(VENV_PYTHON), "-c", code, str(self.site_config),
                                  str(self.env_file)], cwd=ROOT, capture_output=True, text=True)
         settings = json.loads(result.stdout) if result.returncode == 0 else {}
-        if not settings.get("obsidian_enabled", True):
+        if not settings.get("obsidian_enabled", False):
             self.applications.discard("Obsidian")
         self.log.open(settings.get("private_dir", DEFAULT_PRIVATE_DIR))
+
+    def bots(self):
+        self.screen.start('Bot reconciliation')
+        code, tail = self.capture([str(VENV_PYTHON), 'deploy/bots.py', 'refresh', *self.inputs(),
+                                   '--runtime-dir', self.password_dir])
+        if code:
+            self.tool_failed('bot reconciliation failed', tail)
+        warnings = [line.strip() for line in tail if line.startswith('  WARN:')]
+        self.screen.finish('PASS', 'skills, scoped keys, adapters and conversation freshness', warnings)
+        # Hermes' wizards need the terminal: capture() would hide them.
+        command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/bots.py', 'installer', *self.inputs(),
+                   '--runtime-dir', self.password_dir]
+        if subprocess.run(command, cwd=ROOT).returncode:
+            self.screen.start('Hermes bots')
+            self.fail('bot setup stopped; finish it with: rtk proxy make bot')
+
+    def notes(self):
+        # Offered once, in the terminal; a failure here never fails the install.
+        command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/notes.py', 'offer', *self.inputs()]
+        if subprocess.run(command, cwd=ROOT).returncode:
+            print('  Desktop notes are not set up yet; finish with: rtk proxy make notes')
 
     def ui_passwords(self, action):
         # Inherit the terminal; neither input nor credential values enter capture/logs.
@@ -470,6 +475,17 @@ class Installer:
         if self.log.path:
             print(f"\n  Install log: {self.log.path}\n")
 
+    def single_run(self, shm=Path('/dev/shm')):
+        """One make at a time; then remove plaintext working copies a killed run left behind."""
+        self.run_lock = open(shm / f'zelab-make-{os.getuid()}.lock', 'a')
+        try:
+            fcntl.flock(self.run_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError('Another make is running for this operator; wait for it to finish.') from None
+        for stale in shm.glob('zelab-passwords-*'):
+            if stale.is_dir() and not stale.is_symlink() and stale.stat().st_uid == os.getuid():
+                shutil.rmtree(stale, ignore_errors=True)
+
     def run(self):
         host = platform.node() or "this host"
         heading("ZELAB INSTALLER")
@@ -481,8 +497,8 @@ class Installer:
             self.administration()
             self.configuration()
             self.controller()
-            self.worker_harness()
             self.open_log()
+            self.single_run()
             # Linux RAM filesystem: plaintext inputs are never retained in Git,
             # environment values, arguments, logs or the persistent deployment state.
             with tempfile.TemporaryDirectory(prefix='zelab-passwords-', dir='/dev/shm') as directory:
@@ -492,7 +508,8 @@ class Installer:
                 self.deploy()
                 self.screen.section(4)
                 self.services()
-                self.hermes_model()
+                self.bots()
+                self.notes()
                 self.ui_passwords('finish')
                 self.summary()
             self.password_dir = None

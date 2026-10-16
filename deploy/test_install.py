@@ -31,6 +31,22 @@ def site_plays(path):
 
 
 class InstallerTest(unittest.TestCase):
+    def test_plain_make_reconciles_bots_before_the_terminal_only_wizard(self):
+        runner = self.installer()
+        runner.password_dir = '/dev/shm/test-runtime'
+        calls = []
+        with patch.object(runner, 'capture', side_effect=lambda argv: (calls.append(argv) or (0, []))), \
+                patch.object(install.subprocess, 'run') as run:
+            run.return_value.returncode = 0
+            runner.bots()
+        self.assertIn('refresh', calls[0])
+        self.assertEqual(calls[0][-2:], ['--runtime-dir', '/dev/shm/test-runtime'])
+        self.assertIn('installer', run.call_args.args[0])
+        with patch.object(runner, 'capture', return_value=(1, ['reconciliation failed'])), \
+                patch.object(install.subprocess, 'run') as run, self.assertRaises(install.StepFailed):
+            runner.bots()
+        run.assert_not_called()
+
     def test_password_lifecycle_covers_preflight_and_summary_then_removes_ram_files(self):
         runner = self.installer()
         stages = []
@@ -52,7 +68,7 @@ class InstallerTest(unittest.TestCase):
             return 0, []
 
         with ExitStack() as stack, redirect_stdout(io.StringIO()):
-            for method in ('host', 'administration', 'configuration', 'controller', 'worker_harness', 'open_log', 'services', 'hermes_model'):
+            for method in ('host', 'administration', 'configuration', 'controller', 'open_log', 'single_run', 'services', 'bots'):
                 stack.enter_context(patch.object(runner, method))
             stack.enter_context(patch.object(runner, 'ui_passwords', side_effect=passwords))
             stack.enter_context(patch.object(runner, 'deploy', side_effect=lambda: stages.append('deploy')))
@@ -92,7 +108,7 @@ class InstallerTest(unittest.TestCase):
         lines = ["PLAY [Install pinned native Paperclip on the host] ***\n",
                  "TASK [paperclip : Install the service] ***\n", "changed: [zelab_host]\n",
                  "TASK [paperclip : Start it] ***\n", "changed: [zelab_host]\n",
-                 "PLAY [Provision native host worker identities and SSH access] ***\n",
+                 "PLAY [Install pinned host agent CLIs] ***\n",
                  "TASK [codex : Download] ***\n", "ok: [zelab_host]\n", "PLAY RECAP ***\n"]
         runner = self.installer()
 
@@ -101,7 +117,7 @@ class InstallerTest(unittest.TestCase):
             runner.deploy()
         output = runner.screen.stream.getvalue()
         self.assertRegex(output, r"✓ Paperclip +2 changes")
-        self.assertRegex(output, r"✓ Host workers +no changes")
+        self.assertRegex(output, r"✓ Host agent CLIs +no changes")
         self.assertNotIn("ok: [", output)
 
     def test_failed_deployment_names_the_step_and_cause_only(self):
@@ -124,8 +140,8 @@ class InstallerTest(unittest.TestCase):
                  "TASK [paperclip : Install the service] ***\n", "changed: [zelab_host]\n",
                  '    "msg": "private task output"\n',
                  "TASK [paperclip : Start it] ***\n", "ok: [zelab_host]\n",
-                 "PLAY [Provision native host worker identities and SSH access] ***\n",
-                 "TASK [host_workers : Create account] ***\n", "ok: [zelab_host]\n", "PLAY RECAP ***\n"]
+                 "PLAY [Provision the team tier accounts and SSH access] ***\n",
+                 "TASK [host_projects : Create account] ***\n", "ok: [zelab_host]\n", "PLAY RECAP ***\n"]
         runner = self.installer()
 
         def capture(argv, on_line=None, env=None):
@@ -140,7 +156,7 @@ class InstallerTest(unittest.TestCase):
         self.assertEqual([(record["play"], record["task"]) for record in records], [
             ("Install pinned native Paperclip on the host", "paperclip : Install the service"),
             ("Install pinned native Paperclip on the host", "paperclip : Start it"),
-            ("Provision native host worker identities and SSH access", "host_workers : Create account")])
+            ("Provision the team tier accounts and SSH access", "host_projects : Create account")])
         self.assertTrue(all(set(record) == {"play", "task", "seconds"} and record["seconds"] >= 0 for record in records))
         self.assertNotIn("TASK_TIMING", runner.screen.stream.getvalue())
 
@@ -167,6 +183,18 @@ class InstallerTest(unittest.TestCase):
             self.assertEqual(log.path.stat().st_mode & 0o777, 0o600)
             self.assertEqual(log.path.read_text(), "before\nafter\n")
 
+    def test_one_run_at_a_time_and_stale_plaintext_copies_are_removed(self):
+        with tempfile.TemporaryDirectory() as shm:
+            stale = Path(shm, 'zelab-passwords-killed')
+            stale.mkdir(mode=0o700)
+            (stale / 'paperclip').write_text('plaintext')
+            runner = self.installer()
+            runner.single_run(Path(shm))
+            self.assertFalse(stale.exists())
+            with self.assertRaisesRegex(ValueError, 'Another make is running'):
+                self.installer().single_run(Path(shm))
+            runner.run_lock.close()
+
     def test_capture_hides_tool_output_and_preserves_it_in_the_private_log(self):
         runner = self.installer()
         with tempfile.TemporaryDirectory() as directory:
@@ -176,7 +204,8 @@ class InstallerTest(unittest.TestCase):
                                             "import sys; print('download detail'); print('tool error', file=sys.stderr); sys.exit(2)"])
             self.assertEqual(code, 2)
             self.assertEqual(terminal.getvalue(), "")
-            self.assertIn("download detail", tail)
+            # rtk relays stdout and stderr separately, so their lines may interleave.
+            self.assertIn("download detail", "".join(tail))
             self.assertIn("tool error", runner.log.path.read_text())
 
     def test_interrupted_capture_stops_the_tool_before_returning(self):

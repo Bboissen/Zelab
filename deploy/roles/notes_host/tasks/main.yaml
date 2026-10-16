@@ -9,59 +9,35 @@
       - notes_sftp_port | int > 1024
       - notes_sftp_port | int not in [guest_ssh_port | int, worker_ssh_port | int, paperclip_port | int]
 
-- name: Require installed native SSH and ACL prerequisites
-  ansible.builtin.command:
-    argv: [rtk, proxy, python3, -c, "import shutil; assert all(shutil.which(x) for x in ['sshd','getfacl','setfacl'])"]
-  changed_when: false
+- name: Install SSH, ACL and history prerequisites
+  ansible.builtin.apt:
+    name: [openssh-server, acl, git]
+    state: present
 
-- name: Create distinct vault access groups
+- name: Create the vault group
   ansible.builtin.group:
-    name: "{{ item }}"
+    name: "{{ notes_owner_group }}"
     system: true
-  loop: ["{{ notes_owner_group }}", "{{ notes_shared_group }}"]
 
-- name: Create the native container filesystem identity
+- name: Create the vault's filesystem identity, shared by Obsidian and the notes share
   ansible.builtin.user:
     name: "{{ notes_container_user }}"
     home: /vault
     shell: /usr/sbin/nologin
     group: "{{ notes_owner_group }}"
-    groups: "{{ notes_shared_group }}"
+    groups: ''
     system: true
     create_home: false
 
-- name: Create separate notes-only SFTP identities without shell access
-  ansible.builtin.user:
-    name: "{{ item.user }}"
-    home: /vault
-    shell: /usr/sbin/nologin
-    group: "{{ item.group }}"
-    groups: "{{ item.groups }}"
-    system: true
-    create_home: false
-  loop:
-    - {user: "{{ notes_shared_user }}", group: "{{ notes_shared_group }}", groups: ''}
-
-- name: Grant designated host workers their explicit notes scope
-  ansible.builtin.user:
-    name: "{{ item.user }}"
-    groups: "{{ item.groups }}"
-    append: true
-  loop:
-    - {user: "{{ worker_ops_user }}", groups: "{{ notes_owner_group }},{{ notes_shared_group }}"}
-  when: worker_harness in ['codex', 'claude']
-
-- name: Prepare vault roots without recursively changing existing notes
+# The mode's group bits are the ACL mask: 2770 keeps the mask rwx set below.
+- name: Prepare the vault root and its Projects folder without changing existing notes
   ansible.builtin.file:
-    path: "{{ item.path }}"
+    path: "{{ item }}"
     state: directory
     owner: "{{ notes_container_user }}"
-    group: "{{ item.group }}"
+    group: "{{ notes_owner_group }}"
     mode: '2770'
-  loop:
-    - {path: "{{ notes_vault_dir }}", group: "{{ notes_owner_group }}"}
-    - {path: "{{ notes_vault_dir }}/Private", group: "{{ notes_owner_group }}"}
-    - {path: "{{ notes_vault_dir }}/Shared", group: "{{ notes_shared_group }}"}
+  loop: ["{{ notes_vault_dir }}", "{{ notes_vault_dir }}/Projects"]
 
 - name: Read the local owner editor identity
   ansible.builtin.command:
@@ -77,26 +53,67 @@
       - python3
       - -c
       - |
-        import subprocess,sys,json,grp
-        uid, shared_group, *paths = sys.argv[1:]
-        required = {'user:'+uid+':rwx', 'mask::rwx', 'default:user::rwx',
-                    'default:user:'+uid+':rwx', 'default:group::rwx',
-                    'default:mask::rwx', 'default:other::---'}
+        import subprocess,sys,json
+        uid, *paths = sys.argv[1:]
+        wanted = {'user:'+uid+':rwx', 'mask::rwx', 'default:user::rwx',
+                  'default:user:'+uid+':rwx', 'default:group::rwx',
+                  'default:mask::rwx', 'default:other::---'}
         changed = False
-        for index,path in enumerate(paths):
-            wanted = required | ({'group:'+str(grp.getgrnam(shared_group).gr_gid)+':--x'} if index == 0 else set())
+        for path in paths:
             current = subprocess.check_output(['rtk','proxy','getfacl','-cpn',path],text=True)
             if not wanted.issubset(set(current.splitlines())):
                 subprocess.run(['rtk','proxy','setfacl','-m',','.join(sorted(wanted)),path],check=True)
                 changed = True
         print(json.dumps({'changed':changed}))
       - "{{ notes_operator_uid.stdout | trim }}"
-      - "{{ notes_shared_group }}"
       - "{{ notes_vault_dir }}"
-      - "{{ notes_vault_dir }}/Private"
-      - "{{ notes_vault_dir }}/Shared"
+      - "{{ notes_vault_dir }}/Projects"
   register: notes_acl
   changed_when: (notes_acl.stdout | from_json).changed
+
+# Created after the ACLs so each folder inherits them; a removed project keeps its notes.
+- name: Create a vault folder for each declared project
+  ansible.builtin.file:
+    path: "{{ notes_vault_dir }}/Projects/{{ item }}"
+    state: directory
+    owner: "{{ notes_container_user }}"
+    group: "{{ notes_owner_group }}"
+    mode: '2770'
+  loop: "{{ zelab_projects | default({}) | list }}"
+
+# The team's map of the server (its first ticket fills it): site-wide, not one project's.
+- name: Create the vault folder for the server's map
+  ansible.builtin.file:
+    path: "{{ notes_vault_dir }}/Server"
+    state: directory
+    owner: "{{ notes_container_user }}"
+    group: "{{ notes_owner_group }}"
+    mode: '2770'
+
+# The team works in the vault too. host-projects.yaml grants the same on later
+# runs and revokes it when a tier goes; on a fresh site the vault exists only now.
+- name: Let the team tier accounts read and write the whole vault
+  ansible.builtin.command:
+    argv: "{{ ['rtk', 'proxy', 'python3', '-c', notes_team_acl_script, notes_vault_dir]
+              + (zelab_tiers | default({}) | dict2items | map(attribute='value.account') | list) }}"
+  vars:
+    notes_team_acl_script: |
+      import json, pwd, subprocess, sys
+      vault, *users = sys.argv[1:]
+      changed = False
+      for user in users:
+          try:
+              pwd.getpwnam(user)
+          except KeyError:
+              continue
+          current = subprocess.check_output(['rtk', 'proxy', 'getfacl', '-cp', vault], text=True).splitlines()
+          if not {f'user:{user}:rwx', f'default:user:{user}:rwx'} <= set(current):
+              subprocess.run(['rtk', 'proxy', 'setfacl', '-R', '-m', f'u:{user}:rwx,d:u:{user}:rwx', vault], check=True)
+              changed = True
+      print(json.dumps({'changed': changed}))
+  register: notes_team_acl
+  changed_when: (notes_team_acl.stdout | from_json).changed
+
 
 - name: Prepare root-owned chroot and authentication directories
   ansible.builtin.file:
@@ -110,13 +127,12 @@
     - "{{ notes_config_dir }}/authorized_keys"
     - "{{ notes_sftp_root }}"
     - "{{ notes_sftp_root }}/{{ notes_owner_user }}"
-    - "{{ notes_sftp_root }}/{{ notes_shared_user }}"
 
 - name: Create export mount destinations without changing a mounted vault
   ansible.builtin.command:
     argv: [rtk, proxy, install, -d, -m, '0755', "{{ notes_sftp_root }}/{{ item }}/vault"]
     creates: "{{ notes_sftp_root }}/{{ item }}/vault"
-  loop: ["{{ notes_owner_user }}", "{{ notes_shared_user }}"]
+  loop: ["{{ notes_owner_user }}"]
 
 - name: Preserve retained native notes keys
   ansible.builtin.include_role:
@@ -124,17 +140,16 @@
   vars:
     retained_secrets:
       - {installed: "{{ notes_config_dir }}/authorized_keys/{{ notes_owner_user }}", source: "{{ private_dir }}/notes-owner.key"}
-      - {installed: "{{ notes_config_dir }}/authorized_keys/{{ notes_shared_user }}", source: "{{ private_dir }}/notes-shared.key"}
 
-- name: Generate persistent native mount keys outside Git
+- name: Generate the persistent native mount key outside Git
   ansible.builtin.command:
     argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -C, "zelab-notes-{{ item }}", -f, "{{ private_dir }}/notes-{{ item }}.key"]
     creates: "{{ private_dir }}/notes-{{ item }}.key"
-  loop: [owner, shared]
+  loop: [owner]
   become: false
   no_log: true
 
-- name: Authorize the two notes keys only on this listener
+- name: Authorize the notes key only on this listener
   ansible.builtin.copy:
     dest: "{{ notes_config_dir }}/authorized_keys/{{ item.user }}"
     content: "from=\"127.0.0.1\",restrict {{ lookup('ansible.builtin.file', private_dir + '/notes-' + item.role + '.key.pub') }}\n"
@@ -143,13 +158,11 @@
     mode: '0644'
   loop:
     - {user: "{{ notes_owner_user }}", role: owner}
-    - {user: "{{ notes_shared_user }}", role: shared}
 
-- name: Declare only the intended exports
+- name: Declare the one export, the whole vault
   ansible.builtin.set_fact:
     notes_exports:
       - {role: owner, user: "{{ notes_owner_user }}", source: "{{ notes_vault_dir }}"}
-      - {role: shared, user: "{{ notes_shared_user }}", source: "{{ notes_vault_dir }}/Shared"}
 
 - name: Derive canonical native bind mount unit names
   ansible.builtin.command:
@@ -205,3 +218,79 @@
     state: "{{ 'restarted' if notes_sshd_config.changed or notes_sshd_unit.changed else 'started' }}"
     enabled: true
     daemon_reload: "{{ notes_sshd_unit.changed }}"
+
+# History: a root-only git directory outside the vault, which the guest cannot reach.
+- name: Create the root-only vault history directory
+  ansible.builtin.file:
+    path: "{{ vault_history_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Initialize the vault history once
+  ansible.builtin.command:
+    argv: [rtk, proxy, git, init, --quiet, --bare, "{{ vault_history_dir }}"]
+    creates: "{{ vault_history_dir }}/HEAD"
+
+- name: Configure the history repository
+  ansible.builtin.copy:
+    dest: "{{ vault_history_dir }}/config"
+    content: |
+      [core]
+        repositoryformatversion = 0
+        filemode = true
+        bare = false
+        worktree = {{ notes_vault_dir }}
+      [user]
+        name = Zelab vault history
+        email = vault-history@zelab.local
+      [safe]
+        directory = {{ notes_vault_dir }}
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Keep Obsidian's per-device state out of the history
+  ansible.builtin.copy:
+    dest: "{{ vault_history_dir }}/info/exclude"
+    content: |
+      .obsidian/workspace*.json
+      .obsidian/cache
+      .trash/
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Prepare the Zelab helper directory
+  ansible.builtin.file:
+    path: /usr/local/lib/zelab
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the snapshot script
+  ansible.builtin.template:
+    src: vault-history.sh.j2
+    dest: /usr/local/lib/zelab/vault-history.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install the snapshot service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/zelab-{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [vault-history.service, vault-history.timer]
+  register: notes_history_units
+
+- name: Run vault history snapshots every few minutes
+  ansible.builtin.systemd_service:
+    name: zelab-vault-history.timer
+    state: started
+    enabled: true
+    daemon_reload: "{{ notes_history_units.changed }}"

@@ -1,6 +1,7 @@
 """Exercise deployment boundaries without contacting or changing installed services."""
 
 import copy
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,6 +15,52 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProvisioningTest(unittest.TestCase):
+    def test_dependency_upgrade_adopts_known_qualified_manifests_and_rejects_unknown_edits(self):
+        task, = role_tasks('deploy/roles/hermes/tasks/dependencies.yaml',
+                           'Preserve independently edited dependency manifests for explicit adoption')
+        task.pop('loop')
+        task.pop('loop_control')
+        role = ROOT / 'deploy/roles/hermes'
+        manifest = json.loads((role / 'files/dependencies/manifest.json').read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ('pyproject.toml', 'uv.lock'):
+                prior = manifest['files'][name]['previous_sha256'][-1]
+                for checksum, succeeds in ((prior, True), ('0' * 64, False)):
+                    with self.subTest(name=name, known=succeeds):
+                        self.run_play(directory, tasks=[task], succeeds=succeeds, variables={
+                            'role_path': str(role), 'hermes_dependency_manifest': manifest,
+                            'item': {'item': name, 'stat': {'checksum': checksum}},
+                        })
+
+    def test_qualified_bridge_upgrade_removes_old_staging_and_unchanged_make_does_nothing(self):
+        plays = yaml.safe_load((ROOT / 'deploy/paperclip-projects.yaml').read_text())
+        tasks = copy.deepcopy(plays[1]['tasks'])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for task in tasks:
+                for module in ('ansible.builtin.stat', 'ansible.builtin.file', 'ansible.builtin.copy'):
+                    for key, value in list(task.get(module, {}).items()):
+                        if isinstance(value, str):
+                            task[module][key] = value.replace('/usr/local/lib/zelab', str(root / 'export'))
+                    task.get(module, {}).pop('owner', None)
+                    task.get(module, {}).pop('group', None)
+            runtime = root / 'runtime-one'
+            source = runtime / 'node_modules/@paperclipai/hermes-paperclip-adapter/skills/paperclip-task-bridge'
+            source.mkdir(parents=True)
+            (source / 'SKILL.md').write_text('first upstream skill')
+            (source / 'removed.mjs').write_text('obsolete helper')
+            self.run_play(directory, tasks=tasks, variables={'paperclip_runtime_dir': str(runtime)})
+            result = self.run_play(directory, tasks=tasks, variables={'paperclip_runtime_dir': str(runtime)})
+            self.assertIn('changed=0', result.stdout)
+            candidate = root / 'runtime-two'
+            upgraded = candidate / source.relative_to(runtime)
+            upgraded.mkdir(parents=True)
+            (upgraded / 'SKILL.md').write_text('second upstream skill')
+            self.run_play(directory, tasks=tasks, variables={'paperclip_runtime_dir': str(candidate)})
+            exported = root / 'export/paperclip-task-bridge'
+            self.assertEqual((exported / 'SKILL.md').read_text(), 'second upstream skill')
+            self.assertFalse((exported / 'removed.mjs').exists())
+
     def test_database_binaries_need_no_runtime_chmod_in_the_readonly_service(self):
         task, = role_tasks('deploy/roles/paperclip/tasks/main.yaml', 'Prepare native database executables for the read-only service runtime')
         task['ansible.builtin.file'].pop('owner')
@@ -81,17 +128,6 @@ class ProvisioningTest(unittest.TestCase):
                 'notes_enabled': False, 'obsidian_enabled': False,
             })
         self.assertIn('changed=0', result.stdout)
-
-    def test_skip_provisions_no_worker_account_cli_or_task_bridge(self):
-        # Real role entries from the site playbooks; skip must not enter any of them.
-        roles = [yaml.safe_load((ROOT / 'deploy' / name).read_text())[0]['roles'][0]
-                 for name in ('host-workers.yaml', 'hermes-bridge.yaml')]
-        with tempfile.TemporaryDirectory() as directory:
-            result = self.run_play(directory, roles=roles, variables={'worker_harness': 'none'})
-        self.assertIn('ok=0', result.stdout)
-        self.assertIn('changed=0', result.stdout)
-        grant, = role_tasks('deploy/roles/notes_host/tasks/main.yaml', 'Grant designated host workers their explicit notes scope')
-        self.assertEqual(grant['when'], "worker_harness in ['codex', 'claude']")
 
     def test_serve_routes_never_replace_other_handlers_or_public_routes(self):
         task, = role_tasks('deploy/roles/private_ui/tasks/check.yaml', 'Preserve existing routes and reject public Funnel on owned endpoints')

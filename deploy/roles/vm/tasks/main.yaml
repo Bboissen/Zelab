@@ -91,3 +91,20 @@
     daemon_reload: true
     enabled: true
     state: "{{ 'restarted' if vm_unit.changed else 'started' }}"
+
+# Grows only; guest-ready.yaml grows the partition and filesystem online afterwards.
+- name: Grow the guest disk to vm_disk_gib without a restart
+  ansible.builtin.command:
+    argv:
+      - rtk
+      - proxy
+      - "{{ zelab_controller_python | default('python3') }}"
+      - "{{ playbook_dir }}/vm_disk.py"
+      - --disk
+      - "{{ vm_disk }}"
+      - --qmp
+      - "{{ vm_data }}/qmp.sock"
+      - --gib
+      - "{{ vm_disk_gib | string }}"
+  register: vm_disk_grown
+  changed_when: (vm_disk_grown.stdout | from_json).changed

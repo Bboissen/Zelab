@@ -112,27 +112,10 @@ class OverlapTest(unittest.TestCase):
             elif isinstance(data, list):
                 visit(data)
         self.assertEqual(set(started), {'hermes_web_build_job', 'paperclip_install_job', 'hermes_dependencies_job',
-                                        'obsidian_pull_job', 'reserve_create_jobs', 'checked_profile_jobs'})
+                                        'obsidian_pull_job'})
         # async_status must run as the account whose home holds the job record.
         self.assertEqual(awaited, started)
         self.assertEqual(cleaned, started)
-
-
-class ReserveSlotTest(unittest.TestCase):
-    def check(self, *, seeded, exists, precreated):
-        task, = role_tasks('deploy/roles/research_profile/tasks/main.yaml',
-                           'Require an intact deployed slot or an unused destination')
-        with tempfile.TemporaryDirectory() as directory:
-            return run_play(directory, tasks=[task], variables={
-                'research_seed': {'stat': {'exists': seeded}},
-                'research_existing': {'stat': {'exists': exists, 'isdir': True}},
-                'research_profile_precreated': precreated, 'hermes_profile_name': 'reserve-01'}).returncode
-
-    def test_only_a_slot_created_in_this_run_may_lack_its_seed(self):
-        self.assertEqual(self.check(seeded=False, exists=True, precreated=True), 0)
-        self.assertNotEqual(self.check(seeded=False, exists=True, precreated=False), 0)
-        self.assertNotEqual(self.check(seeded=True, exists=False, precreated=True), 0)
-        self.assertEqual(self.check(seeded=True, exists=True, precreated=False), 0)
 
 
 if __name__ == '__main__':

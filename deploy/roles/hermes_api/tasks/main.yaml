@@ -28,6 +28,15 @@
         path: /var/lib/zelab/hermes/api-config-seeded
       register: hermes_api_seed
 
+    - name: Create the default profile's native secrets file when absent
+      ansible.builtin.copy:
+        dest: /var/lib/zelab/hermes/home/.env
+        content: ''
+        force: false
+        owner: zelab-hermes
+        group: zelab-hermes
+        mode: '0600'
+
     - name: Inspect existing native configuration before initial API seed
       ansible.builtin.slurp:
         src: /var/lib/zelab/hermes/home/.env
@@ -58,21 +67,6 @@
   ansible.builtin.copy:
     dest: /var/lib/zelab/hermes/api-config-seeded
     content: "Native API initialized once; later UI edits retained.\n"
-    owner: root
-    group: root
-    mode: '0600'
-
-- name: Set native approval behavior for authorized owner Operations once
-  ansible.builtin.command:
-    argv: ["{{ hermes_install_dir }}/.hermes/bin/hermes", config, set, approvals.mode, 'off']
-    creates: /var/lib/zelab/hermes/operations-approvals-seeded
-  become_user: zelab-hermes
-  environment: "{{ hermes_cli_environment }}"
-
-- name: Retain subsequent owner approval preferences
-  ansible.builtin.copy:
-    dest: /var/lib/zelab/hermes/operations-approvals-seeded
-    content: "Owner Operations native approvals initialized once; named profiles are independent.\n"
     owner: root
     group: root
     mode: '0600'

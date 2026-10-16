@@ -28,7 +28,6 @@ ENV_FIELDS = {
     "ZELAB_PRIVATE_DIR": "private_dir",
     "ZELAB_DEPLOY_KEY": "deploy_key",
     "ZELAB_KNOWN_HOSTS": "guest_known_hosts",
-    "ZELAB_CODEX_AUTH_FILE": "worker_codex_auth_source",
 }
 
 
@@ -64,11 +63,6 @@ def require_pattern(site, name, pattern):
 
 
 DEFAULTS = ROOT / "config/defaults.yaml"
-# Clear public names for the two Discord inputs; roles keep their original names.
-# (Internal name first keeps secret scanners from mistaking the pair for a credential.)
-DISCORD_ALIASES = {public: internal for internal, public in (
-    ("research_initial_allowed_user", "discord_owner_id"),
-    ("research_initial_allowed_channel", "discord_channel_id"))}
 # Systemd units for these paths use ProtectHome, so home directories cannot work.
 PROTECTED_HOME = (Path("/home"), Path("/root"), Path("/run/user"))
 
@@ -93,16 +87,6 @@ def derive_defaults(site):
     """Fill values that follow from other inputs; explicit site values win."""
     if 'operator_user' not in site:
         site['operator_user'] = operator()
-    for alias, name in DISCORD_ALIASES.items():
-        if alias in site:
-            if name in site and str(site[name]) != str(site[alias]):
-                raise ValueError(f"{alias} and {name} disagree; keep only {alias}")
-            site[name] = site.pop(alias)
-    for name in DISCORD_ALIASES.values():
-        if site.get(name) in (None, ""):
-            site[name] = ""
-        elif isinstance(site[name], int) and not isinstance(site[name], bool):
-            site[name] = str(site[name])
     user = site.get("operator_user")
     if isinstance(user, str) and re.fullmatch(r"[a-z_][a-z0-9_-]{0,47}", user):
         home = operator_home(user)
@@ -110,12 +94,10 @@ def derive_defaults(site):
         # Do not apply one user's XDG/Codex settings to a different declared owner.
         current = pwd.getpwuid(os.getuid()).pw_name == user and os.geteuid() != 0
         state_home = (os.environ.get('XDG_STATE_HOME') or f'{home}/.local/state') if current else f'{home}/.local/state'
-        codex_home = (os.environ.get('CODEX_HOME') or f'{home}/.codex') if current else f'{home}/.codex'
         instance = site.get('vm_instance', 'zelab')
         suffix = '/' + instance if isinstance(instance, str) and instance != 'zelab' else ''
         site.setdefault("private_dir", f"{state_home}/zelab-deployment{suffix}")
         site.setdefault("backup_dir", f"{home}/backups/Zelab{suffix}")
-        site.setdefault("worker_codex_auth_source", f"{codex_home}/auth.json")
         site.setdefault("dashboard_username", user)
         site.setdefault("obsidian_username", user)
         site.setdefault("paperclip_owner_email", f"{user}@zelab.local")
@@ -124,10 +106,6 @@ def derive_defaults(site):
         site.setdefault("guest_known_hosts", site["private_dir"] + "/guest_known_hosts")
     if isinstance(site.get("vm_data"), str):
         site.setdefault("vm_disk", site["vm_data"] + "/disk.qcow2")
-    # Legacy Coding worker of the earlier two-worker layout: never created, but
-    # clean, backup and restore still recognize (and refuse to confuse) it.
-    site.setdefault("worker_code_user", "zelab-code")
-    site.setdefault("worker_code_home", "/var/lib/zelab-code")
     hosts = site.get("paperclip_allowed_hosts", ["127.0.0.1", "10.0.2.2"])
     if isinstance(hosts, list) and site.get("ui_tailscale_enabled") is True \
             and isinstance(site.get("ui_tailscale_hostname"), str) and site["ui_tailscale_hostname"] not in hosts:
@@ -145,8 +123,12 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
     resource_fraction(site.get('vm_install_resource_fraction', 0.7))
     check_private_inputs(site)
     check_identities(site)
-    state_paths = ["vm_data", "vm_root", "paperclip_home", "worker_ops_home", "worker_code_home",
-                   *check_applications(site)]
+    site["zelab_projects"], site["zelab_tiers"], site["zelab_team"], site["zelab_project_replacements"] = read_projects(site)
+    remote = site.get("notes_sync_remote", "")
+    if not isinstance(remote, str) or (remote and not re.fullmatch(
+            r"(?:git@github\.com:|ssh://git@github\.com/)[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?(?:\.git)?", remote)):
+        raise ValueError("notes_sync_remote must be empty or a GitHub SSH address such as git@github.com:OWNER/REPO.git")
+    state_paths = ["vm_data", "vm_root", "paperclip_home", "projects_dir", *check_applications(site)]
     check_resources_and_names(site)
     state_paths.append("vm_bootstrap_dir")
     check_state_layout(site, state_paths, inspect_private)
@@ -158,8 +140,24 @@ def read_inputs(site_path, env_path, *, inspect_private=True, defaults_path=DEFA
     return site
 
 
+def read_projects(site):
+    """Validated projects, tiers, team and replacements from the local inputs."""
+    import projects
+    paths = []
+    for key, default in (("projects_config", "config/projects.yaml"), ("team_config", "config/team.yaml")):
+        name = site.get(key, default)
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"{key} must name a file")
+        path = Path(name) if name.startswith("/") else ROOT / name
+        if path.is_symlink():
+            raise ValueError(f"{key} cannot be a symlink")
+        paths.append(path)
+    local, team = projects.read(paths[0]), projects.read_team(paths[1])
+    return local["projects"], projects.tiers(team, local), team, local['project_replacements']
+
+
 def read_env(env_path):
-    """The four .env path selectors, as data; never shell syntax."""
+    """The three .env path selectors, as data; never shell syntax."""
     values, seen = {}, set()
     for number, line in enumerate(env_path.read_text().splitlines(), 1):
         line = line.strip()
@@ -180,8 +178,7 @@ def check_private_inputs(site):
     if not site.get("operator_user"):
         raise ValueError("Set operator_user in config/site.yaml (rtk proxy make writes it for you)")
     paths = ["private_dir", "deploy_key", "guest_known_hosts", "vm_disk", "vm_data", "vm_root",
-             "paperclip_home", "worker_ops_home", "worker_code_home", "worker_codex_auth_source",
-             "backup_dir", "hermes_install_dir"]
+             "paperclip_home", "projects_dir", "backup_dir", "hermes_install_dir"]
     for name in paths:
         absolute_path(site.get(name), name)
     private = Path(site['private_dir'])
@@ -200,7 +197,7 @@ def check_identities(site):
     for name in ("vm_isolated", "notes_enabled", "obsidian_enabled", "ui_tailscale_enabled"):
         if type(site.get(name)) is not bool:
             raise ValueError(f"{name} must be an explicit YAML boolean")
-    identities = ("operator_user", "vm_user", "paperclip_user", "worker_ops_user", "worker_code_user")
+    identities = ("operator_user", "vm_user", "paperclip_user")
     for name in (*identities, "guest_user", "vm_service", "vm_instance"):
         require_pattern(site, name, r"[a-z_][a-z0-9_-]{0,47}")
     users = [site[name] for name in identities]
@@ -211,24 +208,19 @@ def check_identities(site):
 def check_applications(site):
     """Validate the optional notes/Obsidian inputs; return their state path names."""
     state_paths = []
-    for enabled, name in (("notes_enabled", "notes_vault_dir"), ("obsidian_enabled", "obsidian_state_dir")):
+    for enabled, name in (("notes_enabled", "notes_vault_dir"), ("notes_enabled", "vault_history_dir"),
+                          ("obsidian_enabled", "obsidian_state_dir")):
         if site[enabled]:
             absolute_path(site.get(name), name)
             state_paths.append(name)
     if site["notes_enabled"]:
         absolute_path(site.get("notes_guest_root"), "notes_guest_root")
-        profiles = site.get("notes_shared_profiles")
-        if not isinstance(profiles, list) or any(not isinstance(p, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,47}", p) for p in profiles):
-            raise ValueError("notes_shared_profiles must be a list of profile names")
-        if len(profiles) != len(set(profiles)):
-            raise ValueError("notes_shared_profiles must not repeat an audience")
     return state_paths
 
 
 def check_resources_and_names(site):
     for name, minimum, maximum in (("vm_cpu", 1, 256), ("vm_memory_mb", 1024, 1048576),
-                                    ("host_disk_reserve_gib", 0, 1048576), ("host_memory_reserve_gib", 0, 1048576),
-                                    ("hermes_reserve_count", 0, 10)):
+                                    ("host_disk_reserve_gib", 0, 1048576), ("host_memory_reserve_gib", 0, 1048576)):
         if type(site.get(name)) is not int or not minimum <= site[name] <= maximum:
             raise ValueError(f"{name} must be an integer between {minimum} and {maximum}")
     require_pattern(site, "vm_cpu_quota", r"[1-9][0-9]*%")
@@ -236,16 +228,9 @@ def check_resources_and_names(site):
     require_pattern(site, "worker_ssh_host", r"(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)")
     for name in ("dashboard_username", "obsidian_username"):
         require_pattern(site, name, r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
-    # 'both' remains readable so clean, backup and restore still work on older sites.
-    if site.get('worker_harness') not in ('codex', 'claude', 'none', 'both'):
-        raise ValueError('worker_harness must be codex, claude or none')
-    for name in ('hermes_initial_model', 'worker_model', 'worker_codex_model'):
+    for name in ('hermes_initial_model',):
         if name in site and site[name] != '':
             require_pattern(site, name, r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,127}")
-    # Discord IDs are needed only before the first Discord test; empty means pending.
-    for alias, name in DISCORD_ALIASES.items():
-        if site[name] and not re.fullmatch(r"[0-9]{17,20}", site[name]):
-            raise ValueError(f"{alias} must be a numeric Discord ID (Developer Mode → Copy ID)")
     require_pattern(site, "paperclip_owner_email", r"[A-Za-z0-9_.+-]+@[A-Za-z0-9.-]+")
     hosts = site.get("paperclip_allowed_hosts")
     if not isinstance(hosts, list) or not hosts or any(not isinstance(h, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", h) for h in hosts):
@@ -353,10 +338,8 @@ def main():
     if full_site and not inspection_only:
         if site.get("vm_isolated") is not False:
             raise SystemExit("Complete preservation/firewall bootstrap and select vm_isolated: false before full deployment.")
-        if site.get("notes_enabled") is not True or site.get("obsidian_enabled") is not True:
-            raise SystemExit("The core site deployment requires notes_enabled and obsidian_enabled.")
-        if site.get("worker_harness") == "both":
-            raise SystemExit("worker_harness: both was removed; choose codex, claude or none (rerun make in a terminal).")
+        if site.get("notes_enabled") is not True:
+            raise SystemExit("The core site deployment requires notes_enabled.")
     # Unbuffered so the streamed log and terminal show progress as it happens.
     env = dict(os.environ, ANSIBLE_CONFIG=str(ROOT / "deploy/ansible.cfg"), PYTHONUNBUFFERED="1")
     readonly = inspection_only or "--check" in native_args or all(Path(p).resolve() == ROOT / "deploy/status.yaml" for p in args.playbooks)

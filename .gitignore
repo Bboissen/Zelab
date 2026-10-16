@@ -34,6 +34,7 @@ implementation/evidence/raw/
 /vault/
 config/private/
 config/site.yaml
+config/projects.yaml
 config/fresh.yaml
 .cache/
 .DS_Store

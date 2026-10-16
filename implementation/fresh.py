@@ -39,11 +39,12 @@ GENERATED_PRIVATE = [
     'worker-ops.key', 'worker-ops.key.pub', 'worker-code.key', 'worker-code.key.pub',
     'notes-owner.key', 'notes-owner.key.pub', 'notes-shared.key', 'notes-shared.key.pub',
     'paperclip-master.key', 'paperclip-agent-jwt.secret', 'paperclip-owner.password',
-    'paperclip-worker-ids.json', 'paperclip-hermes-bridge.key', 'paperclip-hermes-gateway.key',
+    'paperclip-worker-ids.json', 'paperclip-ids.json', 'paperclip-hermes-bridge.key', 'paperclip-hermes-gateway.key',
     'paperclip-hermes-submission.key', 'paperclip-bridge-ids.json',
     'paperclip-hermes-ids.json', 'hermes-dashboard.password', 'hermes-dashboard.password-hash', 'hermes-dashboard.session-secret',
     'hermes-api.key', 'obsidian.password', 'checklist.html', 'guide.html',
 ]
+LEGACY_NOTES_USER, LEGACY_NOTES_GROUP = 'zelab-notes-shared', 'zelab-vault-shared'
 SHARED_TOOLS = ['/usr/local/lib/zelab', '/opt/zelab-tools', '/var/cache/zelab']
 BOOTSTRAP_FILES = {'ssh_host_ed25519_key', 'ssh_host_ed25519_key.pub', 'user-data', 'meta-data', 'creating', 'created'}
 
@@ -58,6 +59,7 @@ class Plan:
     routes: list = field(default_factory=list)         # tailnet HTTPS ports
     nft_tables: list = field(default_factory=list)
     files: list = field(default_factory=list)          # (path, evidence)
+    acl_revocations: list = field(default_factory=list)  # (path, user): granted project paths
     directories: list = field(default_factory=list)    # (path, evidence)
     accounts: list = field(default_factory=list)       # (user, evidence)
     groups: list = field(default_factory=list)
@@ -178,11 +180,11 @@ def discover(site, hostname=None):
     plan = Plan(site_identity(site, hostname))
     notes = role_defaults('notes_host')
     obsidian_config = role_defaults('obsidian_host')['obsidian_config_dir']
-    protected = [ROOT, site['private_dir'], site['backup_dir'], site['worker_codex_auth_source'],
+    protected = [ROOT, site['private_dir'], site['backup_dir'],
                  pwd.getpwnam(site['operator_user']).pw_dir, '/etc', '/var/lib', '/opt', '/home', '/usr']
     discover_guest(plan, site)
     discover_paperclip(plan, site)
-    discover_workers(plan, site)
+    discover_projects(plan, site)
     discover_notes(plan, site, notes)
     discover_obsidian(plan, obsidian_config)
     discover_routes(plan, site)
@@ -263,40 +265,68 @@ def discover_paperclip(plan, site):
         plan.directories.append(('/opt/paperclip', 'releases owned by the Paperclip account'))
 
 
-def discover_workers(plan, site):
-    """Host workers; a legacy Coding home is recognized on earlier two-worker sites."""
-    for user, home in ((site['worker_ops_user'], site['worker_ops_home']),
-                       (site['worker_code_user'], site['worker_code_home'])):
-        entry = owned_account(user, home=home)
-        if entry:
-            plan.accounts.append((user, f'home {home}'))
-        if Path(home).exists():
-            if entry and owned_by(home, entry.pw_uid):
-                plan.directories.append((home, f'owned by {user}'))
+def host_accounts():
+    """{user: (label, home folder name, grants key)} of team tier accounts and earlier per-project ones."""
+    found = {}
+    for entry in pwd.getpwall():
+        tier = entry.pw_name.removeprefix('zelab-team-')
+        if entry.pw_name != tier and entry.pw_gecos == f'Zelab team tier {tier}':
+            found[entry.pw_name] = (f'team tier {tier}', tier, entry.pw_name)
+        slug = entry.pw_name.removeprefix('zelab-p-')
+        if entry.pw_name != slug and entry.pw_gecos == f'Zelab host project {slug}':
+            found[entry.pw_name] = (f'host project {slug}', slug, slug)
+    return found
+
+
+def discover_projects(plan, site):
+    """Team tier accounts (zelab-team-<tier>; earlier zelab-p-<slug>), their grants, homes and path ACLs."""
+    projects_dir = Path(site['projects_dir'])
+    accounts = host_accounts()
+    for user, (label, _, _) in sorted(accounts.items()):
+        plan.accounts.append((user, label))
+        try:
+            group = grp.getgrnam(user)
+            if set(group.gr_mem) <= {user}:
+                plan.groups.append(user)
+        except KeyError:
+            pass
+        sudoers = Path('/etc/sudoers.d') / user
+        if sudoers.exists():
+            if sudoers.read_text().startswith(f'# Zelab {label}.'):
+                plan.files.append((str(sudoers), f'{label} sudo grant'))
             else:
-                plan.refused.append((home, f'not owned by the site account {user}'))
-    sudoers = Path('/etc/sudoers.d/zelab-worker-operations')
-    if sudoers.exists():
-        if sudoers.read_text() == f"{site['worker_ops_user']} ALL=(ALL:ALL) NOPASSWD: ALL\n":
-            plan.files.append((str(sudoers), 'Operations worker grant'))
+                plan.refused.append((str(sudoers), 'unexpected content'))
+    grants = projects_dir / '.zelab-grants.json'
+    if grants.is_file():
+        by_key = {key: user for user, (_, _, key) in accounts.items()}
+        for key, paths in json.loads(grants.read_text()).get('paths', {}).items():
+            user = by_key.get(key, key if key.startswith('zelab-team-') else f'zelab-p-{key}')
+            plan.acl_revocations.extend((path, user) for path in paths if Path(path).exists())
+    if projects_dir.is_dir():
+        homes = {home for _, home, _ in accounts.values()}
+        if all(entry.name == '.zelab-grants.json' or entry.name in homes for entry in projects_dir.iterdir()):
+            plan.directories.append((str(projects_dir), 'team tier homes'))
         else:
-            plan.refused.append((str(sudoers), 'grant names a different account'))
-    dropin = Path('/etc/ssh/sshd_config.d/05-zelab-workers.conf')
+            plan.refused.append((str(projects_dir), 'contains folders of accounts this site did not create'))
+    dropin = Path('/etc/ssh/sshd_config.d/05-zelab-projects.conf')
     if dropin.exists():
-        if dropin.read_text().startswith('# Worker keys enforce source restrictions'):
-            plan.files.append((str(dropin), 'worker SSH allowlist addition'))
+        if dropin.read_text().startswith(('# Team tier accounts; managed by make.',
+                                           '# Project host accounts; managed by make.')):
+            plan.files.append((str(dropin), 'team SSH allowlist addition'))
         else:
             plan.refused.append((str(dropin), 'unexpected content'))
 
 
 def discover_notes(plan, site, notes):
-    """Notes share, its export units and the vault."""
+    """Notes share, its export units, the vault and its history."""
     notes_owner = owned_account(notes['notes_owner_user'], home='/vault')
-    for user in (notes['notes_owner_user'], notes['notes_shared_user']):
+    # Sites from the earlier Private/Shared layout also have a shared-notes account.
+    notes_users = (notes['notes_owner_user'], LEGACY_NOTES_USER)
+    for user in notes_users:
         if owned_account(user, home='/vault'):
             plan.accounts.append((user, 'notes-only account (home /vault)'))
-    zelab_users = {site['worker_ops_user'], site['worker_code_user'], notes['notes_owner_user'], notes['notes_shared_user']}
-    for name in (notes['notes_owner_group'], notes['notes_shared_group']):
+    zelab_users = set(notes_users)
+    for name in (notes['notes_owner_group'], LEGACY_NOTES_GROUP):
         try:
             group = grp.getgrnam(name)
         except KeyError:
@@ -305,7 +335,7 @@ def discover_notes(plan, site, notes):
             plan.groups.append(name)
         else:
             plan.refused.append((f'group {name}', 'has members outside Zelab'))
-    for user in (notes['notes_owner_user'], notes['notes_shared_user']):
+    for user in notes_users:
         where = f"{notes['notes_sftp_root']}/{user}/vault"
         unit = command('systemd-escape', '--path', '--suffix=mount', where).stdout.strip()
         if (SYSTEMD / unit).exists():
@@ -327,7 +357,7 @@ def discover_notes(plan, site, notes):
         else:
             plan.refused.append((str(config_dir), 'does not configure this site\'s notes export'))
     if sftp_root.is_dir():
-        if {entry.name for entry in sftp_root.iterdir()} <= {notes['notes_owner_user'], notes['notes_shared_user']}:
+        if {entry.name for entry in sftp_root.iterdir()} <= set(notes_users):
             plan.directories.append((str(sftp_root), 'notes export chroots only'))
         else:
             plan.refused.append((str(sftp_root), 'contains entries other than the notes export chroots'))
@@ -338,6 +368,18 @@ def discover_notes(plan, site, notes):
                 plan.directories.append((path, f"{label} owned by {notes['notes_owner_user']}"))
             else:
                 plan.refused.append((path, f"{label} not owned by {notes['notes_owner_user']}"))
+    history = Path(notes['vault_history_dir'])
+    if history.is_dir():
+        if unit_mentions(history / 'config', f"worktree = {site['notes_vault_dir']}"):
+            plan.directories.append((str(history), 'root-only vault history'))
+        else:
+            plan.refused.append((str(history), 'is not this site\'s vault history'))
+    for name in ('zelab-vault-history.timer', 'zelab-vault-history.service'):
+        if (SYSTEMD / name).exists():
+            if unit_mentions(SYSTEMD / name, 'Zelab vault history'):
+                plan.units.append((name, 'Zelab vault history'))
+            else:
+                plan.refused.append((str(SYSTEMD / name), 'unit content does not match'))
     vault = Path(site['notes_vault_dir'])
     if any(path == str(vault) for path, _ in plan.directories):
         files = count_files(vault)
@@ -387,9 +429,10 @@ def discover_shared_tools(plan, site):
         for path in SHARED_TOOLS:
             if Path(path).exists():
                 plan.directories.append((path, 'Zelab-installed software or download cache'))
-        for link in ('/usr/local/bin/zelab-codex', '/usr/local/bin/zelab-claude', '/usr/local/bin/node'):
+        for link in ('/usr/local/bin/zelab-codex', '/usr/local/bin/zelab-claude', '/usr/local/bin/node',
+                     '/usr/local/bin/codex', '/usr/local/bin/claude'):
             target = os.readlink(link) if Path(link).is_symlink() else ''
-            if target.startswith('/opt/zelab-tools/'):
+            if target.startswith(('/opt/zelab-tools/', '/usr/local/bin/zelab-')):
                 plan.files.append((link, f'link to {target}'))
 
 
@@ -402,6 +445,9 @@ def discover_private(plan, site):
     except (OSError, ValueError, RuntimeError) as error:
         plan.refused.append(('temporary VM installation resources', str(error)))
     plan.private_files = [str(private / name) for name in GENERATED_PRIVATE if (private / name).exists()]
+    keys = private / 'projects'
+    if keys.is_dir() and not keys.is_symlink():
+        plan.private_files += [str(path) for path in sorted(keys.iterdir()) if path.name.endswith(('.key', '.key.pub'))]
 
 
 def print_plan(plan, site):
@@ -555,6 +601,10 @@ def reset(plan, site):
                     parent.rmdir()
                 except OSError:
                     pass
+        # Revoke by name first: a numeric entry left behind would pass to
+        # whichever account reuses the uid.
+        for path, user in plan.acl_revocations:
+            command('setfacl', '-R', '-x', f'u:{user},d:u:{user}', path, check=False)
         for user, _ in plan.accounts:
             command('userdel', user)
         for name in plan.groups:
@@ -565,6 +615,10 @@ def reset(plan, site):
             command('docker', 'image', 'rm', image, check=False)
         for path in plan.private_files:
             Path(path).unlink(missing_ok=True)
+        try:
+            (Path(site['private_dir']) / 'projects').rmdir()
+        except OSError:
+            pass
         after = unrelated_snapshot(plan, site)
     changed, added = compare_unrelated(before, after)
     heading('3/3  Verify unrelated resources', 'red' if changed else 'green')

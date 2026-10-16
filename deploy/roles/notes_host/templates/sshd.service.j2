@@ -1,7 +1,7 @@
 [Unit]
 Description=Zelab notes-only SFTP exports
 After=network.target
-RequiresMountsFor={{ notes_sftp_root }}/{{ notes_owner_user }}/vault {{ notes_sftp_root }}/{{ notes_shared_user }}/vault
+RequiresMountsFor={{ notes_sftp_root }}/{{ notes_owner_user }}/vault
 
 [Service]
 ExecStartPre=/usr/sbin/sshd -t -f {{ notes_config_dir }}/sshd.conf

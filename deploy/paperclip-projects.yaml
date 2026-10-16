@@ -1,0 +1,86 @@
+- name: Configure native Paperclip projects and SSH environments
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  roles:
+    - paperclip_projects
+
+# Paperclip ships the Hermes task-bridge skill; make bot copies it into each bot's profile.
+- name: Publish Paperclip's bundled task-bridge skill for the guest
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  tasks:
+    - name: Inspect the task-bridge staging revision
+      ansible.builtin.stat:
+        path: /usr/local/lib/zelab/task-bridge-runtime
+        checksum_algorithm: sha256
+      register: bridge_host_revision
+
+    - name: Remove superseded bundled skill staging before a qualified runtime change
+      ansible.builtin.file:
+        path: /usr/local/lib/zelab/paperclip-task-bridge
+        state: absent
+      when: >-
+        not bridge_host_revision.stat.exists
+        or bridge_host_revision.stat.checksum != ((paperclip_runtime_dir ~ '\n') | hash('sha256'))
+
+    - name: Copy the skill out of the private Paperclip runtime
+      ansible.builtin.copy:
+        src: "{{ paperclip_runtime_dir }}/node_modules/@paperclipai/hermes-paperclip-adapter/skills/paperclip-task-bridge/"
+        dest: /usr/local/lib/zelab/paperclip-task-bridge/
+        remote_src: true
+        owner: root
+        group: root
+        mode: u=rwX,go=rX
+        directory_mode: '0755'
+
+    - name: Record the successfully staged task-bridge runtime
+      ansible.builtin.copy:
+        dest: /usr/local/lib/zelab/task-bridge-runtime
+        content: "{{ paperclip_runtime_dir }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+
+- name: Install the task-bridge skill source in the guest
+  hosts: guest
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  tasks:
+    - name: Inspect the guest task-bridge staging revision
+      ansible.builtin.stat:
+        path: /opt/zelab-tools/task-bridge-runtime
+        checksum_algorithm: sha256
+      register: bridge_guest_revision
+
+    - name: Remove superseded guest skill staging before a qualified runtime change
+      ansible.builtin.file:
+        path: /opt/zelab-tools/paperclip-task-bridge
+        state: absent
+      when: >-
+        not bridge_guest_revision.stat.exists
+        or bridge_guest_revision.stat.checksum != ((paperclip_runtime_dir ~ '\n') | hash('sha256'))
+
+    - name: Copy the unmodified skill to a read-only guest location
+      ansible.builtin.copy:
+        src: /usr/local/lib/zelab/paperclip-task-bridge/
+        dest: /opt/zelab-tools/paperclip-task-bridge/
+        owner: root
+        group: root
+        mode: u=rwX,go=rX
+        directory_mode: '0755'
+
+    - name: Record the successfully staged guest task-bridge runtime
+      ansible.builtin.copy:
+        dest: /opt/zelab-tools/task-bridge-runtime
+        content: "{{ paperclip_runtime_dir }}\n"
+        owner: root
+        group: root
+        mode: '0644'

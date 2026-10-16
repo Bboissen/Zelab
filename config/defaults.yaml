@@ -10,11 +10,13 @@
 vm_instance: zelab
 vm_service: zelab-vm
 vm_user: zelab-vm
-vm_disk_gib: 16
-vm_cpu: 1
-vm_memory_mb: 2048
-vm_cpu_quota: 50%
-vm_memory_max: 2304M
+# Sized for about five idle bots plus one browser session; raising vm_disk_gib
+# grows the disk and filesystem without a restart.
+vm_disk_gib: 20
+vm_cpu: 2
+vm_memory_mb: 4096
+vm_cpu_quota: 200%
+vm_memory_max: 4352M
 # A fresh VM temporarily uses up to 70% of idle CPU / available RAM during
 # installation, preserving host_memory_reserve_gib and QEMU overhead. 0 disables.
 # Running guests keep their normal resources during routine reapplies.
@@ -39,38 +41,41 @@ paperclip_db_port: 54329
 notes_sftp_port: 12923
 obsidian_backend_port: 18645
 
-# Paperclip coordinator and host workers.
+# Paperclip coordinator.
 paperclip_user: zelab-paperclip
 paperclip_home: /var/lib/zelab-paperclip
 paperclip_company_name: Zelab
-worker_ops_user: zelab-ops
-worker_ops_home: /var/lib/zelab-ops
-# Legacy Coding worker from earlier layouts: never created; clean removes it.
-worker_code_user: zelab-code
-worker_code_home: /var/lib/zelab-code
+
+# Projects from config/projects.yaml (see config/projects.example.yaml): one
+# Paperclip project and vault folder each. The team from config/team.yaml: one
+# host account zelab-team-<tier> per rights tier, its home below projects_dir
+# and an SSH environment that reaches it through the existing host SSH
+# listener; make hires each member as a Claude Code agent on its tier.
+projects_config: config/projects.yaml
+team_config: config/team.yaml
+projects_dir: /var/lib/zelab-projects
 worker_ssh_host: 127.0.0.1
 worker_ssh_port: 22
-# Optional Paperclip worker harness: codex, claude or none (skip). Codex or
-# Claude Code creates one fully configured Operations worker except its model;
-# skip creates none. Interactive make asks on each run; unattended setup retains
-# a saved selection or skips when absent. This file supplies defaults only.
-worker_harness: none
-# Empty leaves the model to you in Paperclip (the CLI default until chosen).
-worker_model: ''
 
-# Hermes. Reserves are parked native profiles; they need no Discord application
-# until one is deliberately assigned.
+# Hermes: one pinned checkout and one shared gateway; each bot is a native profile.
 hermes_install_dir: /opt/hermes/agent
 # Empty leaves provider/model selection to Hermes' native setup UI.
 hermes_initial_model: ''
-hermes_reserve_count: 5
 
-# Notes vault and Obsidian browser UI.
+# Notes vault (one shared vault, Projects/<slug>/ and Server/).
 notes_enabled: true
 notes_vault_dir: /var/lib/zelab-vault
+# Root-only git history of the vault, outside it (the guest cannot reach it).
+vault_history_dir: /var/lib/zelab-vault-history
 notes_guest_root: /var/lib/zelab-notes
-notes_shared_profiles: [research]
-obsidian_enabled: true
+# Desktop Obsidian on the owner's laptop syncs with the vault through `make notes`
+# and a private Git remote (git@github.com:OWNER/REPO.git; set it in
+# config/site.yaml). Empty disables it. See docs/NOTES.md.
+notes_sync_remote: ''
+# The optional browser Obsidian container (off: desktop Obsidian and make notes
+# replace it). Turning it off later stops and removes the container and its own
+# Tailscale route on the next make; the vault and its settings are kept.
+obsidian_enabled: false
 obsidian_state_dir: /var/lib/zelab-obsidian
 obsidian_config_dir: /etc/zelab-obsidian
 

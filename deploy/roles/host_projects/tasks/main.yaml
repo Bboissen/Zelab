@@ -1,0 +1,54 @@
+# The team's tier accounts from config/team.yaml. Paperclip reaches each
+# through the existing host SSH listener, with a key restricted to this host.
+- name: Inspect the native SSH runner Node prerequisite
+  ansible.builtin.stat:
+    path: /usr/local/bin/node
+    follow: false
+  register: projects_node_command
+
+- name: Preserve any independently managed system Node command
+  ansible.builtin.assert:
+    that: not projects_node_command.stat.exists or (projects_node_command.stat.islnk and projects_node_command.stat.lnk_source.startswith('/opt/zelab-tools/node-v'))
+
+- name: Expose the pinned Node to Paperclip's SSH runner commands
+  ansible.builtin.file:
+    src: "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/node"
+    dest: /usr/local/bin/node
+    state: link
+    owner: root
+    group: root
+
+- name: Keep tier keys in a private directory
+  ansible.builtin.file:
+    path: "{{ private_dir }}/projects"
+    state: directory
+    owner: "{{ operator_user }}"
+    mode: '0700'
+  become: false
+
+- name: Generate one SSH key per tier outside Git
+  ansible.builtin.command:
+    argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -C, "zelab-team-{{ item }}", -f, "{{ private_dir }}/projects/team-{{ item }}.key"]
+    creates: "{{ private_dir }}/projects/team-{{ item }}.key"
+  loop: "{{ zelab_tiers | list }}"
+  become: false
+  no_log: true
+
+- name: Apply tier accounts, sudo grants, path and vault rights and SSH access
+  ansible.builtin.script:
+    cmd: >-
+      host_projects.py {{ {'tiers': zelab_tiers, 'projects_dir': projects_dir,
+                           'keys_dir': private_dir + '/projects', 'ssh_host': worker_ssh_host,
+                           'vault_dir': notes_vault_dir if notes_enabled | bool else None} | to_json | quote }}
+    executable: /usr/bin/python3
+  register: host_projects_applied
+  changed_when: (host_projects_applied.stdout | from_json).changed > 0
+
+- name: Pin the host key Paperclip's SSH environments trust
+  ansible.builtin.copy:
+    dest: "{{ private_dir }}/worker_known_hosts"
+    content: "{{ host_key_name }} {{ lookup('ansible.builtin.file', '/etc/ssh/ssh_host_ed25519_key.pub') }}\n"
+    owner: "{{ operator_user }}"
+    mode: '0600'
+  vars:
+    host_key_name: "{{ worker_ssh_host if worker_ssh_port | int == 22 else '[' + worker_ssh_host + ']:' + (worker_ssh_port | string) }}"

@@ -11,7 +11,6 @@ from contextlib import redirect_stdout
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 import importlib.util
-import json
 import os
 from pathlib import Path
 import platform
@@ -276,79 +275,47 @@ def tailscale_checks(site):
     return checks
 
 
-def guest_facts(site):
-    """Read booleans from the running guest; None when it is not reachable yet."""
+def bot_facts(site):
+    """Each bot's sign-in and chat state from the running guest (names and booleans); None when unreachable."""
     if (command_output(["systemctl", "is-active", site["vm_service"] + ".service"]) or "").strip() != "active":
         return None
-    code = ("import json,pathlib; h=pathlib.Path('/var/lib/zelab/hermes/home'); "
-            "a=h/'auth.json'; e=h/'.env'\n"
-            "def auth():\n"
-            " try: d=json.loads(a.read_text())\n"
-            " except Exception: return False\n"
-            " if not isinstance(d,dict) or not ('providers' in d or 'credential_pool' in d): return bool(d)\n"
-            " p=d.get('credential_pool')\n"
-            " return bool(d.get('providers')) or (isinstance(p,dict) and any(p.values()))\n"
-            "t=e.is_file() and any(l.startswith('DISCORD_BOT_TOKEN=') and l.split('=',1)[1].strip() "
-            "for l in e.read_text().splitlines())\n"
-            "print(json.dumps({'hermes_auth': auth(), 'discord_token': t}))")
-    output = command_output(["ssh", "-F", "/dev/null", "-i", site["deploy_key"], "-o", "BatchMode=yes",
-                             "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes",
-                             "-o", "UserKnownHostsFile=" + site["guest_known_hosts"], "-p", str(site["guest_ssh_port"]),
-                             site["guest_user"] + "@127.0.0.1", "sudo -n python3 -c " + shlex.quote(code)], timeout=20)
+    import bots
     try:
-        return json.loads(output)
-    except (TypeError, ValueError):
+        return bots.Guest(site).bots()
+    except (bots.Stop, ValueError, OSError):
         return None
-
-
-def hermes_picker(site):
-    """The operator's command for the native model picker; provider login needs a person."""
-    return ["rtk", "proxy", "ssh", "-t", "-F", "/dev/null", "-i", site["deploy_key"],
-            "-o", "UserKnownHostsFile=" + site["guest_known_hosts"], "-p", str(site["guest_ssh_port"]),
-            site["guest_user"] + "@127.0.0.1", "sudo", "-u", "zelab-hermes", "env",
-            "HERMES_HOME=/var/lib/zelab/hermes/home", "TMPDIR=/var/lib/zelab/hermes/tmp",
-            site["hermes_install_dir"] + "/.hermes/bin/hermes", "model", "--no-browser"]
 
 
 def connection_checks(site, elevated):
-    harness = site.get('worker_harness', 'none')
-    if harness == 'codex':
-        auth = Path(site['worker_codex_auth_source'])
-        try:
-            info = auth.lstat()
-            login = stat.S_ISREG(info.st_mode) and not info.st_mode & 0o077 and info.st_size > 0
-        except OSError:
-            login = False
-        checks = [Check('Codex subscription login', login,
-                        f'Run `/usr/local/bin/zelab-codex login --device-auth` so {auth} exists (mode 0600), then rerun: rtk proxy make',
-                        pending=True, phase=phase_of('harness'))]
-    elif harness == 'claude':
-        login = command_succeeds(['sudo', '-n', '-u', site['worker_ops_user'], '-H',
-                                 '/usr/local/bin/zelab-claude', 'auth', 'status']) if elevated else False
-        checks = [Check('Claude Code subscription login', login,
-                        f'Run `rtk proxy sudo -u {site["worker_ops_user"]} -H /usr/local/bin/zelab-claude auth login --claudeai`; use Paperclip Test Environment before a worker task',
-                        pending=True, phase=phase_of('harness'))]
+    phase = phase_of("bots")
+    facts = bot_facts(site) if Path(site["deploy_key"]).exists() else None
+    if facts is None:
+        checks = [Check("Hermes bots", False, "Available after installation", pending=True, phase=phase)]
+    elif not facts:
+        checks = [Check("Hermes bots", False, "Add one: rtk proxy make bot", pending=True, phase=phase)]
     else:
-        checks = [Check('Worker harness skipped', True,
-                        'No Paperclip worker or Discord host tasks. Rerun make in a terminal and choose Codex or Claude Code when ready.',
-                        phase=phase_of('harness'))]
-    if harness in ('codex', 'claude'):
-        checks.append(Check('Operations proof task', False,
-                            'In Paperclip, choose the Operations model, then move "Prove Operations host access and sudo" from Backlog to Todo',
-                            pending=True, phase=phase_of('harness')))
-    guest = guest_facts(site) if elevated or Path(site["deploy_key"]).exists() else None
-    waiting = "Available after installation; open the Hermes URL printed by make"
-    checks.append(Check("Hermes subscription sign-in", bool(guest and guest["hermes_auth"]),
-                        f"Run `{shlex.join(hermes_picker(site))}`, choose a provider and default model, and approve its login"
-                        if guest else waiting, pending=True, phase=phase_of("hermes")))
-    discord = phase_of("discord")
-    checks.append(Check("Discord owner ID", bool(site["research_initial_allowed_user"]),
-                        "Set discord_owner_id in config/site.yaml, then rerun: rtk proxy make",
-                        pending=True, phase=discord))
-    checks.append(Check("Operations bot token", bool(guest and guest["discord_token"]),
-                        "Paste the Operations bot token in Hermes → Channels → Discord (see docs/SETUP.md)",
-                        pending=True, phase=discord))
-    checks.append(Check("First Discord → host task", False,
+        checks = [Check("Hermes bots", True, f"{len(facts)} bot(s)", phase=phase)]
+    for bot in facts or []:
+        name = bot["name"]
+        checks.append(Check(f"{name}: model sign-in", bot["signed_in"],
+                            f"rtk proxy make bot, then set up {name} (a)", pending=True, phase=phase))
+        checks.append(Check(f"{name}: chat app", bool(bot["chats"]),
+                            f"rtk proxy make bot, then set up {name} (b)", pending=True, phase=phase))
+        checks.append(Check(f"{name}: persona", bot["soul"],
+                            f"Still Hermes' generic persona: rtk proxy make bot, then set up {name} (c)",
+                            pending=True, phase=phase))
+        checks.append(Check(f"{name}: task key", bot["task_key"],
+                            f"rtk proxy make bot, then set up {name} (d)", pending=True, phase=phase))
+    synced = bool(site.get("notes_sync_remote"))
+    checks.append(Check("Desktop notes", synced,
+                        "Synced with a private GitHub repository: rtk proxy make notes" if synced else
+                        "Optional: rtk proxy make notes sets up desktop Obsidian", pending=True, phase=phase_of("notes")))
+    tiers = sorted(site.get("zelab_tiers", {}))
+    checks.append(Check("Team tiers", bool(tiers),
+                        "SSH environments: " + ", ".join(f"{tier} host" for tier in tiers) if tiers else
+                        "Optional: declare tiers and members in config/team.yaml, then rerun make",
+                        pending=True, phase=phase_of("hosts")))
+    checks.append(Check("First Discord request", False,
                         "Not provable by automation; follow the Test step in docs/SETUP.md",
                         pending=True, phase=phase_of("proof")))
     return checks
@@ -385,13 +352,6 @@ def readiness_checks(site_path=None, env_path=None, loaded=None):
     checks.extend(port_checks(site, elevated))
     checks.extend(tailscale_checks(site))
     checks.extend(connection_checks(site, elevated))
-    if installed:
-        from bridge_check import inspect
-        bridges = inspect(site, os.environ.get('ZELAB_PASSWORD_DIR') or None)
-        if bridges is not None:
-            checks.append(Check('Native bridge contracts', bridges.ready, bridges.detail,
-                                pending=bridges.pending,
-                                phase=phase_of('admin')))
     return checks
 
 
@@ -421,7 +381,7 @@ def application_links(site):
             ("Hermes", "ui_tail_hermes_port", "guest_dashboard_port", "dashboard_username", "hermes-dashboard.password"),
             ("Paperclip", "ui_tail_paperclip_port", "paperclip_port", "paperclip_owner_email", "paperclip-owner.password"),
             ("Obsidian", "ui_tail_obsidian_port", "obsidian_backend_port", "obsidian_username", "obsidian.password")):
-        if name == "Obsidian" and not site.get("obsidian_enabled", True):
+        if name == "Obsidian" and not site.get("obsidian_enabled", False):
             continue
         url = (f"https://{site['ui_tailscale_hostname']}:{site[tail_port]}/" if tailnet
                else f"http://127.0.0.1:{site[local_port]}/")

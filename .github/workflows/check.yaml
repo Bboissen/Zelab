@@ -37,8 +37,6 @@ jobs:
       - name: Audit the production npm lock
         working-directory: deploy/roles/paperclip/files
         run: rtk proxy npm audit --omit=dev --package-lock-only --audit-level=moderate
-      - name: Check native task submission retry behavior
-        run: rtk proxy node --test deploy/roles/hermes_bridge/files/submit-task.test.mjs
       - name: Audit the qualified Hermes Python inventory
         run: |
           rtk proxy python3 -m venv /tmp/zelab-audit-tools
