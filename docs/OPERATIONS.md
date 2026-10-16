@@ -146,9 +146,22 @@ under another manager or at the top level stay there.
 
 After hiring, change a member's harness, model and AI connection in Paperclip.
 `make` preserves those choices. When switching a member's harness there, also
-select the shared subscription of the new harness under **AI connection**, then
-choose one of its models and save. The pinned UI retains the previous connection
-until you select the new one, so it shows a compatibility error in between.
+select the shared subscription of the new harness under **AI connection** and
+choose one of its models. Under **Configuration**, change **Execution engine**
+to **Default (ACP)** and back to the harness's **CLI** option, without saving
+between those changes, then save. Do this even if CLI was already displayed.
+
+The pinned Paperclip `2026.1005.0` UI retains the previous connection until you
+select the new one, so it shows a compatibility error in between. It also drops
+unchanged harness-specific settings from the save request when switching
+adapters. The displayed CLI engine and **Test** can inherit `engine: cli` from
+the saved agent while **Save changes** omits it. The save then defaults to ACP,
+which the team's SSH environments cannot use, and reports that the selected AI
+connection failed validation. Changing the engine away and back explicitly
+includes `engine: cli` in the save request. A successful test alone does not
+prove the harness switch was saved; reload after saving and verify the harness,
+connection, model and engine remain selected. This uses the upstream UI unchanged.
+
 **Responsible user's connection** requires that user's personal connection; it
 does not select the company-shared subscription. `make bot` option 4 signs one
 harness in at a time (type `claude` or `codex`, Enter when done) and then binds

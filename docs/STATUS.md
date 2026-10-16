@@ -7,6 +7,38 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Paperclip harness switch Test/Save mismatch: 2026-10-16
+
+Diagnosis at 19:33–19:43 UTC on Paperclip `2026.1005.0`: switching an existing
+Claude Code team member to Codex produced HTTP 422 on save. The owner showed
+**Codex CLI** selected and a successful Test. The failed save requests omitted
+`engine`, including after the owner selected CLI and tested again.
+
+The installed upstream UI's `buildAdapterConfigForTest` merges the saved
+adapter configuration with the draft, retaining `engine: cli`.
+`buildAgentUpdatePatch` instead retains only adapter-agnostic saved fields
+when switching adapters, plus explicitly changed fields; `engine` is omitted
+unless changed. The runtime defaults an absent engine to ACP. Exercising the
+installed request builder with synthetic configuration reproduced the omission;
+explicitly setting the draft engine to `cli` included it in the save payload.
+The engine dropdown's change handler writes that explicit draft field, so the
+documented workaround changes away from CLI and back before saving.
+
+On the actual team SSH environment, the native Codex adapter test with no
+engine returned `adapter_engine_unavailable`: ACP cannot use that remote
+environment. With explicit `engine: cli`, the existing company-shared Codex
+subscription and the selected model, the native probe returned **PASS**, with
+`codex_command_resolvable` and `codex_hello_probe_passed`. This was an
+authenticated model response over SSH, without saving agent settings. The
+diagnostic wrapper subsequently errored closing its database clients; its
+managed credential cleanup had already run and the process exited.
+
+Repository changes document the upstream UI workaround and its validation
+limits. Host changes were limited to the native diagnostic probe's temporary
+runtime and normal credential handling; guest changes: none. Authenticated UI
+save/reload with the workaround, a full ticket after switching, and equivalent
+Claude switching acceptance: **NOT RUN**. No upstream code or pins were changed.
+
 ## Optional task keys and projects: 2026-10-16
 
 A hired bot without an active managed task key no longer stops plain `make` or
