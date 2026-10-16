@@ -128,10 +128,19 @@ class PrivateInputsTest(unittest.TestCase):
         import projects
         good = {'tiers': {'dev': {'preset': 'repo-dev'}},
                 'members': {'pm': {'title': 'PM', 'role': 'pm', 'tier': 'dev', 'lead': True}}}
-        self.assertEqual(projects.validate_team(good)['model'], 'claude-opus-5-5')
+        team = projects.validate_team(good)
+        self.assertEqual((team['harness'], team['harnesses'], team['members']['pm']['harness']),
+                         ('claude', {'claude': {'model': 'claude-opus-5-5', 'effort': 'high'},
+                                     'codex': {'model': 'gpt-5.6-sol', 'effort': 'high'}}, 'claude'))
+        mixed = projects.validate_team({**good, 'harness': 'codex', 'codex': {'model': 'gpt-6-sol', 'effort': 'max'},
+                                        'members': {**good['members'], 'dev': {'tier': 'dev', 'harness': 'claude'}}})
+        self.assertEqual(({m: s['harness'] for m, s in mixed['members'].items()}, mixed['harnesses']['codex']),
+                         ({'pm': 'codex', 'dev': 'claude'}, {'model': 'gpt-6-sol', 'effort': 'max'}))
         for bad in ({'tiers': {'dev': {}}}, {**good, 'members': {'pm': {'tier': 'ops'}}},
                     {**good, 'members': {'a1': {'tier': 'dev', 'lead': True}, 'b1': {'tier': 'dev', 'lead': True}}},
-                    {**good, 'members': {'pm': {'tier': 'dev', 'role': 'wizard'}}}, {**good, 'effort': 'extreme'},
+                    {**good, 'members': {'pm': {'tier': 'dev', 'role': 'wizard'}}}, {**good, 'claude': {'effort': 'extreme'}},
+                    {**good, 'harness': 'gemini'}, {**good, 'members': {'pm': {'tier': 'dev', 'harness': 'gemini'}}},
+                    {**good, 'codex': {'model': 'gpt-6-sol', 'sandbox': False}}, {**good, 'model': 'claude-opus-5-5'},
                     {**good, 'other': 1}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 projects.validate_team(bad)

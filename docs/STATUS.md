@@ -7,6 +7,26 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Team harness per member: 2026-10-16
+
+`config/team.yaml` now declares a default `harness` (`claude` or `codex`) with a
+model and effort block per harness, and a member may set its own. `make` hires
+Claude members as `claude_local` (`engine: cli`, `model`, `effort`) and Codex
+members as `codex_local` (`engine: cli`, `model`, `modelReasoningEffort`,
+`dangerouslyBypassApprovalsAndSandbox`), each bound to its provider's
+company-shared subscription when one is connected, else the hiring owner's
+default. `make bot` option 4 signs one harness in at a time and binds that
+harness's members; `make` moves members off a broken connection of their own
+provider only. Field names were read from the pinned Paperclip source
+(`packages/adapters/codex-local`, `claude-local`, `shared/src/ai-connections.ts`
+at `467125fa`): the `openai` subscription method lists `codex_local` as its only
+adapter, as `anthropic` does `claude_local`.
+
+Unit tests cover the file (defaults, per-member override, rejected keys), hiring
+a Codex lead, binding members of both harnesses and leaving changed harnesses or
+explicit connections alone. The host is fresh (nothing installed), so hiring,
+both sign-ins and a Codex run over SSH: **NOT RUN** (T1, T4).
+
 ## Cleanup coverage: 2026-10-16
 
 `clean` now covers checkout builds/exports and test/lint/coverage caches as well
@@ -143,8 +163,9 @@ Record PASS, FAIL or NOT RUN with timestamp, steps and sanitized evidence.
 | --- | --- | --- |
 | G1 | In a project's Discord channel, "@bot do research on X" ends with a Paperclip ticket and notes with sources under `Projects/<slug>/` in Obsidian | NOT RUN |
 | G2 | A bot hands a chat question to the PM by child ticket; the PM splits it across the team; members do the work on their tier accounts; the bot is woken and answers in the same channel without the owner | NOT RUN |
-| T1 | make hires the default team once (lead first, others reporting to it, Claude CLI engine, Opus 5.5, persona as AGENTS.md) and a second make hires nobody and leaves edited instructions alone | NOT RUN |
-| T3 | After the lead is terminated, `make` hires a new lead, moves the orphaned members under it and lists the tickets the old lead held; after a Claude login expires, `make bot` option 4 renews the same connection and every member runs again | NOT RUN |
+| T1 | make hires the default team once (lead first, others reporting to it, each member on its `config/team.yaml` harness with Paperclip's CLI engine and that harness's model, persona as AGENTS.md) and a second make hires nobody and leaves edited instructions alone | NOT RUN |
+| T3 | After the lead is terminated, `make` hires a new lead, moves the orphaned members under it and lists the tickets the old lead held; after a login expires, `make bot` option 4 renews the same connection and every member of that harness runs again | NOT RUN |
+| T4 | A team mixing Claude Code and Codex members: option 4 signs both in; a Codex member completes a ticket on its tier account with sudo where its tier allows it, and a Claude member likewise | NOT RUN |
 | T2 | The onboarding ticket is filed once; the PM splits it; sysadmin and devops write `Server/` (no secret values, nothing changed on the host) | NOT RUN |
 | G3 | A ticket the owner assigns to a bot in Paperclip is done by that bot and answered on the ticket | NOT RUN |
 | G4 | Two bots hand work over by chat @mention and by ticket | NOT RUN |

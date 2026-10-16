@@ -57,8 +57,11 @@ layer.
   command, but it can file a ticket that the bot's Paperclip run then works with
   its terminal, under the same account. Chat also keeps Hermes' `skills`
   toolset, which can write skill files that later runs read.
-- **Claude Code runs with Paperclip's default `dangerouslySkipPermissions`.**
-  Members act without per-command approval; their tier account is the limit.
+- **Team members run without per-command approval or a CLI sandbox.** Claude
+  Code members keep Paperclip's default `dangerouslySkipPermissions`; Codex
+  members are hired with `dangerouslyBypassApprovalsAndSandbox` because Codex's
+  own sandbox (`no_new_privs`, workspace-only writes) would deny sudo and the
+  tier's paths. On both harnesses the tier account is the limit.
 - **Team members write the whole vault.** A mistaken or steered member can change
   any note; the root-only history undoes it.
 - **A hijacked bot can steal any bot's subscription login.** Logins live in each
