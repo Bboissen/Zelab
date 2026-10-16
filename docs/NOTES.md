@@ -14,6 +14,53 @@ Nothing syncs on its own. The root-only vault history on the server
 (`/var/lib/zelab-vault-history`, a snapshot every five minutes) is separate: it is
 still your undo for anything an agent does, synced or not.
 
+## Check that a bot really wrote a note
+
+Bots write Markdown files into the vault; they do not type into an Obsidian
+window. A chat reply saying "saved" is not proof. To check the complete path:
+
+1. Pick an existing project the bot can access. Choose a new filename and a
+   unique marker; replace `your-project` and `unique` in this example. In that
+   project's chat channel, send:
+
+   > Create a new note `Projects/your-project/notes-check-unique.md` containing
+   > the exact text `NOTES-CHECK-unique`. Do not overwrite an existing note.
+   > Read it back, then reply with its path and the Paperclip ticket link.
+
+2. Follow the ticket in Paperclip. Chat files the request through MCP; a
+   Paperclip-started bot run has the tools to write the note. Check that run
+   completed, then inspect the actual file on the server (default vault path):
+
+   ```sh
+   sudo cat '/var/lib/zelab-vault/Projects/your-project/notes-check-unique.md'
+   ```
+
+   The filename and marker must match your request. In the guest the same
+   file is under `/var/lib/zelab-notes/Projects/your-project/`. Finding it on
+   the server proves the shared-vault write, rather than a file saved only
+   inside the guest or a claim in chat.
+
+3. If you use desktop Obsidian, run `make notes` from the server's Zelab
+   checkout, then `git pull --no-rebase` inside your laptop's notes clone.
+   Open the note in Obsidian and check the marker. The server write and
+   laptop sync are separate steps; neither happens merely because a ticket
+   says "done". Conflicts need the [conflict routine](#conflicts).
+
+If the ticket fails, inspect its run error first. If the server file is there
+but the laptop copy is missing, check the Git sync rather than asking the bot
+to rewrite the note. Root-only snapshots run every five minutes, so a fresh
+note may not yet appear in history.
+
+## Which Obsidian app runs where?
+
+Desktop Obsidian is an optional application on your laptop. Zelab does not
+install or uninstall that app. Bots can write notes with no Obsidian app open.
+
+Browser Obsidian is the optional server container. `obsidian_enabled: false`
+stops and removes that container and its own Tailscale route on the next
+`make`; the vault, notes share, history and saved browser settings remain.
+Removing the browser container does not remove the notes or the laptop app.
+
 ## What never travels
 
 - **`.obsidian/`.** Your laptop keeps its own Obsidian settings. Agents can write

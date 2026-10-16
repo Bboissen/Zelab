@@ -7,6 +7,26 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Work and notes overview: 2026-10-16
+
+The shorter README and rearranged diagram describe roles and goals, with the
+full connection-security table retained in Architecture. The diagram explicitly
+separates each keyed bot's Paperclip MCP tools from Paperclip's reverse Hermes
+run API. Notes documentation now explains desktop versus browser Obsidian and
+provides a unique-marker check through a real ticket, the server file and
+optional laptop Git sync.
+
+Read-only checks at 20:59 UTC: browser Obsidian was disabled in local inputs
+and its container was absent; the notes share service and history timer were
+active. The guest notes path was mounted as `fuse.sshfs`, and the bot account
+passed read/write permission checks. These prove current mount availability,
+not that a bot successfully wrote a requested note.
+
+Repository changes: documentation and diagram. Host and guest configuration
+changes: none. A real note-writing chat request, ticket completion, laptop
+sync/view and the laptop app's installation state: **NOT RUN**. No chat
+messages, model calls, notes edits or Git sync were performed by these probes.
+
 ## Public source review and native commands: 2026-10-16
 
 At 20:44 UTC, GitHub reported the source repository as public and anonymous
