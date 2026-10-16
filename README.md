@@ -19,7 +19,8 @@ team's PM, who assigns it to the appropriate team member.
 
 **Experimental:** source checks and isolated qualification cover parts of the
 system. The complete chat-to-team return path, recovery and network acceptance
-still have **NOT RUN** items. See [Status](docs/STATUS.md).
+still have **NOT RUN** items. An upstream Feishu webhook security issue also
+remains open. See [Status](docs/STATUS.md).
 
 ## Where everything runs
 
