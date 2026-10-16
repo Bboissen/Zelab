@@ -7,6 +7,33 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Chat handoff correction: 2026-10-16
+
+A read-only live trace of a simple status question found sub-second queue waits,
+several minutes of expanded host investigation, then repeated bot runs attempting
+chat delivery and disposition repair. The generated skill named `send_message`,
+which the pinned Hermes deliberately does not register as a model tool, and said
+to leave a waiting parent open without a dependency. The terminal also failed to
+find `node`; two recovery commands waited five minutes each for an unanswered
+native approval. The bot's persona was under 3 KB; shrinking it would not fix
+these observed errors.
+
+The corrected skill uses the pinned Node executable, records child dependencies
+with `blockedByIssueIds`, and specifies the native profile-scoped `hermes send`
+CLI for replies. Simple status questions request a narrow check; chat gets one
+short acknowledgement and one short result. Existing team instructions and model
+effort settings remain under the owner's native product configuration.
+
+`tools/check_paperclip.py --chat-handoff` passed against the installed pinned
+Paperclip runtime in disposable authenticated private state: a synthetic process
+agent used a real scoped task key and the unchanged bundled helper to create a
+child; the exact generated curl command recorded its blocker; child completion
+woke the parent once and it completed in two runs without disposition repair.
+No model call or outbound chat was used. Native Hermes `send --help` confirmed
+the profile-scoped interface; the bundled task helper's `--help` also passed with
+Hermes' managed pinned Node executable in the guest. Production reapply, changed live team instructions,
+Discord delivery and a measured post-fix response time: **NOT RUN**.
+
 ## Final v1.1 dependency qualification: 2026-10-16
 
 MCP and MCP types 2.2.0 replace 2.0.0 in the qualified dependency manifests;

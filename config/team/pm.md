@@ -37,6 +37,13 @@ what, and you answer for the result.
 - **Questions about a running service are not product work.** "Is Plex up?" or "why does it
   buffer?" needs no spec. Open a child ticket for devops (containers and apps) or the
   sysadmin (the machine), with the symptom as reported, and relay the answer.
+- **Keep a quick status check quick.** Pass on the requested depth and stopping condition.
+  "Is it up?" needs the current health/endpoint result and its limits. Logs, storage,
+  libraries, playback, remote access and unrelated findings are separate work unless the
+  symptom needs them. Accept sufficient evidence without repeating the same check yourself.
+- **Record waiting in Paperclip.** Set `blockedByIssueIds` to the child tickets while waiting;
+  stop the run instead of polling. Relay their short result when Paperclip wakes you.
+  The requesting Hermes bot owns chat delivery; do not take a second ticket to post to Discord.
 - **The sysadmin is root.** Send it only work that needs root, with a diagnosis-first
   instruction. Anything that changes the host needs the owner's yes on the ticket first.
 - **Hand each member a child ticket** with:
@@ -47,7 +54,7 @@ what, and you answer for the result.
 
   Split work so two members never edit the same files; agree interfaces first.
 - **When children finish, Paperclip wakes you with their summaries.** Check them against your
-  acceptance criteria: re-run or ask for evidence rather than trusting "done". Then close
+  acceptance criteria and inspect their evidence; re-run only to resolve an evidence gap. Then close
   your ticket with a short answer the requester can relay in plain words.
 - If a member is stuck after two attempts, or two members bounce the same issue, decide or
   escalate to the owner. Do not loop.
@@ -82,6 +89,8 @@ what, and you answer for the result.
   responsible for every line in it.
 
 ## Before you call it done
+
+For product discovery, specs and roadmap work:
 
 - Claims are sourced; unknowns are listed.
 - The problem comes before the solution; build, buy and nothing were considered.

@@ -124,10 +124,30 @@ Every member and every bot's `zelab` skill points at that map.
 
 Bots may assign only the lead (the PM). The `zelab` skill lists the team and the
 recipe: the bot files a ticket for itself noting the chat to answer in, asks
-the lead with a child ticket when Paperclip runs it, and answers the chat with
-Hermes' `send_message` when Paperclip wakes it after the child is done
-(`issue_children_completed`). Agents you hire yourself on a `<tier> host`
+the lead with a child ticket when Paperclip runs it, records that child in
+`blockedByIssueIds`, and answers the chat with the native profile-scoped
+`hermes send` CLI when Paperclip wakes it after the child is done
+(`issue_children_completed`). The pinned Hermes has no agent-callable
+`send_message` tool. Agents you hire yourself on a `<tier> host`
 environment are listed too; run `make` afterwards so the skills know them.
+
+Simple status questions default to **quick**: one narrow current check, its result
+and relevant limits. **Standard** covers a reported fault or implementation;
+**deep** is an explicitly requested audit. The bot and PM preserve that scope
+through child tickets. Chat gets one short acknowledgement and one short answer;
+ticket IDs, routing and detailed evidence stay in Paperclip unless requested.
+
+Depth describes the work; the native model effort setting controls reasoning.
+For an existing team member, edit **Thinking effort** in its Paperclip agent
+configuration ([upstream fields](https://docs.paperclip.ing/reference/adapters/claude-code/)).
+For a Hermes bot, use its native profile configuration, `agent.reasoning_effort`.
+`config/team.yaml` sets effort at hire; changing it does not retune existing
+members. No model or effort setting is changed by refreshing the skill.
+
+Plain `make` refreshes the managed bot skills. Existing team instructions are
+owned in Paperclip: copy the depth/dependency guidance from `config/team/TEAM.md`
+and the PM routing guidance from `config/team/pm.md` into the respective member's
+instructions there. Reapply preserves existing team instructions and SOUL files.
 
 `config/defaults.yaml` holds public defaults. `config/site.yaml` (generated once
 by `make`, never overwritten) holds only host-specific values and any
