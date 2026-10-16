@@ -531,11 +531,10 @@ def team_instructions(site, name, projects):
                          for slug, cfg in sorted(site.get('zelab_projects', {}).items()))
     paths = ', '.join(f'`{path}`' for path in tier['paths']) or 'none beyond your workspace'
     notes = (f"- Notes: the shared Obsidian vault `{site['notes_vault_dir']}`, read and write. The server's map "
-             f"is `{site['notes_vault_dir']}/Server/` (Infrastructure.md, Runbooks/, Findings.md, Decisions.md). "
-             f"Project folders:\n{folders or '  (none declared yet)'}\n  Every change is kept in a root-only "
+             f"is `{site['notes_vault_dir']}/Server/`. Project folders:\n{folders or '  (none declared yet)'}\n  Every change is kept in a root-only "
              'history, so mistakes can be undone, but write only what you mean to keep.') \
         if site.get('notes_enabled', True) else '- Notes: none on this server.'
-    reporting = (f'- You report to **{lead}**, who leads the team and splits work.' if lead and lead != name else
+    reporting = (f'- You report to **{lead}**, who leads the team and routes work.' if lead and lead != name else
                  '- You lead the team: bots and the owner hand you work; split it among the members below and '
                  'answer on the ticket you were given.' if lead == name else '- The owner assigns your work.')
     return '\n'.join([
