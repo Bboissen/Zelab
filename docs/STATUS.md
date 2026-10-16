@@ -7,6 +7,35 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Bot project instructions during setup: 2026-10-16
+
+A live bot had Paperclip's create-ticket tool and a valid scoped key, but no
+generated `zelab` skill. Its request omitted `projectId` and Paperclip returned
+HTTP 403 (`deny_scope`). Restoring the generated skills and refreshing old chat
+contexts through Hermes' native API repaired this. At 19:56 UTC the configured
+model, run from its own profile directory with the chat toolsets, read the skill,
+created one unassigned backlog verification ticket in its permitted project and
+read it back through the MCP tools. No Discord message or team job was sent.
+An initial CLI probe from the deployment account's private directory could not
+start MCP; the corrected working directory passed.
+
+The installer now writes a chat-only skill when adding a bot, and publishes the
+selected project IDs and team routing after verifying its task key, before
+enabling Paperclip tools or revoking old keys. Setup reconciles each bot and its
+chat context before the next bot or team sign-in wizard. Plain `make` still
+restores missing skills from the managed key's scope. The generated skill
+explicitly requires `projectId` on every create-ticket call.
+
+Regression coverage exercises setup completion before later wizards, skipped
+setup, skill publication before MCP activation, failed writes retaining old
+keys, recovery on reapply, and omission of projects outside the selected scope.
+The full source suite (272 tests, repository and playbook checks) and gitleaks
+passed.
+Repository changes are in the installer and documentation; the earlier live
+repair changed guest skills and chat boundaries, and left one verification
+ticket on the host. Fresh installation, live task-key rotation with this change
+and the full Discord-to-team return path: **NOT RUN**.
+
 ## Paperclip harness switch Test/Save mismatch: 2026-10-16
 
 Diagnosis at 19:33–19:43 UTC on Paperclip `2026.1005.0`: switching an existing

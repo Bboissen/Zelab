@@ -672,7 +672,10 @@ shared vault under `Projects/<slug>/`; the server's map is in `Server/`.
 | Slug | Paperclip project | Project ID |
 | --- | --- | --- |
 {rows}'''
-    filing = '''- Your own work (research, notes): a ticket assigned to you, `status` `todo`.
+    filing = '''Every `paperclipCreateIssue` call includes `projectId` from the table above, even when
+you have only one project.
+
+- Your own work (research, notes): a ticket assigned to you, `status` `todo`.
 - Another bot's work: a ticket assigned to that bot; it answers.
 - Work on the server (code, containers, the host, data): ask the team, below.
 
@@ -788,6 +791,9 @@ class Bots:
                               'paperclipApiUrl': f"http://10.0.2.2:{self.site['paperclip_port']}",
                               'instructions': instructions(self.site, name)},
             'runtimeConfig': {'heartbeat': {'enabled': False, 'wakeOnDemand': True, 'maxConcurrentRuns': 1}}})
+        agents = bot_agents(self.site, self.paperclip.agents())
+        members, others = self.team()
+        self.write_skill(name, agents, [], members, others, task_key=False)
         print('done')
         self.restart_needed = True
         return name
@@ -820,6 +826,9 @@ class Bots:
             self.soul(name)
         if 'd' in steps:
             self.task_key(name)
+        # A later wizard or a menu left open must not defer the bot's instructions
+        # or leave its active chats using the previous project scope.
+        self.finish()
 
     def soul(self, name):
         path = f'{HERMES_HOME}/profiles/{name}/SOUL.md'
@@ -901,9 +910,13 @@ class Bots:
     def write_key(self, name, agents, project_ids):
         """Create the key, hand it to the profile, then revoke the keys it replaces."""
         agent = agents[name]
+        members, others = self.team()
+        projects = [p for p in self.paperclip.projects() if p['id'] in project_ids and not p.get('archivedAt')]
+        if not project_ids or {p['id'] for p in projects} != set(project_ids):
+            raise Stop(f'{name}: select active projects with make bot before writing a task key.')
         previous = [key for key in self.paperclip.keys(agent['id']) if key.get('name') == KEY_NAME and not key.get('revokedAt')]
         scope = {'kind': 'task_bridge', 'projectIds': project_ids,
-                 'allowedAssigneeAgentIds': assignees(self.site, agents, self.team()[0])}
+                 'allowedAssigneeAgentIds': assignees(self.site, agents, members)}
         created = self.paperclip.create_key(agent['id'], scope)
         self.guest.root_python(SET_ENV, f'{HERMES_HOME}/profiles/{name}', stdin=json.dumps({
             'PAPERCLIP_API_URL': f"http://10.0.2.2:{self.site['paperclip_port']}",
@@ -913,12 +926,20 @@ class Bots:
                                                  f"http://10.0.2.2:{self.site['paperclip_port']}",
                                                  self.paperclip.company, agent['id'])):
             raise Stop(f'{name}: replacement task key could not be verified; old keys remain for recovery.')
+        # Publish the selected project IDs before exposing the create-ticket tool,
+        # including when setup is interrupted before the menu's final refresh.
+        self.write_skill(name, agents, projects, members, others)
         for key in previous:
             self.paperclip.revoke(agent['id'], key['id'])
         current = json.loads(self.guest.root_python(PROFILE_SETTINGS, f'{HERMES_HOME}/profiles/{name}',
                                                     json.dumps(list(chat_settings()))))
         self.reconcile_chat(name, current.get('settings') or {})
         self.restart_needed = True
+
+    def write_skill(self, name, agents, projects, members, others, *, task_key=True):
+        self.guest.root_python(WRITE_FILE, f'{HERMES_HOME}/profiles/{name}/skills/zelab/zelab/SKILL.md',
+                               f'{HERMES_HOME}/profiles',
+                               stdin=skill(self.site, name, agents, projects, members, others, task_key=task_key))
 
     def team(self):
         return team_agents(self.site, self.paperclip.agents(), self.paperclip.ids)
@@ -1049,8 +1070,6 @@ class Bots:
                       if key.get('name') == KEY_NAME and not key.get('revokedAt')]
             current = json.loads(self.guest.root_python(PROFILE_SETTINGS, f'{HERMES_HOME}/profiles/{name}',
                                                         json.dumps(list(chat_settings()))))
-            if self.reconcile_chat(name, current.get('settings') or {}, task_key=bool(active)):
-                self.restart_needed = True
             passthrough = current.get('env_passthrough') or []
             if not set(TASK_ENV).issubset(passthrough):
                 code, _ = self.guest.hermes(name, 'config', 'set', 'terminal.env_passthrough',
@@ -1078,9 +1097,10 @@ class Bots:
                         or sorted(scope.get('allowedAssigneeAgentIds') or []) != wanted
                         or not bridge_ready or len(active) != 1):
                     self.write_key(name, agents, project_ids)
-            self.guest.root_python(WRITE_FILE, f'{HERMES_HOME}/profiles/{name}/skills/zelab/zelab/SKILL.md',
-                                   f'{HERMES_HOME}/profiles',
-                                   stdin=skill(self.site, name, agents, visible, members, others, task_key=bool(active)))
+                    current['settings'] = chat_settings()
+            self.write_skill(name, agents, visible, members, others, task_key=bool(active))
+            if self.reconcile_chat(name, current.get('settings') or {}, task_key=bool(active)):
+                self.restart_needed = True
         if self.restart_needed:
             self.profile_hygiene('check')
             self.guest.root_python(RESTART)
@@ -1249,6 +1269,8 @@ def menu(bots):
             name = bots.add(profiles)
             if yes(f'Set up {name} now?'):
                 bots.setup(name)
+            else:
+                bots.finish()
         elif choice == '2':
             name = input('  Bot to set up: ').strip().lower()
             if name in profiles:
