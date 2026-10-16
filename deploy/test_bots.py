@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import yaml
 
@@ -143,6 +143,7 @@ class BotTest(unittest.TestCase):
         self.assertIn('| writer |  | `a2` |', text)
         self.assertNotIn('| scout |', text)
         self.assertNotIn('pcp_', text)
+        self.assertIn('Every `paperclipCreateIssue` call includes `projectId`', text)
 
     def test_team_is_matched_by_metadata_and_only_the_lead_is_assignable(self):
         team = {'harness': 'claude', 'harnesses': {'claude': {'model': 'claude-opus-5-5', 'effort': 'high'}, 'codex': {'model': 'gpt-5.6-sol', 'effort': 'high'}}, 'tiers': {},
@@ -199,6 +200,7 @@ class BotTest(unittest.TestCase):
         self.assertEqual(server['env']['PAPERCLIP_API_KEY'], '${PAPERCLIP_BRIDGE_API_KEY}')
         self.assertTrue(server['args'][0].startswith(bots.MCP_DIR + '/'))
         self.assertEqual(settings['tools.tool_search.enabled'], 'off')
+        self.assertEqual(settings['skills.auto_load'], ['zelab'])
         text = bots.skill(SITE, 'marvin', {}, [])
         for command in ('curl', 'create-task', 'update-status', ' send ', 'PAPERCLIP_RUN_ID'):
             self.assertNotIn(command, text)
@@ -471,6 +473,49 @@ class BotTest(unittest.TestCase):
         self.assertIn('terminal', result.stderr)
 
 
+class SetupFlowTest(unittest.TestCase):
+    def test_setup_finishes_before_the_next_bot_or_host_sign_in(self):
+        runner = Mock(spec=bots.Bots)
+        runner.state.side_effect = [({}, {}), ({}, {}), ({'scout': {}}, {})]
+        runner.add.side_effect = ['scout', 'writer']
+        events = []
+        runner.task_key.side_effect = lambda name: events.append(('key', name))
+        runner.finish.side_effect = lambda: events.append(('finish',))
+        runner.host_sign_in.side_effect = lambda: events.append(('host sign-in',))
+
+        def setup(name, steps=None):
+            events.append(('setup', name))
+            bots.Bots.setup(runner, name, steps=steps)
+
+        runner.setup.side_effect = setup
+        # The native chat wizard's facts are irrelevant to this fixture.
+        runner.guest = Mock()
+        runner.guest.bots.return_value = []
+        with patch('builtins.input', return_value='2'), redirect_stdout(io.StringIO()):
+            bots.installer(runner)
+        self.assertEqual(events, [('setup', 'scout'), ('key', 'scout'), ('finish',),
+                                  ('setup', 'writer'), ('key', 'writer'), ('finish',),
+                                  ('host sign-in',), ('finish',)])
+
+    def test_skipped_setup_still_finishes_a_new_bot_before_returning_to_the_menu(self):
+        runner = Mock(spec=bots.Bots)
+        runner.state.return_value = ({}, {})
+        runner.add.return_value = 'scout'
+        with patch('builtins.input', side_effect=['1', KeyboardInterrupt]), \
+                patch.object(bots, 'yes', return_value=False), redirect_stdout(io.StringIO()), \
+                self.assertRaises(KeyboardInterrupt):
+            bots.menu(runner)
+        runner.finish.assert_called_once_with()
+        runner.setup.assert_not_called()
+
+    def test_skipping_all_setup_steps_still_refreshes_existing_context(self):
+        runner = Mock(spec=bots.Bots)
+        with redirect_stdout(io.StringIO()):
+            bots.Bots.setup(runner, 'scout', steps='')
+        runner.finish.assert_called_once_with()
+        runner.task_key.assert_not_called()
+
+
 class ReconcileTest(unittest.TestCase):
     def setUp(self):
         self.runner = bots.Bots.__new__(bots.Bots)
@@ -491,6 +536,7 @@ class ReconcileTest(unittest.TestCase):
         self.active = [{'id': 'k-old', 'name': bots.KEY_NAME, 'createdAt': '2026-01-01',
                         'scope': {'kind': 'task_bridge', 'projectIds': ['p-old'], 'allowedAssigneeAgentIds': ['a1']}}]
         self.calls, self.writes, self.hermes_calls, self.revoked, self.created = [], {}, [], [], []
+        self.events = []
         self.bridge_ready, self.open_issues = True, []
         self.archive_failures = 0
         self.passthrough = [*bots.TASK_ENV, 'CUSTOM_KEY']
@@ -516,6 +562,7 @@ class ReconcileTest(unittest.TestCase):
                 return {**key, 'token': 'private-test-token'}
 
             def revoke(self, agent, key):
+                outer.events.append(('revoke', key))
                 outer.revoked.append(key)
                 next(k for k in outer.active if k['id'] == key)['revokedAt'] = 'date'
 
@@ -537,13 +584,17 @@ class ReconcileTest(unittest.TestCase):
                     return json.dumps({'env_passthrough': outer.passthrough,
                                        'settings': {key: outer.chat.get(key) for key in json.loads(args[1])}})
                 if code == bots.BRIDGE_READY:
+                    outer.events.append(('verified', outer.bridge_ready))
                     return json.dumps(outer.bridge_ready)
                 outer.writes[(code, args)] = stdin
+                if code == bots.WRITE_FILE:
+                    outer.events.append(('skill', stdin))
                 if code == bots.SET_ENV:
                     outer.bridge_ready = True
                 return ''
 
             def hermes(self, *args):
+                outer.events.append(('config', args[-2]))
                 outer.hermes_calls.append(args)
                 if args[-2] == 'terminal.env_passthrough':
                     outer.passthrough = json.loads(args[-1])
@@ -621,6 +672,84 @@ class ReconcileTest(unittest.TestCase):
         self.assertEqual(self.chat, bots.chat_settings())
         self.assertTrue(self.runner.restart_needed)
         self.assertEqual(len(self.created), 1)
+
+    def test_task_key_publishes_only_selected_projects_before_enabling_tools(self):
+        self.chat = bots.chat_settings(task_key=False)
+        self.runner.site['zelab_team'] = {'members': {'pm': {'title': 'PM', 'lead': True}}}
+        self.runner.team = lambda: ({'pm': {'id': 'lead'}}, [])
+        self.runner.write_key('scout', {'scout': self.agent}, ['p-new'])
+        text = next(value for (code, _), value in self.writes.items() if code == bots.WRITE_FILE)
+        self.assertIn('`p-new`', text)
+        self.assertNotIn('`p-old`', text)
+        self.assertNotIn('`p-other`', text)
+        self.assertIn('`assigneeAgentId` `lead`', text)
+        stages = [event[0] for event in self.events]
+        self.assertLess(stages.index('verified'), stages.index('skill'))
+        self.assertLess(stages.index('skill'), stages.index('revoke'))
+        self.assertLess(stages.index('skill'), stages.index('config'))
+        self.assertNotIn('private-test-token', text)
+
+    def test_add_writes_chat_only_instructions_before_any_setup_wizard(self):
+        with patch('builtins.input', side_effect=['scout', 'Finds sources']), \
+                patch.object(self.runner.guest, 'hermes', return_value=(0, '')), \
+                patch.object(self.runner.paperclip, 'secret', return_value={'id': 'secret-ref'}, create=True), \
+                patch.object(self.runner.paperclip, 'hire', create=True), \
+                patch.object(self.runner.paperclip, 'agents',
+                             return_value=[{**self.agent, 'adapterType': 'hermes_gateway'}], create=True), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(self.runner.add({'existing': {}}), 'scout')
+        text = next(value for (code, _), value in self.writes.items() if code == bots.WRITE_FILE)
+        self.assertIn('You are **scout**', text)
+        self.assertIn('cannot file tickets yet', text)
+        self.assertNotIn('paperclipCreateIssue', text)
+
+    def test_invalid_projects_do_not_create_a_key_or_enable_tools(self):
+        self.project_rows[1]['archivedAt'] = 'date'
+        for project_ids in ([], ['missing'], ['p-new']):
+            with self.subTest(project_ids=project_ids), self.assertRaises(bots.Stop):
+                self.runner.write_key('scout', {'scout': self.agent}, project_ids)
+        self.assertEqual(self.created, [])
+        self.assertEqual(self.hermes_calls, [])
+
+    def test_failed_skill_write_keeps_previous_keys_and_tools_disabled(self):
+        self.chat = bots.chat_settings(task_key=False)
+        original = self.runner.guest.root_python
+
+        def fail_skill(code, *args, **kwargs):
+            if code == bots.WRITE_FILE:
+                raise bots.Stop('Skill write interrupted')
+            return original(code, *args, **kwargs)
+
+        with patch.object(self.runner.guest, 'root_python', side_effect=fail_skill), \
+                self.assertRaisesRegex(bots.Stop, 'Skill write interrupted'):
+            self.runner.write_key('scout', {'scout': self.agent}, ['p-new'])
+        self.assertEqual(self.revoked, [])
+        self.assertEqual(self.chat, bots.chat_settings(task_key=False))
+        # Plain make completes the interrupted setup with the same selected scope.
+        self.runner.refresh()
+        text = next(value for (code, _), value in self.writes.items() if code == bots.WRITE_FILE)
+        self.assertIn('`p-new`', text)
+        self.assertEqual(self.chat, bots.chat_settings())
+
+    def test_reapply_restores_missing_skill_without_rotating_a_valid_key(self):
+        self.active[0]['scope']['projectIds'] = ['p-new']
+        self.chat = bots.chat_settings(task_key=False)
+        self.runner.refresh()
+        text = next(value for (code, _), value in self.writes.items() if code == bots.WRITE_FILE)
+        self.assertIn('`p-new`', text)
+        self.assertEqual(self.created, [])
+        stages = [event[0] for event in self.events]
+        self.assertLess(stages.index('skill'), stages.index('config'))
+
+    def test_reapply_auto_loads_workflow_and_preserves_other_native_skill_choices(self):
+        self.active[0]['scope']['projectIds'] = ['p-new']
+        self.chat['skills.auto_load'] = ['owner-workflow']
+        self.runner.refresh()
+        self.assertEqual(self.chat['skills.auto_load'], ['owner-workflow', 'zelab'])
+        self.assertEqual(self.created, [])
+        self.hermes_calls = []
+        self.runner.refresh()
+        self.assertEqual(self.hermes_calls, [])
 
     def test_refresh_still_stops_for_scope_decisions_and_unhired_profiles(self):
         scopes = ({'kind': 'custom'},

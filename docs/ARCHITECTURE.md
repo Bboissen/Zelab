@@ -42,7 +42,7 @@ host account stay on the host.
 | Paperclip bot agents | One `hermes_gateway` agent per bot, hired with `/agent-hires` and approved by `make bot`; `apiBaseUrl` is `http://127.0.0.1:<guest_api_port>/p/<bot>` |
 | Task bridge | One `task_bridge` key per bot, scoped to the projects the owner picks, in the profile's `.env`. In chat the bot uses it through Paperclip's official MCP server (`@paperclipai/mcp-server`, same release as Paperclip, locked in `deploy/roles/paperclip_mcp/files`, installed read-only at `/opt/zelab-tools/paperclip-mcp-server` in the guest), limited to `paperclipCreateIssue`, `paperclipGetIssue` and `paperclipListComments`. In a Paperclip run it closes tickets with Paperclip's bundled `paperclip-task-bridge` helper, reconciled unchanged into each profile; the key reaches the terminal through `terminal.env_passthrough` |
 | Chat tools | Every chat platform `make bot` sets up (`platform_toolsets.<platform>` in each profile, reset on every `make`) gets web, vision, image generation, speech, skills, to-do, memory, session search, clarify and the Paperclip MCP tools: no terminal, code, file, browser, cron, delegation or kanban tools. Paperclip runs use Hermes' `api_server` tools, which keep the terminal |
-| Zelab skill | Reconciled on every `make`, listing only the bot's permitted projects (Paperclip IDs, vault folders), the team and other bots; no secrets |
+| Zelab skill | Written when a bot is added, updated before its task key enables Paperclip tools, and reconciled on every `make`; Hermes' native `skills.auto_load` includes it in each session, retaining other auto-loaded skills; lists only the bot's permitted projects (Paperclip IDs, vault folders), the team and other bots; no secrets |
 | Projects | `config/projects.yaml`: a Paperclip project and a vault folder each; no host rights |
 | Team tiers | `config/team.yaml`: one account `zelab-team-<tier>` per tier (`dev` repo-dev, `ops` docker, `root` full-sudo; home below `/var/lib/zelab-projects`), read/write on the vault, and the Paperclip SSH environment `<tier> host`; site paths in `config/projects.yaml` |
 | Team | Coding agents make hires once from `config/team.yaml` (PM as lead; frontend, backend, mobile, game, data on `dev`; devops on `ops`; sysadmin on `root`). Each member runs on one harness, Claude Code (`claude_local`, default) or Codex (`codex_local`), chosen per member in the file with that harness's model and effort, on Paperclip's CLI engine; persona `config/team/<member>.md` plus `TEAM.md` as the first `AGENTS.md`; runs use the owner's subscription sign-in for that harness. Both pinned CLIs are installed as `codex` and `claude` |
@@ -106,6 +106,11 @@ Projects and task keys are optional. A keyless profile still receives the
 managed integration and a chat-only skill; its Paperclip MCP entry stays
 disabled until a verified task key is written. The guide lists the remaining
 setup steps, and plain `make` succeeds.
+
+Both the install wizard and `make bot` reconcile each bot and its chat contexts
+as soon as that bot's setup finishes, before another bot or team sign-in wizard.
+A skipped setup also reconciles the newly added bot. Leaving a later menu open
+does not defer the earlier bot's generated instructions or context refresh.
 
 Team defaults apply when hiring. Subsequent harness, model and AI connection
 changes in Paperclip remain authoritative during reapplies.
