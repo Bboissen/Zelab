@@ -293,9 +293,10 @@ def connection_checks(site, elevated):
                             f"Still Hermes' generic persona: make bot, then set up {name} (c)",
                             pending=True, phase=phase))
         checks.append(Check(f"{name}: task key", bot["task_key"],
-                            ("Add a project to config/projects.yaml (copy config/projects.example.yaml if needed), "
+                            "Optional: chat and direct notes need no task key. For Paperclip tickets, "
+                            + ("add a project to config/projects.yaml (copy config/projects.example.yaml if needed), "
                              "rerun make, then " if not site.get("zelab_projects") else "")
-                            + f"make bot, then set up {name} (d)", pending=True, phase=phase))
+                            + f"make bot, then set up {name} (d)", blocking=False, phase=phase))
     synced = bool(site.get("notes_sync_remote"))
     checks.append(Check("Desktop notes", synced,
                         "Synced with a private GitHub repository: make notes" if synced else

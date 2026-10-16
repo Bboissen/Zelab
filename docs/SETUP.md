@@ -14,8 +14,8 @@ x86-64 Debian/Ubuntu with KVM, Docker Compose, SSH, Python 3.12+ and Make.
   `vm_install_resource_fraction: 0` in `config/site.yaml` to disable.
 - Projects are optional; the example ships none. To add your own, copy
   `config/projects.example.yaml` to `config/projects.yaml`, declare a project,
-  and rerun make. Without a project and a task key, bots can chat but cannot
-  file tickets.
+  and rerun make. Without a project and a task key, bots can chat and save notes
+  directly, but cannot file tickets.
 
 ### Administrator
 
@@ -54,7 +54,9 @@ At the end of a fresh install, make asks how many bots to set up and opens Herme
   terminates its Paperclip agent (its keys are revoked) and archives its profile
   without logins or tokens before deleting it.
 - Every step can be skipped and run again from `make bot`.
-- A skipped task key stays in the guide as a pending step; it does not fail make.
+- A skipped task key is optional advice in the guide. It does not send you back
+  through setup; chat and direct notes work without it. Set it up later only
+  for bots that should file Paperclip tickets.
 - Plain `make` reconciles existing bots even without a terminal: it refreshes
   managed skills, repairs routing and task credentials, and retires stale chat
   contexts when their inputs change. History, memory, logins and model choices
