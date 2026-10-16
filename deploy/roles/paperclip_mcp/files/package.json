@@ -1,0 +1,8 @@
+{
+  "name": "zelab-paperclip-mcp",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@paperclipai/mcp-server": "2026.1005.0"
+  }
+}

@@ -40,7 +40,8 @@ host account stay on the host.
 | Hermes dashboard | Guest service on port 8640, basic-auth; forwarded to host loopback and published through Tailscale Serve |
 | Paperclip | Host service under `zelab-paperclip`, authenticated private mode, loopback only; embedded PostgreSQL reachable only by root, the operator and the service account (nftables) |
 | Paperclip bot agents | One `hermes_gateway` agent per bot, hired with `/agent-hires` and approved by `make bot`; `apiBaseUrl` is `http://127.0.0.1:<guest_api_port>/p/<bot>` |
-| Task bridge | Paperclip's bundled `paperclip-task-bridge` skill, reconciled unchanged into each profile on every `make`; its `task_bridge` key, scoped to the projects the owner picks, is in the profile's `.env` and reaches the terminal tool through Hermes' `terminal.env_passthrough` |
+| Task bridge | One `task_bridge` key per bot, scoped to the projects the owner picks, in the profile's `.env`. In chat the bot uses it through Paperclip's official MCP server (`@paperclipai/mcp-server`, same release as Paperclip, locked in `deploy/roles/paperclip_mcp/files`, installed read-only at `/opt/zelab-tools/paperclip-mcp-server` in the guest), limited to `paperclipCreateIssue`, `paperclipGetIssue` and `paperclipListComments`. In a Paperclip run it closes tickets with Paperclip's bundled `paperclip-task-bridge` helper, reconciled unchanged into each profile; the key reaches the terminal through `terminal.env_passthrough` |
+| Chat tools | Every chat platform `make bot` sets up (`platform_toolsets.<platform>` in each profile, reset on every `make`) gets web, vision, image generation, speech, skills, to-do, memory, session search, clarify and the Paperclip MCP tools: no terminal, code, file, browser, cron, delegation or kanban tools. Paperclip runs use Hermes' `api_server` tools, which keep the terminal |
 | Zelab skill | Reconciled on every `make`, listing only the bot's permitted projects (Paperclip IDs, vault folders), the team and other bots; no secrets |
 | Projects | `config/projects.yaml`: a Paperclip project and a vault folder each; no host rights |
 | Team tiers | `config/team.yaml`: one account `zelab-team-<tier>` per tier (`dev` repo-dev, `ops` docker, `root` full-sudo; home below `/var/lib/zelab-projects`), read/write on the vault, and the Paperclip SSH environment `<tier> host`; site paths in `config/projects.yaml` |
@@ -53,22 +54,24 @@ host account stay on the host.
 
 ## Flows
 
-1. **Chat to ticket (G1).** The owner asks a bot in a project's channel. The
-   bot reads its `zelab` skill, writes notes under `Projects/<slug>/`, and
-   files a ticket in that project with the task-bridge helper. The ticket is
-   assigned to the bot itself, so Paperclip runs it through the bot's
-   `hermes_gateway` agent; inside that run the bot comments and closes it,
-   passing the run ID Paperclip gives it.
-2. **Team work (G2).** From chat, a bot files a ticket for itself; when
-   Paperclip runs it, the bot opens a child ticket for the PM, the only team
-   member its key may assign. The PM splits it into tickets for the team, which
-   Paperclip runs as Claude Code over SSH on each member's tier account. When
-   children are done, Paperclip wakes their parent's owner
-   (`issue_children_completed`, with each child's summary): the PM closes its
-   ticket, then the bot answers the chat it noted through its profile's native
-   `hermes send` CLI. Waiting parents record their children in `blockedByIssueIds`;
-   the parent link alone does not establish a dependency. A simple status question
-   requests only a narrow current check; detailed evidence stays on the tickets.
+1. **Chat to ticket (G1).** Someone asks a bot in a project's channel. Chat
+   runs no commands: the bot reads its `zelab` skill and, with the Paperclip MCP
+   tools, files a ticket in that project assigned to itself, opening with a
+   reply block (`Reply to`, `Asked by`, `Question`). Paperclip runs it through
+   the bot's `hermes_gateway` agent; in that run the bot does the work (notes go
+   under `Projects/<slug>/`), answers the chat with its profile's native
+   `hermes send` CLI and closes the ticket with the task-bridge helper and the
+   run ID.
+2. **Team work (G2).** From chat, in two tool calls, the bot files the job for
+   the PM, the only team member its key may assign, and a reply ticket for
+   itself that is `blocked` by the job (`blockedByIssueIds`). The PM splits the
+   job into tickets for the team, which Paperclip runs as Claude Code over SSH on
+   each member's tier account. When the job is done, Paperclip wakes the bot once
+   on the reply ticket (`issue_blockers_resolved`); it reads the result with the
+   MCP tools, answers in plain words for the person who asked, and closes the
+   ticket. Asked for news before then, the bot reads the job in chat. A simple
+   status question requests only a narrow current check; detailed evidence stays
+   on the tickets.
 3. **Owner to bot (G3).** A ticket the owner assigns to a bot in Paperclip is
    dispatched to `/p/<bot>/v1/runs` of the shared gateway.
 4. **Bot to bot (G4).** By chat, a bot that allows bots (`DISCORD_ALLOW_BOTS`)
@@ -141,6 +144,7 @@ downloads, build trees, releases and images the current pins no longer use.
 - [Paperclip deployment modes](https://docs.paperclip.ing/reference/deploy/deployment-modes/),
   [Hermes gateway adapter](https://docs.paperclip.ing/reference/adapters/hermes-gateway/),
   [bundled task bridge](https://github.com/paperclipai/paperclip/blob/master/packages/adapters/hermes/README.md),
+  [MCP server](https://www.npmjs.com/package/@paperclipai/mcp-server),
   [Codex adapter](https://docs.paperclip.ing/reference/adapters/codex/),
   [Claude Code adapter](https://docs.paperclip.ing/reference/adapters/claude-code/)
 - [Obsidian container](https://docs.linuxserver.io/images/docker-obsidian/),

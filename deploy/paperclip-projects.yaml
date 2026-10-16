@@ -84,3 +84,28 @@
         owner: root
         group: root
         mode: '0644'
+
+# Bot chats reach Paperclip through its official MCP server instead of a shell.
+- name: Build Paperclip's MCP server for the guest
+  hosts: host
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  tasks:
+    - name: Build the locked MCP server
+      ansible.builtin.include_role:
+        name: paperclip_mcp
+        tasks_from: host
+
+- name: Install Paperclip's MCP server in the guest
+  hosts: guest
+  gather_facts: false
+  become: true
+  vars_files:
+    - ../versions.yaml
+  tasks:
+    - name: Install the locked MCP server
+      ansible.builtin.include_role:
+        name: paperclip_mcp
+        tasks_from: guest

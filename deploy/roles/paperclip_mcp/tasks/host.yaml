@@ -1,0 +1,73 @@
+# Paperclip's official MCP server gives bot chats Paperclip tools without a shell.
+# Built once per locked revision; prune keeps the packaged archive for the guest.
+- name: Inspect the packaged Paperclip MCP server
+  ansible.builtin.stat:
+    path: "/var/cache/zelab/paperclip-mcp-{{ paperclip_mcp_revision }}.tar"
+    get_checksum: false
+  register: paperclip_mcp_archive
+
+- name: Build the Paperclip MCP server from its exact lock
+  when: not paperclip_mcp_archive.stat.exists
+  block:
+    - name: Create the disposable MCP build directory
+      ansible.builtin.file:
+        path: "/var/cache/zelab/paperclip-mcp-{{ paperclip_mcp_revision }}"
+        state: directory
+        owner: "{{ operator_user }}"
+        mode: '0700'
+
+    - name: Copy the exact MCP dependency declaration and lock
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/var/cache/zelab/paperclip-mcp-{{ paperclip_mcp_revision }}/{{ item }}"
+        owner: "{{ operator_user }}"
+        mode: '0600'
+      loop:
+        - package.json
+        - package-lock.json
+
+    # The lock carries every package's integrity hash; no package has install scripts.
+    - name: Install only the locked MCP server packages
+      ansible.builtin.command:
+        argv:
+          - rtk
+          - proxy
+          - "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/npm"
+          - ci
+          - --omit=dev
+          - --ignore-scripts
+          - --no-audit
+          - --no-fund
+        chdir: "/var/cache/zelab/paperclip-mcp-{{ paperclip_mcp_revision }}"
+      become_user: "{{ operator_user }}"
+      environment:
+        PATH: "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin:/usr/local/bin:/usr/bin:/bin"
+        npm_config_cache: "/var/cache/zelab/paperclip-mcp-{{ paperclip_mcp_revision }}/.npm-cache"
+        npm_config_registry: https://registry.npmjs.org
+
+    - name: Package the installed MCP server for the guest
+      ansible.builtin.command:
+        argv:
+          - rtk
+          - proxy
+          - tar
+          - -C
+          - "/var/cache/zelab/paperclip-mcp-{{ paperclip_mcp_revision }}"
+          - -cf
+          - "/var/cache/zelab/paperclip-mcp-{{ paperclip_mcp_revision }}.tar"
+          - package.json
+          - package-lock.json
+          - node_modules
+
+    # The guest copy action reads its source as the unprivileged controller.
+    - name: Make the public MCP archive readable by the controller
+      ansible.builtin.file:
+        path: "/var/cache/zelab/paperclip-mcp-{{ paperclip_mcp_revision }}.tar"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Remove the consumed MCP build tree
+      ansible.builtin.file:
+        path: "/var/cache/zelab/paperclip-mcp-{{ paperclip_mcp_revision }}"
+        state: absent

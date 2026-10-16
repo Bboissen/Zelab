@@ -50,6 +50,8 @@ STAGES = (
     ("Configure native Paperclip projects", "Paperclip projects"),
     ("Publish Paperclip's bundled task-bridge", "Paperclip projects"),
     ("Install the task-bridge skill", "Paperclip projects"),
+    ("Build Paperclip's MCP server", "Paperclip projects"),
+    ("Install Paperclip's MCP server", "Paperclip projects"),
     ("Supervise the native shared Hermes gateway", "Hermes gateway"),
     ("Seed the native Hermes API", "Hermes API"),
     ("Prepare the host vault", "Vault"),

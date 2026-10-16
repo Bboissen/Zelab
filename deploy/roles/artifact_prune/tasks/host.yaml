@@ -18,7 +18,7 @@
     paths: "{{ prune_cache_dir }}"
     file_type: any
     hidden: true
-    excludes: ["hermes-web-{{ hermes_commit }}.tar"]
+    excludes: ["hermes-web-{{ hermes_commit }}.tar", "paperclip-mcp-{{ paperclip_mcp_revision }}.tar"]
   register: prune_cache
   when: prune_other_guests.matched == 0
 

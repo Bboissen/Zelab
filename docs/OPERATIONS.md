@@ -68,7 +68,7 @@ Do not mutate the same state manually during maintenance.
 
 | Menu | What runs | Native to |
 | --- | --- | --- |
-| Add a bot | `hermes profile create <name> --description <role>`; a new `API_SERVER_KEY` in the profile; Paperclip's task-bridge skill copied into it; `terminal.env_passthrough` for the bridge variables; Paperclip `/agent-hires` plus approval for a `hermes_gateway` agent at `/p/<name>` | Hermes, Paperclip |
+| Add a bot | `hermes profile create <name> --description <role>`; a new `API_SERVER_KEY` in the profile; Paperclip's task-bridge skill copied into it; `terminal.env_passthrough` for the bridge variables; the `paperclip` MCP server, chat tools without commands (`platform_toolsets`) and `tools.tool_search.enabled: off` through `hermes config set`; Paperclip `/agent-hires` plus approval for a `hermes_gateway` agent at `/p/<name>` | Hermes, Paperclip |
 | Model sign-in | `hermes -p <name> setup model`: Hermes' provider menu, including subscription logins | Hermes |
 | Chat app | `hermes -p <name> gateway setup`: Hermes' platform menu; the token is typed there. For Discord, make bot then asks whether other bots may hand work over by @mention (`DISCORD_ALLOW_BOTS=mentions`) | Hermes |
 | Persona | The profile's `SOUL.md`, edited in nano or pasted | Hermes file |
@@ -122,20 +122,23 @@ Once the lead is hired, `make` files the team's first ticket for it, once per si
 folder `Server/` (Infrastructure.md, Runbooks/, Findings.md, Decisions.md).
 Every member and every bot's `zelab` skill points at that map.
 
-Bots may assign only the lead (the PM). The `zelab` skill lists the team and the
-recipe: the bot files a ticket for itself noting the chat to answer in, asks
-the lead with a child ticket when Paperclip runs it, records that child in
-`blockedByIssueIds`, and answers the chat with the native profile-scoped
-`hermes send` CLI when Paperclip wakes it after the child is done
-(`issue_children_completed`). The pinned Hermes has no agent-callable
-`send_message` tool. Agents you hire yourself on a `<tier> host`
-environment are listed too; run `make` afterwards so the skills know them.
+Bots may assign only the lead (the PM). Chat has no command tools; the `zelab`
+skill lists the team and the recipe: from chat, the bot files the job for the
+lead and a reply ticket for itself that waits on the job (`blockedByIssueIds`),
+using the Paperclip MCP tools. When the job is done Paperclip wakes the bot once
+(`issue_blockers_resolved`); it answers the chat in plain words with the native
+profile-scoped `hermes send` CLI and closes the ticket. The pinned Hermes has no
+agent-callable `send_message` tool. If delivery fails, the bot files an
+unassigned `Chat delivery failed: <bot>` ticket with the answer and the error.
+Agents you hire yourself on a `<tier> host` environment are listed too; run
+`make` afterwards so the skills know them.
 
 Simple status questions default to **quick**: one narrow current check, its result
 and relevant limits. **Standard** covers a reported fault or implementation;
 **deep** is an explicitly requested audit. The bot and PM preserve that scope
-through child tickets. Chat gets one short acknowledgement and one short answer;
-ticket IDs, routing and detailed evidence stay in Paperclip unless requested.
+through the job. Chat gets one short acknowledgement and one short answer, written
+for the person who asked, in their language, without technical detail; ticket IDs,
+routing and detailed evidence stay in Paperclip unless requested.
 
 Depth describes the work; the native model effort setting controls reasoning.
 For an existing team member, edit **Thinking effort** in its Paperclip agent

@@ -23,9 +23,9 @@ an OS account, a scoped key, a firewall rule or a native product setting.
 | Deployment operator (you) | Provisioning, unattended sudo, all password files | `/etc/sudoers.d/zelab-agent-<user>`, `private_dir` mode 0700 |
 | Hermes bots (all profiles) | Everything the `zelab-hermes` account can do in the guest; the whole vault through SFTP; the Paperclip API with the bot's task key; the internet | One guest account for every profile; guest nftables; the notes-only SFTP listener |
 | A bot's Paperclip agent | Paperclip runs it for tickets assigned to it | Its `hermes_gateway` adapter reaches only `/p/<bot>` with that profile's own API key (other profiles' keys are refused) |
-| A bot's task key | Create tickets in the picked projects, assigned to itself, another bot, the team lead, or nobody; comment on and update its own or assigned tickets inside a Paperclip run | `task_bridge` scope: `projectIds`, `allowedAssigneeAgentIds` |
+| A bot's task key | Create tickets in the picked projects, assigned to itself, another bot, the team lead, or nobody; read the tickets it created or is assigned; comment on and update them only inside a Paperclip run | `task_bridge` scope: `projectIds`, `allowedAssigneeAgentIds`; Paperclip's run-ID check |
 | Team member on tier `<tier>` | The account `zelab-team-<tier>`: its home and workspace, the preset's groups, sudo commands and path rights, read/write on the whole vault; Paperclip's standard agent key | OS account, `/etc/sudoers.d/zelab-team-<tier>`, POSIX ACLs on the tier's paths and the vault, SSH key with `from=<host>` and `restrict` |
-| Chat users | Whatever each bot's own allowlist admits | Hermes' native allowlist, set in `hermes gateway setup` |
+| Chat users | Talk to the bots each allowlist admits; through them, file and read tickets. A chat session runs no command | Hermes' native allowlist, set in `hermes gateway setup`; `platform_toolsets` per chat platform, reset by every `make`, offers no terminal, code, file, browser, cron, delegation or kanban tool |
 
 Default tiers (`config/team.yaml`): `dev` is `repo-dev` (PM, frontend,
 backend, mobile, game, data: own paths, no sudo), `ops` is `docker` (devops:
@@ -53,6 +53,10 @@ layer.
   steers a bot or the PM, can get work to the `full-sudo` sysadmin. Routing to
   root is the PM's judgment, written in its instructions, not a control.
   Remove the root tier (or set it to a narrower preset) if that is too much.
+- **Chat reaches commands through tickets.** A chat session cannot run a
+  command, but it can file a ticket that the bot's Paperclip run then works with
+  its terminal, under the same account. Chat also keeps Hermes' `skills`
+  toolset, which can write skill files that later runs read.
 - **Claude Code runs with Paperclip's default `dangerouslySkipPermissions`.**
   Members act without per-command approval; their tier account is the limit.
 - **Team members write the whole vault.** A mistaken or steered member can change
