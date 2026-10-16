@@ -55,6 +55,13 @@ layer.
   Remove the root tier (or set it to a narrower preset) if that is too much.
 - **Claude Code runs with Paperclip's default `dangerouslySkipPermissions`.**
   Members act without per-command approval; their tier account is the limit.
+- **Bots run commands without asking in chat.** `make bot` sets each profile's
+  native `approvals.mode` to `off` when it is unset, so a chat member or text
+  that steers a bot can run any command `zelab-hermes` may run in the guest.
+  Hermes' own hardline floor (root wipe, raw disk writes, shutdown) still
+  refuses. Per-command buttons were not a boundary: they asked family members to
+  judge shell code, and Paperclip runs cannot answer them. Set `smart` or
+  `manual` in a bot's Hermes settings to bring them back; Zelab keeps that choice.
 - **Team members write the whole vault.** A mistaken or steered member can change
   any note; the root-only history undoes it.
 - **A hijacked bot can steal any bot's subscription login.** Logins live in each

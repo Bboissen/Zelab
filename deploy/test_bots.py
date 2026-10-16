@@ -292,6 +292,7 @@ class ReconcileTest(unittest.TestCase):
         self.bridge_ready, self.open_issues = True, []
         self.archive_failures = 0
         self.passthrough = [*bots.TASK_ENV, 'CUSTOM_KEY']
+        self.approval_mode = 'off'
         outer = self
 
         class Paperclip:
@@ -328,7 +329,8 @@ class ReconcileTest(unittest.TestCase):
         class Guest:
             def root_python(self, code, *args, stdin=''):
                 if code == bots.PROFILE_SETTINGS:
-                    return json.dumps({'env_passthrough': outer.passthrough})
+                    return json.dumps({'env_passthrough': outer.passthrough,
+                                       'approval_mode_set': outer.approval_mode is not None})
                 if code == bots.BRIDGE_READY:
                     return json.dumps(outer.bridge_ready)
                 outer.writes[(code, args)] = stdin
@@ -338,7 +340,10 @@ class ReconcileTest(unittest.TestCase):
 
             def hermes(self, *args):
                 outer.hermes_calls.append(args)
-                outer.passthrough = json.loads(args[-1])
+                if args[-2] == 'approvals.mode':
+                    outer.approval_mode = args[-1]
+                else:
+                    outer.passthrough = json.loads(args[-1])
                 return 0, ''
 
         self.runner.paperclip, self.runner.guest = Paperclip(), Guest()
@@ -416,6 +421,18 @@ class ReconcileTest(unittest.TestCase):
         self.assertEqual(self.agent['adapterConfig']['timeoutSec'], 123)
         self.assertIn('CUSTOM_KEY', self.passthrough)
         self.assertTrue(set(bots.TASK_ENV).issubset(self.passthrough))
+
+    def test_make_turns_off_chat_approvals_only_where_unset(self):
+        self.approval_mode = None
+        self.runner.refresh()
+        self.runner.refresh()
+        self.assertEqual(self.approval_mode, 'off')
+        self.assertEqual([c for c in self.hermes_calls if 'approvals.mode' in c],
+                         [('scout', 'config', 'set', 'approvals.mode', 'off')])
+        self.approval_mode, self.hermes_calls = 'manual', []
+        self.runner.refresh()
+        self.assertEqual(self.approval_mode, 'manual')
+        self.assertEqual(self.hermes_calls, [])
 
     def test_open_work_prevents_archiving_retired_projects(self):
         self.open_issues = [{'status': 'todo'}]

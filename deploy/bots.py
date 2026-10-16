@@ -45,6 +45,9 @@ RESERVED = {'default', 'root', 'zelab', 'hermes', 'paperclip', 'host'}
 KEY_NAME = 'Zelab task bridge'
 BRIDGE_SKILL = '/opt/zelab-tools/paperclip-task-bridge'
 TASK_ENV = ('PAPERCLIP_API_URL', 'PAPERCLIP_BRIDGE_API_KEY', 'PAPERCLIP_COMPANY_ID', 'PAPERCLIP_AGENT_ID')
+# Hermes' native approval mode for a bot that has none set. The guest account is the boundary
+# (docs/TRUST_MODEL.md); a chat button nobody can judge is not, and Paperclip runs cannot answer it.
+APPROVAL_MODE = 'off'
 # Chat app credentials that `hermes gateway setup` writes to a profile's .env.
 CHAT_TOKENS = {'DISCORD_BOT_TOKEN': 'Discord', 'TELEGRAM_BOT_TOKEN': 'Telegram', 'SLACK_BOT_TOKEN': 'Slack',
                'MATTERMOST_TOKEN': 'Mattermost', 'MATRIX_ACCESS_TOKEN': 'Matrix', 'SIGNAL_ACCOUNT': 'Signal',
@@ -222,7 +225,8 @@ print(path.read_text() if path.is_file() else '', end='')
 PROFILE_SETTINGS = r'''
 import json, pathlib, sys, yaml
 data = yaml.safe_load((pathlib.Path(sys.argv[1]) / 'config.yaml').read_text()) or {}
-print(json.dumps({'env_passthrough': (data.get('terminal') or {}).get('env_passthrough', [])}))
+print(json.dumps({'env_passthrough': (data.get('terminal') or {}).get('env_passthrough', []),
+                  'approval_mode_set': 'mode' in (data.get('approvals') or {})}))
 '''
 
 BRIDGE_READY = r'''
@@ -758,6 +762,9 @@ class Bots:
         code, _ = self.guest.hermes(name, 'config', 'set', 'terminal.env_passthrough', json.dumps(list(TASK_ENV)))
         if code:
             raise Stop('Could not let the task-bridge skill see its credentials.')
+        code, _ = self.guest.hermes(name, 'config', 'set', 'approvals.mode', APPROVAL_MODE)
+        if code:
+            raise Stop('Could not set the bot\'s command approval mode.')
         if not profiles:
             # A gateway started with only the default profile does not serve new ones until restarted;
             # without this, Hermes' chat wizard reports the first bot as having no gateway.
@@ -991,6 +998,11 @@ class Bots:
                 if code:
                     raise Stop(f'{name}: could not reconcile terminal credentials.')
                 self.restart_needed = True
+            # Only an unset mode: a mode the owner picks in Hermes stays theirs.
+            if not current.get('approval_mode_set'):
+                code, _ = self.guest.hermes(name, 'config', 'set', 'approvals.mode', APPROVAL_MODE)
+                if code:
+                    raise Stop(f'{name}: could not set its command approval mode.')
             active = [key for key in self.paperclip.keys(agents[name]['id'])
                       if key.get('name') == KEY_NAME and not key.get('revokedAt')]
             if not active:

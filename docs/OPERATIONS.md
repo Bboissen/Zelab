@@ -68,7 +68,7 @@ Do not mutate the same state manually during maintenance.
 
 | Menu | What runs | Native to |
 | --- | --- | --- |
-| Add a bot | `hermes profile create <name> --description <role>`; a new `API_SERVER_KEY` in the profile; Paperclip's task-bridge skill copied into it; `terminal.env_passthrough` for the bridge variables; Paperclip `/agent-hires` plus approval for a `hermes_gateway` agent at `/p/<name>` | Hermes, Paperclip |
+| Add a bot | `hermes profile create <name> --description <role>`; a new `API_SERVER_KEY` in the profile; Paperclip's task-bridge skill copied into it; `terminal.env_passthrough` for the bridge variables; `approvals.mode: off` when unset; Paperclip `/agent-hires` plus approval for a `hermes_gateway` agent at `/p/<name>` | Hermes, Paperclip |
 | Model sign-in | `hermes -p <name> setup model`: Hermes' provider menu, including subscription logins | Hermes |
 | Chat app | `hermes -p <name> gateway setup`: Hermes' platform menu; the token is typed there. For Discord, make bot then asks whether other bots may hand work over by @mention (`DISCORD_ALLOW_BOTS=mentions`) | Hermes |
 | Persona | The profile's `SOUL.md`, edited in nano or pasted | Hermes file |

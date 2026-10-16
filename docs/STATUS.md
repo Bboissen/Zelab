@@ -7,6 +7,16 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Chat approval prompts: 2026-10-16
+
+All six live bots had no `approvals` setting, so they ran Hermes' default
+`smart` mode. Its guard escalated a read-only Paperclip lookup (a Python
+heredoc) to a Discord "Allow / Deny" card. `make bot` now sets native
+`approvals.mode: off` on new bots and, during `make`, on bots that have no mode
+set; a mode chosen in Hermes is kept. See the accepted risk in the
+[trust model](TRUST_MODEL.md). Production reapply and a Discord turn without a
+prompt: **NOT RUN**.
+
 ## Chat handoff correction: 2026-10-16
 
 A read-only live trace of a simple status question found sub-second queue waits,
