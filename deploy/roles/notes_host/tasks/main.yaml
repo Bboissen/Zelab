@@ -30,14 +30,18 @@
     create_home: false
 
 # The mode's group bits are the ACL mask: 2770 keeps the mask rwx set below.
-- name: Prepare the vault root and its Projects folder without changing existing notes
+- name: Prepare the vault sections without moving existing notes
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     owner: "{{ notes_container_user }}"
     group: "{{ notes_owner_group }}"
     mode: '2770'
-  loop: ["{{ notes_vault_dir }}", "{{ notes_vault_dir }}/Projects"]
+  loop:
+    - "{{ notes_vault_dir }}"
+    - "{{ notes_vault_dir }}/Hermes"
+    - "{{ notes_vault_dir }}/Paperclip"
+    - "{{ notes_vault_dir }}/Paperclip/Projects"
 
 - name: Read the local owner editor identity
   ansible.builtin.command:
@@ -65,14 +69,16 @@
         print(json.dumps({'changed':changed}))
       - "{{ notes_operator_uid.stdout | trim }}"
       - "{{ notes_vault_dir }}"
-      - "{{ notes_vault_dir }}/Projects"
+      - "{{ notes_vault_dir }}/Hermes"
+      - "{{ notes_vault_dir }}/Paperclip"
+      - "{{ notes_vault_dir }}/Paperclip/Projects"
   register: notes_acl
   changed_when: (notes_acl.stdout | from_json).changed
 
 # Created after the ACLs so each folder inherits them; a removed project keeps its notes.
 - name: Create a vault folder for each declared project
   ansible.builtin.file:
-    path: "{{ notes_vault_dir }}/Projects/{{ item }}"
+    path: "{{ notes_vault_dir }}/Paperclip/Projects/{{ item }}"
     state: directory
     owner: "{{ notes_container_user }}"
     group: "{{ notes_owner_group }}"
@@ -82,7 +88,7 @@
 # The team's map of the server (its first ticket fills it): site-wide, not one project's.
 - name: Create the vault folder for the server's map
   ansible.builtin.file:
-    path: "{{ notes_vault_dir }}/Server"
+    path: "{{ notes_vault_dir }}/Paperclip/Server"
     state: directory
     owner: "{{ notes_container_user }}"
     group: "{{ notes_owner_group }}"

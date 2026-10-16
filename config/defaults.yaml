@@ -62,7 +62,7 @@ hermes_install_dir: /opt/hermes/agent
 # Empty leaves provider/model selection to Hermes' native setup UI.
 hermes_initial_model: ''
 
-# Notes vault (one shared vault, Projects/<slug>/ and Server/).
+# Notes vault (shared: Hermes/<bot>/, Paperclip/Projects/<slug>/ and Paperclip/Server/).
 notes_enabled: true
 notes_vault_dir: /var/lib/zelab-vault
 # Root-only git history of the vault, outside it (the guest cannot reach it).

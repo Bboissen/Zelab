@@ -180,7 +180,10 @@ class BotTest(unittest.TestCase):
                 self.assertNotIn('Create the job', text)
                 self.assertNotIn('`p1`', text)
                 self.assertIn('owner needs to give you a task key', text)
-                self.assertIn('no terminal or files', text)
+                self.assertIn('Chat has no terminal', text)
+                self.assertIn('no Paperclip ticket, project or task key is needed', text)
+                self.assertIn('/Hermes/scout/', text)
+                self.assertIn('bundled `obsidian` skill', text)
                 self.assertIn('No commands', text)
 
     def test_chat_has_no_command_tools_and_reaches_paperclip_through_its_mcp_server(self):
@@ -190,7 +193,8 @@ class BotTest(unittest.TestCase):
         for platform in bots.CHAT_PLATFORMS:
             tools = settings[f'platform_toolsets.{platform}']
             self.assertIn('paperclip', tools)
-            for forbidden in ('terminal', 'code_execution', 'file', 'browser', 'cronjob', 'delegation',
+            self.assertIn('file', tools)
+            for forbidden in ('terminal', 'code_execution', 'browser', 'cronjob', 'delegation',
                               'kanban', 'computer_use', 'hermes-discord', 'hermes-api-server'):
                 self.assertNotIn(forbidden, tools)
         self.assertNotIn('platform_toolsets.api_server', settings)
@@ -209,6 +213,17 @@ class BotTest(unittest.TestCase):
                       '--issue <ticket id> --status done', run)
         self.assertIn('-p marvin send --to <Reply to> --file ./reply.txt --json', run)
 
+    def test_direct_notes_use_the_configured_guest_mount_and_keep_legacy_notes(self):
+        site = {**SITE, 'notes_guest_root': '/var/lib/custom-vault'}
+        text = bots.skill(site, 'scout', {}, [], task_key=False)
+        self.assertIn('/var/lib/custom-vault/Hermes/scout/', text)
+        self.assertIn('/var/lib/custom-vault/Paperclip/Projects/<slug>/', text)
+        self.assertNotIn('/var/lib/zelab-notes', text)
+        self.assertIn('Older root `Projects/` and `Server/` notes stay', text)
+        self.assertIn('Read back each saved note', text)
+        self.assertIn('A project-related note alone does not require a ticket', text)
+        self.assertIn('/var/lib/custom-vault/Paperclip/Projects/<slug>/', bots.instructions(site, 'scout'))
+
     def test_mcp_server_is_the_paperclip_release(self):
         from run import load_yaml
         package = json.loads((bots.ROOT / 'deploy/roles/paperclip_mcp/files/package.json').read_text())
@@ -225,6 +240,7 @@ class BotTest(unittest.TestCase):
         for platform in bots.CHAT_PLATFORMS:
             tools = settings[f'platform_toolsets.{platform}']
             self.assertEqual(tools, [tool for tool in bots.CHAT_TOOLSETS if tool != 'paperclip'])
+            self.assertIn('file', tools)
             self.assertNotIn('terminal', tools)
 
     def test_team_prefers_the_connected_shared_claude_connection(self):

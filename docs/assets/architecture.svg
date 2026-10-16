@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 900" role="img" aria-labelledby="title description">
-  <title id="title">Zelab: ask, work and keep the results</title>
-  <desc id="description">Chat reaches Hermes bots in a guest. Each keyed bot uses the official Paperclip MCP server to file and read tickets; host Paperclip starts bot runs through a separate API and sends coding work to host team accounts. Bots and team write the same host notes vault. Root-only history keeps earlier versions. Deliberate private Git sync brings notes to optional desktop Obsidian on the laptop. Blue links are encrypted; amber links use local HTTP; grey links are local tools or files. Desktop Obsidian is not a server service.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 1090" role="img" aria-labelledby="title description">
+  <title id="title">Zelab: direct notes and optional project coordination</title>
+  <desc id="description">Hermes bots use the bundled Obsidian skill to write notes directly, without Paperclip. The guest contains Hermes and the official Paperclip MCP ticket tools. Optional tracked work goes to host Paperclip, which starts bot runs through a separate API or sends work to host team accounts. One shared host vault contains Hermes personal notes and Paperclip project knowledge; both writers can edit either section. Root-only history keeps earlier versions. Deliberate private Git sync brings notes to optional desktop Obsidian. Blue links are encrypted, amber links use local HTTP, grey links are local tools or files. Folders do not isolate permissions.</desc>
   <defs>
     <marker id="blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 8 4 0 8Z" fill="#2563eb"/></marker>
     <marker id="amber" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 8 4 0 8Z" fill="#a16207"/></marker>
@@ -10,7 +10,7 @@
       .heading { font-size: 24px; font-weight: 700; }
       .role { font-size: 19px; fill: #475569; }
       .small { font-size: 16px; fill: #475569; }
-      .tag { font-size: 16px; font-weight: 700; letter-spacing: 1.4px; }
+      .tag { font-size: 16px; font-weight: 700; letter-spacing: 1.2px; }
       .encrypted { fill: none; stroke: #2563eb; stroke-width: 2.5; marker-end: url(#blue); }
       .http { fill: none; stroke: #a16207; stroke-width: 2.5; marker-end: url(#amber); }
       .local { fill: none; stroke: #64748b; stroke-width: 2.5; marker-end: url(#grey); }
@@ -18,86 +18,86 @@
       .node { fill: white; stroke: #cbd5e1; stroke-width: 1.5; }
     </style>
   </defs>
-  <rect width="1160" height="900" rx="18" fill="#f8fafc"/>
+  <rect width="1160" height="1090" rx="18" fill="#f8fafc"/>
+  <rect class="node" x="70" y="30" width="260" height="95" rx="12"/>
+  <text x="90" y="68" class="heading">Your chat</text>
+  <text x="90" y="100" class="role">Ask, research &amp; remember</text>
+  <rect class="node" x="650" y="30" width="220" height="95" rx="12"/>
+  <text x="670" y="68" class="heading">Your browser</text>
+  <text x="670" y="100" class="role">Review &amp; assign work</text>
 
-  <rect class="node" x="70" y="40" width="260" height="95" rx="12"/>
-  <text x="90" y="78" class="heading">Your chat</text>
-  <text x="90" y="110" class="role">Ask for work</text>
-  <rect class="node" x="450" y="40" width="280" height="95" rx="12"/>
-  <text x="470" y="78" class="heading">Your browser</text>
-  <text x="470" y="110" class="role">Review &amp; assign work</text>
-  <text x="850" y="81" class="tag">ASK → WORK → KEEP</text>
-  <text x="850" y="110" class="small">Main work and notes flows</text>
+  <rect x="30" y="180" width="1100" height="650" rx="16" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="50" y="214" class="tag">YOUR SERVER</text>
+  <rect x="50" y="235" width="490" height="330" rx="14" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text x="70" y="266" class="tag">BOT GUEST</text>
+  <rect class="node" x="70" y="290" width="260" height="95" rx="12"/>
+  <text x="90" y="328" class="heading">Hermes bots</text>
+  <text x="90" y="360" class="role">Personal work &amp; notes</text>
+  <rect class="node" x="370" y="290" width="150" height="95" rx="12"/>
+  <text x="385" y="328" class="heading">MCP</text>
+  <text x="385" y="357" class="small">Paperclip tickets</text>
+  <text x="225" y="485" class="role">Native Obsidian skill</text>
+  <text x="225" y="517" class="small">No ticket needed for notes</text>
+  <text x="225" y="549" class="small">Profiles share one account</text>
 
-  <rect x="30" y="190" width="1100" height="475" rx="16" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
-  <text x="50" y="224" class="tag">YOUR SERVER</text>
-  <rect x="50" y="250" width="300" height="350" rx="14" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
-  <text x="70" y="276" class="tag" fill="#1d4ed8">BOT GUEST</text>
+  <rect class="node" x="650" y="290" width="220" height="95" rx="12"/>
+  <text x="670" y="328" class="heading">Paperclip</text>
+  <text x="670" y="360" class="role">Track &amp; delegate work</text>
+  <rect x="920" y="290" width="190" height="95" rx="12" fill="#fff7ed" stroke="#c2410c" stroke-width="1.5"/>
+  <text x="938" y="328" class="heading">Coding team</text>
+  <text x="938" y="360" class="role">Build &amp; maintain</text>
 
-  <rect class="node" x="70" y="300" width="260" height="95" rx="12"/>
-  <text x="90" y="338" class="heading">Hermes bots</text>
-  <text x="90" y="370" class="role">Talk, research &amp; reply</text>
-  <rect class="node" x="70" y="455" width="260" height="80" rx="12"/>
-  <text x="90" y="489" class="heading">Paperclip MCP</text>
-  <text x="90" y="516" class="role">File &amp; read tickets</text>
-  <text x="70" y="578" class="small">Profiles share one account</text>
+  <rect class="node" x="50" y="635" width="810" height="165" rx="14"/>
+  <text x="430" y="666" class="tag" text-anchor="middle">ONE SHARED VAULT · BOTH CAN WRITE</text>
+  <rect x="70" y="690" width="320" height="85" rx="10" fill="#eff6ff" stroke="#93c5fd"/>
+  <text x="90" y="723" class="heading">Hermes / bot</text>
+  <text x="90" y="754" class="role">Ideas, research &amp; personal notes</text>
+  <rect x="430" y="690" width="410" height="85" rx="10" fill="#fff7ed" stroke="#fdba74"/>
+  <text x="450" y="723" class="heading">Paperclip / Projects &amp; Server</text>
+  <text x="450" y="754" class="role">Plans, decisions &amp; project knowledge</text>
+  <rect class="node" x="920" y="690" width="190" height="85" rx="12"/>
+  <text x="938" y="723" class="heading">Note history</text>
+  <text x="938" y="752" class="small">Root only · every 5 min</text>
 
-  <rect x="450" y="210" width="280" height="45" rx="10" fill="#dbeafe"/>
-  <text x="590" y="239" class="small" text-anchor="middle">Private HTTPS + sign-in</text>
-  <rect class="node" x="450" y="300" width="280" height="95" rx="12"/>
-  <text x="470" y="338" class="heading">Paperclip</text>
-  <text x="470" y="370" class="role">Organise tasks &amp; results</text>
-  <rect x="850" y="300" width="260" height="95" rx="12" fill="#fff7ed" stroke="#c2410c" stroke-width="1.5"/>
-  <text x="870" y="338" class="heading">Coding team</text>
-  <text x="870" y="370" class="role">Build &amp; maintain server</text>
+  <rect class="node" x="430" y="925" width="310" height="95" rx="12"/>
+  <text x="450" y="960" class="heading">Desktop Obsidian</text>
+  <text x="450" y="990" class="role">Your laptop · read &amp; edit</text>
+  <rect class="node" x="850" y="925" width="260" height="95" rx="12"/>
+  <text x="870" y="960" class="heading">Private notes repo</text>
+  <text x="870" y="990" class="role">GitHub · carry notes</text>
 
-  <rect class="node" x="450" y="535" width="280" height="95" rx="12"/>
-  <text x="470" y="573" class="heading">Shared notes</text>
-  <text x="470" y="605" class="role">Keep project knowledge</text>
-  <rect class="node" x="850" y="535" width="260" height="95" rx="12"/>
-  <text x="870" y="566" class="heading">Note history</text>
-  <text x="870" y="594" class="role">Recover earlier versions</text>
-  <text x="870" y="617" class="small">Root only · every 5 min</text>
+  <path class="encrypted" d="M200 125V290" marker-start="url(#blue)"/>
+  <text x="214" y="160" class="label" fill="#2563eb">TLS</text>
+  <path class="encrypted" d="M760 125V235"/>
+  <text x="775" y="164" class="label" fill="#2563eb">Tailnet HTTPS</text>
+  <text x="775" y="198" class="small">+ sign-in</text>
+  <path class="http" d="M760 235V290"/>
+  <text x="775" y="269" class="label" fill="#a16207">Local HTTP</text>
 
-  <rect class="node" x="450" y="745" width="280" height="100" rx="12"/>
-  <text x="470" y="779" class="heading">Desktop Obsidian</text>
-  <text x="470" y="807" class="role">Read &amp; edit notes</text>
-  <text x="470" y="831" class="small">Your laptop · optional</text>
-  <rect class="node" x="850" y="745" width="260" height="100" rx="12"/>
-  <text x="870" y="779" class="heading">Private notes repo</text>
-  <text x="870" y="807" class="role">Carry notes to your laptop</text>
-  <text x="870" y="831" class="small">GitHub · separate from source</text>
+  <path class="local" d="M330 337H370"/>
+  <path class="http" d="M520 337H650"/>
+  <text x="585" y="323" class="label" text-anchor="middle" fill="#a16207">Tickets · key</text>
+  <path class="http" d="M760 385V450H310V385"/>
+  <text x="610" y="437" class="label" text-anchor="middle" fill="#a16207">Bot runs · API key</text>
+  <path class="encrypted" d="M870 337H920"/>
+  <text x="895" y="322" class="label" text-anchor="middle" fill="#2563eb">SSH</text>
 
-  <path class="encrypted" d="M200 135V300" marker-start="url(#blue)"/>
-  <text x="214" y="174" class="label" fill="#2563eb">TLS</text>
-  <path class="encrypted" d="M590 135V210"/>
-  <path class="http" d="M590 255V300"/>
-  <text x="604" y="284" class="label" fill="#a16207">Local HTTP</text>
+  <path class="encrypted" d="M150 385V610H230V690" marker-start="url(#blue)"/>
+  <text x="165" y="595" class="label" fill="#2563eb">Direct notes · SFTP</text>
+  <path class="local" d="M1015 385V590H635V690"/>
+  <text x="810" y="577" class="label" text-anchor="middle">Direct notes · local files</text>
+  <path class="local" d="M860 732H920" stroke-dasharray="5 5"/>
+  <text x="890" y="681" class="small" text-anchor="middle">Snapshots</text>
 
-  <path class="http" d="M450 342H330"/>
-  <text x="390" y="328" class="label" text-anchor="middle" fill="#a16207">Run · key</text>
-  <path class="local" d="M200 395V455"/>
-  <path class="http" d="M330 495H590V395"/>
-  <text x="458" y="481" class="label" text-anchor="middle" fill="#a16207">Tickets · key</text>
-  <path class="encrypted" d="M730 347H850"/>
-  <text x="790" y="333" class="label" text-anchor="middle" fill="#2563eb">SSH</text>
+  <path class="encrypted" d="M635 800V865H980V925" marker-start="url(#blue)"/>
+  <text x="795" y="853" class="label" text-anchor="middle" fill="#2563eb">make notes · SSH</text>
+  <path class="encrypted" d="M850 975H740" marker-start="url(#blue)"/>
+  <text x="795" y="955" class="label" text-anchor="middle" fill="#2563eb">pull / push</text>
 
-  <path class="encrypted" d="M350 582H450" marker-start="url(#blue)"/>
-  <text x="400" y="568" class="label" text-anchor="middle" fill="#2563eb">SFTP</text>
-  <path class="local" d="M980 395V500H670V535"/>
-  <text x="835" y="487" class="label" text-anchor="middle">Write notes</text>
-  <path class="local" d="M730 582H850" stroke-dasharray="5 5"/>
-  <text x="790" y="568" class="label" text-anchor="middle">Snapshots</text>
-
-  <path class="encrypted" d="M590 630V704H980V745" marker-start="url(#blue)"/>
-  <text x="785" y="691" class="label" text-anchor="middle" fill="#2563eb">make notes · SSH</text>
-  <path class="encrypted" d="M850 798H730" marker-start="url(#blue)"/>
-  <text x="790" y="780" class="label" text-anchor="middle" fill="#2563eb">pull / push</text>
-
-  <path d="M50 877H82" stroke="#2563eb" stroke-width="3"/>
-  <text x="92" y="883" class="small">Encrypted</text>
-  <path d="M290 877H322" stroke="#a16207" stroke-width="3"/>
-  <text x="332" y="883" class="small">Local HTTP (no TLS)</text>
-  <path d="M620 877H652" stroke="#64748b" stroke-width="3"/>
-  <text x="662" y="883" class="small">Local tools / files</text>
+  <path d="M50 1060H82" stroke="#2563eb" stroke-width="3"/>
+  <text x="92" y="1066" class="small">Encrypted</text>
+  <path d="M290 1060H322" stroke="#a16207" stroke-width="3"/>
+  <text x="332" y="1066" class="small">Local HTTP (no TLS)</text>
+  <path d="M620 1060H652" stroke="#64748b" stroke-width="3"/>
+  <text x="662" y="1066" class="small">Local tools / files</text>
 </svg>

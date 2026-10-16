@@ -14,42 +14,51 @@ Nothing syncs on its own. The root-only vault history on the server
 (`/var/lib/zelab-vault-history`, a snapshot every five minutes) is separate: it is
 still your undo for anything an agent does, synced or not.
 
+## Two sections, two direct writers
+
+- `Hermes/<bot>/`: personal notes, research, ideas and preparation before a project exists.
+- `Paperclip/Projects/<slug>/`: project plans, findings and decisions, written directly by
+  Hermes bots or Paperclip's workers. `Paperclip/Server/` holds the team's server map.
+
+Hermes uses its bundled `obsidian` skill and native file tools. It needs no Paperclip
+key or project to save a note. Paperclip coordinates work when tracking, delegation or
+commands are needed; a quick project note can still be written directly from chat.
+Hermes' own memory stays in its profile; notes are readable knowledge, not an automatic
+copy of every memory or external database.
+
+The folders organize one shared vault; they are not permission boundaries. Bot folders
+appear on their first write. On upgrade, existing root `Projects/` and `Server/` notes
+stay in place. Bots are told to search them and update existing notes at their current
+paths. No notes are moved, copied or deleted by this layout change.
+
 ## Check that a bot really wrote a note
 
-Bots write Markdown files into the vault; they do not type into an Obsidian
-window. A chat reply saying "saved" is not proof. To check the complete path:
+Bots edit Markdown files; a reply saying "saved" is not proof. To check the direct path:
 
-1. Pick an existing project the bot can access. Choose a new filename and a
-   unique marker; replace `your-project` and `unique` in this example. In that
-   project's chat channel, send:
+1. Choose a new filename and unique marker; replace `your-bot` and `unique` below.
+   Send your bot this message in its usual chat:
 
-   > Create a new note `Projects/your-project/notes-check-unique.md` containing
-   > the exact text `NOTES-CHECK-unique`. Do not overwrite an existing note.
-   > Read it back, then reply with its path and the Paperclip ticket link.
+   > Use your Obsidian skill to create `Hermes/your-bot/notes-check-unique.md`
+   > containing the exact text `NOTES-CHECK-unique`. Do not overwrite an existing
+   > note. Read it back and reply with its vault-relative path. Do this directly,
+   > without creating a Paperclip ticket.
 
-2. Follow the ticket in Paperclip. Chat files the request through MCP; a
-   Paperclip-started bot run has the tools to write the note. Check that run
-   completed, then inspect the actual file on the server (default vault path):
+2. On the server, check the actual file (use your configured vault root if different):
 
    ```sh
-   sudo cat '/var/lib/zelab-vault/Projects/your-project/notes-check-unique.md'
+   sudo cat /var/lib/zelab-vault/Hermes/your-bot/notes-check-unique.md
    ```
 
-   The filename and marker must match your request. In the guest the same
-   file is under `/var/lib/zelab-notes/Projects/your-project/`. Finding it on
-   the server proves the shared-vault write, rather than a file saved only
-   inside the guest or a claim in chat.
+   Confirm the exact marker, a successful read-back and that no ticket was created.
+   Repeat with a new filename under `Paperclip/Projects/<slug>/` to check a direct
+   project note. A bot without a task key can perform the personal-note check too.
 
-3. If you use desktop Obsidian, run `make notes` from the server's Zelab
-   checkout, then `git pull --no-rebase` inside your laptop's notes clone.
-   Open the note in Obsidian and check the marker. The server write and
-   laptop sync are separate steps; neither happens merely because a ticket
-   says "done". Conflicts need the [conflict routine](#conflicts).
+3. To check desktop visibility, run `make notes` on the server, then `git pull --no-rebase`
+   in the laptop clone. Open the same note in Obsidian and check the marker.
 
-If the ticket fails, inspect its run error first. If the server file is there
-but the laptop copy is missing, check the Git sync rather than asking the bot
-to rewrite the note. Root-only snapshots run every five minutes, so a fresh
-note may not yet appear in history.
+For the separate tracked path, explicitly ask for a Paperclip task and follow its ticket
+through completion. Direct note-writing does not prove ticket dispatch or laptop sync.
+Root-only snapshots run every five minutes, so a fresh note may not yet appear in history.
 
 ## Which Obsidian app runs where?
 

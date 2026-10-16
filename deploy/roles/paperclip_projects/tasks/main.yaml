@@ -42,7 +42,7 @@
         url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ projects_company.id }}/projects"
         method: POST
         body_format: json
-        body: {name: "{{ item.value.name }}", status: in_progress, description: "Vault folder: Projects/{{ item.key }}/"}
+        body: {name: "{{ item.value.name }}", status: in_progress, description: "Vault folder: Paperclip/Projects/{{ item.key }}/"}
         headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}", Origin: "http://127.0.0.1:{{ paperclip_port }}"}
         status_code: 201
       loop: "{{ zelab_projects | dict2items }}"
