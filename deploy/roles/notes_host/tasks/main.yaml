@@ -41,15 +41,13 @@
 
 - name: Read the local owner editor identity
   ansible.builtin.command:
-    argv: [rtk, proxy, id, -u, "{{ operator_user }}"]
+    argv: [id, -u, "{{ operator_user }}"]
   register: notes_operator_uid
   changed_when: false
 
 - name: Maintain inherited group access and local owner editor ACLs
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - python3
       - -c
       - |
@@ -60,9 +58,9 @@
                   'default:mask::rwx', 'default:other::---'}
         changed = False
         for path in paths:
-            current = subprocess.check_output(['rtk','proxy','getfacl','-cpn',path],text=True)
+            current = subprocess.check_output(['getfacl','-cpn',path],text=True)
             if not wanted.issubset(set(current.splitlines())):
-                subprocess.run(['rtk','proxy','setfacl','-m',','.join(sorted(wanted)),path],check=True)
+                subprocess.run(['setfacl','-m',','.join(sorted(wanted)),path],check=True)
                 changed = True
         print(json.dumps({'changed':changed}))
       - "{{ notes_operator_uid.stdout | trim }}"
@@ -94,7 +92,7 @@
 # runs and revokes it when a tier goes; on a fresh site the vault exists only now.
 - name: Let the team tier accounts read and write the whole vault
   ansible.builtin.command:
-    argv: "{{ ['rtk', 'proxy', 'python3', '-c', notes_team_acl_script, notes_vault_dir]
+    argv: "{{ ['python3', '-c', notes_team_acl_script, notes_vault_dir]
               + (zelab_tiers | default({}) | dict2items | map(attribute='value.account') | list) }}"
   vars:
     notes_team_acl_script: |
@@ -106,9 +104,9 @@
               pwd.getpwnam(user)
           except KeyError:
               continue
-          current = subprocess.check_output(['rtk', 'proxy', 'getfacl', '-cp', vault], text=True).splitlines()
+          current = subprocess.check_output(['getfacl', '-cp', vault], text=True).splitlines()
           if not {f'user:{user}:rwx', f'default:user:{user}:rwx'} <= set(current):
-              subprocess.run(['rtk', 'proxy', 'setfacl', '-R', '-m', f'u:{user}:rwx,d:u:{user}:rwx', vault], check=True)
+              subprocess.run(['setfacl', '-R', '-m', f'u:{user}:rwx,d:u:{user}:rwx', vault], check=True)
               changed = True
       print(json.dumps({'changed': changed}))
   register: notes_team_acl
@@ -130,7 +128,7 @@
 
 - name: Create export mount destinations without changing a mounted vault
   ansible.builtin.command:
-    argv: [rtk, proxy, install, -d, -m, '0755', "{{ notes_sftp_root }}/{{ item }}/vault"]
+    argv: [install, -d, -m, '0755', "{{ notes_sftp_root }}/{{ item }}/vault"]
     creates: "{{ notes_sftp_root }}/{{ item }}/vault"
   loop: ["{{ notes_owner_user }}"]
 
@@ -143,7 +141,7 @@
 
 - name: Generate the persistent native mount key outside Git
   ansible.builtin.command:
-    argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -C, "zelab-notes-{{ item }}", -f, "{{ private_dir }}/notes-{{ item }}.key"]
+    argv: [ssh-keygen, -q, -t, ed25519, -N, '', -C, "zelab-notes-{{ item }}", -f, "{{ private_dir }}/notes-{{ item }}.key"]
     creates: "{{ private_dir }}/notes-{{ item }}.key"
   loop: [owner]
   become: false
@@ -166,7 +164,7 @@
 
 - name: Derive canonical native bind mount unit names
   ansible.builtin.command:
-    argv: [rtk, proxy, systemd-escape, --path, --suffix=mount, "{{ notes_sftp_root }}/{{ item.user }}/vault"]
+    argv: [systemd-escape, --path, --suffix=mount, "{{ notes_sftp_root }}/{{ item.user }}/vault"]
   loop: "{{ notes_exports }}"
   register: notes_mount_names
   changed_when: false
@@ -230,7 +228,7 @@
 
 - name: Initialize the vault history once
   ansible.builtin.command:
-    argv: [rtk, proxy, git, init, --quiet, --bare, "{{ vault_history_dir }}"]
+    argv: [git, init, --quiet, --bare, "{{ vault_history_dir }}"]
     creates: "{{ vault_history_dir }}/HEAD"
 
 - name: Configure the history repository

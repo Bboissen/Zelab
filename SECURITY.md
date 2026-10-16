@@ -3,7 +3,7 @@
 Zelab provisions an owner-authorized Operations worker with real host sudo.
 Run it on a host you administer. Administration UIs use authenticated
 localhost or Tailscale access; never expose them through Funnel or a public
-proxy. The complete threat model, trust boundaries and known limitations are
+relay. The complete threat model, trust boundaries and known limitations are
 in [docs/TRUST_MODEL.md](docs/TRUST_MODEL.md).
 
 ## Supported scope

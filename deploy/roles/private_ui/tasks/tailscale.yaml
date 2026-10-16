@@ -3,7 +3,7 @@
 
 - name: Activate only the declared native private routes
   ansible.builtin.command:
-    argv: [rtk, proxy, tailscale, serve, --bg, "--https={{ item.port }}", "{{ item.backend }}"]
+    argv: [tailscale, serve, --bg, "--https={{ item.port }}", "{{ item.backend }}"]
   vars:
     endpoint: "{{ ui_tailscale_hostname }}:{{ item.port }}"
   when: ui_tail_config.get('Web', {}).get(endpoint, {}).get('Handlers', {}).get('/', {}).get('Proxy', '') != item.backend

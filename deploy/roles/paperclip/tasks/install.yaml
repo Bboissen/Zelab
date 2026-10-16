@@ -64,8 +64,6 @@
 - name: Start the locked published native runtime installation in the background
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/npm"
       - ci
       - --omit=dev

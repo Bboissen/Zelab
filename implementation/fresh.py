@@ -164,8 +164,8 @@ def count_files(path, limit=100000):
 
 def owned_tail_ports(config, hostname, backends):
     """Tailnet HTTPS ports whose root handler proxies to this site's backends."""
-    return sorted(port for host, port, proxy in shell.serve_routes(config or {})
-                  if host == hostname and proxy in backends)
+    return sorted(port for host, port, backend in shell.serve_routes(config or {})
+                  if host == hostname and backend in backends)
 
 
 def role_defaults(name):
@@ -416,7 +416,7 @@ def discover_obsidian(plan, obsidian_config):
 
 
 def discover_routes(plan, site):
-    """Private HTTPS routes: only ports proxying to this site's backends."""
+    """Private HTTPS routes: only ports forwarding to this site's backends."""
     if site.get('ui_tailscale_enabled'):
         status = command('tailscale', 'serve', 'status', '--json', check=False)
         config = shell.load_json(status.stdout) if status.returncode == 0 else {}
@@ -467,7 +467,7 @@ def print_plan(plan, site):
     if not plan.empty():
         heading('Back up before deleting', 'yellow')
         print('  Keep a verified encrypted copy of the installed site:')
-        print('    ' + paint('rtk proxy make backup', 'yellow', 'bold'))
+        print('    ' + paint('make backup', 'yellow', 'bold'))
         print(f'  Backup directory: {site["backup_dir"]}')
         print('  To cancel this cleanup, press Ctrl-C before confirming.')
         heading('Resources to stop and remove', 'red')
@@ -517,7 +517,7 @@ def print_plan(plan, site):
     for item in ('Repository source files', 'Host connection settings and installation locations',
                  '.env external path selectors', 'Your personal harness logins',
                  f'Backups: {site["backup_dir"]}', f'Recovery key: {site["private_dir"]}/backup-passphrase',
-                 'Private logs, the operator sudo grant and root RTK',
+                 'Private logs and the operator sudo grant',
                  'SSH and Tailscale enrollment; other Serve routes',
                  'Discord applications in your Discord account',
                  'All unrelated services and containers'):
@@ -526,9 +526,9 @@ def print_plan(plan, site):
     print('  Enter bot tokens through the native Hermes UI; the deleted guest held their working copies.')
     heading('Cleanup commands')
     print('  Remove this installation:')
-    print('    ' + paint(f'rtk proxy make fclean CONFIRM={plan.site_id}', 'bold'))
+    print('    ' + paint(f'make fclean CONFIRM={plan.site_id}', 'bold'))
     print('  Reset and reinstall:')
-    print('    ' + paint(f'rtk proxy make re CONFIRM={plan.site_id}', 'bold'))
+    print('    ' + paint(f'make re CONFIRM={plan.site_id}', 'bold'))
 
 
 def unrelated_snapshot(plan, site):
@@ -705,4 +705,4 @@ if __name__ == '__main__':
     try:
         raise SystemExit(main())
     except (ValueError, RuntimeError) as error:
-        raise SystemExit(f'Full clean stopped: {error}\nNext: fix the cause, then rerun rtk proxy make fclean') from None
+        raise SystemExit(f'Full clean stopped: {error}\nNext: fix the cause, then rerun make fclean') from None

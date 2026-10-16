@@ -75,20 +75,18 @@
 - name: Remove superseded Obsidian images
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - python3
       - -c
       - |
         import json, subprocess, sys
         reference, pinned = sys.argv[1].split('@')
         repository = reference.rsplit(':', 1)[0]
-        listing = subprocess.run(['rtk', 'proxy', 'docker', 'image', 'ls', '--all', '--digests', '--no-trunc',
+        listing = subprocess.run(['docker', 'image', 'ls', '--all', '--digests', '--no-trunc',
                                   '--format', '{{ '{{json .}}' }}', repository],
                                  capture_output=True, text=True, check=True).stdout
         for image in map(json.loads, listing.splitlines()):
             if image['Digest'] != pinned and subprocess.run(
-                    ['rtk', 'proxy', 'docker', 'image', 'rm', image['ID']],
+                    ['docker', 'image', 'rm', image['ID']],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
                 print('removed', image['ID'][:19])
       - "{{ obsidian_image }}"

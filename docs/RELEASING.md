@@ -7,9 +7,9 @@ multi-audience use or complete disaster recovery.
 ## Checks before a release
 
 ```bash
-rtk proxy python3 tools/check.py
-rtk proxy .venv/bin/python tools/check_repository.py
-rtk proxy gitleaks detect --no-git --source . --redact
+python3 tools/check.py
+.venv/bin/python tools/check_repository.py
+gitleaks detect --no-git --source . --redact
 ```
 
 `tools/check.py` runs the unit suites, parses every playbook against the public
@@ -35,32 +35,31 @@ stay out of the published tree by publishing a snapshot instead of the history.
 If you fork this repository, keep `config/site.yaml`, `.env`, password files,
 backups and VM images out of Git; `.gitignore` already covers them.
 
-## Publish a snapshot
+## Publish changes and source archives
 
-The public `main` is a single-commit orphan branch with no ancestor in the
-private history, so the private branch is never merged into it or proposed as
-a pull request. Commit the reviewed working tree on the private branch first,
-then create a fresh snapshot from it and push only that branch:
+The first public commit was an orphan snapshot: the private development
+history is not an ancestor of public `main`. Later public changes use topic
+branches and pull requests, following [AGENTS.md](../AGENTS.md). Do not replace
+public history, force-push `main`, or merge private development branches into it.
+
+Before publishing, scan both the current source and the branch history:
 
 ```bash
-rtk proxy python3 tools/check.py
-rtk proxy git checkout --orphan snapshot
-rtk proxy git commit -m "Zelab: private Discord agents on a home server"
-rtk proxy git branch -M main                          # replaces the previous local snapshot
-rtk proxy gitleaks detect --source . --redact --log-opts=main
-rtk proxy git push -u origin main                     # add --force-with-lease to replace a published snapshot
+python3 tools/check.py
+gitleaks detect --source . --redact --log-opts=HEAD
 ```
 
-`.gitleaks.toml` keeps the default rules and ignores local caches and the
-synthetic fixture IDs, so a clean scan reports no leaks. Replacing a published
-snapshot rewrites public history and breaks open forks and pull requests; after
-the first publication prefer developing on branches of the public `main`.
+Secret scanning does not find every personal identifier. Review the publishable
+files and deleted historical content for personal names, home paths, real chat
+IDs, private hostnames and site addresses. Commit attribution and the GitHub
+owner remain public metadata; publishing a snapshot does not hide them.
 
-Never push the private development branches or their checkpoint refs
-(`refs/codex/*`, `refs/t3/*`); use plain `git push -u origin main`, never
-`--all` or `--mirror`. To
-distribute a tarball instead, run
-`rtk proxy .venv/bin/python tools/check_repository.py --archive /absolute/path/zelab-source.tar.gz`;
+Never push private development branches or checkpoint refs (`refs/codex/*`,
+`refs/t3/*`), or use `git push --all` or `--mirror`. Push only the reviewed topic
+branch and merge it through the protected pull request workflow.
+
+To distribute a tarball, run
+`.venv/bin/python tools/check_repository.py --archive /absolute/path/zelab-source.tar.gz`;
 it stages the publishable files, re-checks them, runs Gitleaks on the staged
 tree and prints the archive's SHA-256.
 

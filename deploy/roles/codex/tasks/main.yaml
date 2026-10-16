@@ -55,7 +55,7 @@
 
 - name: Verify actual native CLI version
   ansible.builtin.command:
-    argv: [rtk, proxy, /usr/local/bin/zelab-codex, --version]
+    argv: [/usr/local/bin/zelab-codex, --version]
   register: codex_installed
   changed_when: false
   failed_when: "codex_version not in codex_installed.stdout"

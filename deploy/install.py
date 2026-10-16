@@ -213,7 +213,7 @@ class Installer:
         if terminal_output and colored():
             child_env.pop("NO_COLOR", None)
             child_env["CLICOLOR_FORCE"] = "1"
-        process = subprocess.Popen(shell.rtk(*argv), cwd=ROOT, stdout=subprocess.PIPE,
+        process = subprocess.Popen(shell.command(*argv), cwd=ROOT, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True, bufsize=1,
                                    env=child_env)
         try:
@@ -276,7 +276,7 @@ class Installer:
                                            "import os,sys; sys.exit(os.geteuid() != 0)"])
         if not granted:
             self.screen.say("Zelab needs your sudo password once, so the rest can run unattended.")
-            if subprocess.run(shell.rtk("sudo", "-p", "    sudo password for %u: ", "-v")).returncode:
+            if subprocess.run(shell.command("sudo", "-p", "    sudo password for %u: ", "-v")).returncode:
                 self.screen.start("Administrator")
                 self.fail("sudo was not authorized")
         self.screen.start("Administrator")
@@ -313,7 +313,7 @@ class Installer:
         code = ("import sys,json; sys.path.insert(0, 'deploy'); from pathlib import Path; from run import read_inputs; "
                 "site=read_inputs(Path(sys.argv[1]), Path(sys.argv[2])); "
                 "print(json.dumps({key:site[key] for key in ('private_dir','obsidian_enabled')}))")
-        result = subprocess.run(["rtk", "proxy", str(VENV_PYTHON), "-c", code, str(self.site_config),
+        result = subprocess.run([str(VENV_PYTHON), "-c", code, str(self.site_config),
                                  str(self.env_file)], cwd=ROOT, capture_output=True, text=True)
         settings = json.loads(result.stdout) if result.returncode == 0 else {}
         if not settings.get("obsidian_enabled", False):
@@ -329,21 +329,21 @@ class Installer:
         warnings = [line.strip() for line in tail if line.startswith('  WARN:')]
         self.screen.finish('PASS', 'skills, scoped keys, adapters and conversation freshness', warnings)
         # Hermes' wizards need the terminal: capture() would hide them.
-        command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/bots.py', 'installer', *self.inputs(),
+        command = [str(VENV_PYTHON), 'deploy/bots.py', 'installer', *self.inputs(),
                    '--runtime-dir', self.password_dir]
         if subprocess.run(command, cwd=ROOT).returncode:
             self.screen.start('Hermes bots')
-            self.fail('bot setup stopped; finish it with: rtk proxy make bot')
+            self.fail('bot setup stopped; finish it with: make bot')
 
     def notes(self):
         # Offered once, in the terminal; a failure here never fails the install.
-        command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/notes.py', 'offer', *self.inputs()]
+        command = [str(VENV_PYTHON), 'deploy/notes.py', 'offer', *self.inputs()]
         if subprocess.run(command, cwd=ROOT).returncode:
-            print('  Desktop notes are not set up yet; finish with: rtk proxy make notes')
+            print('  Desktop notes are not set up yet; finish with: make notes')
 
     def ui_passwords(self, action):
         # Inherit the terminal; neither input nor credential values enter capture/logs.
-        command = ['rtk', 'proxy', str(VENV_PYTHON), 'deploy/passwords.py', action,
+        command = [str(VENV_PYTHON), 'deploy/passwords.py', action,
                    *self.inputs(), '--runtime-dir', self.password_dir]
         if subprocess.run(command, cwd=ROOT).returncode:
             self.screen.start('UI passwords')
@@ -453,7 +453,7 @@ class Installer:
         waiting = sorted(name for name in self.applications if results.get(name) not in ("HTTP 200 ready", "HTTP 401 ready"))
         if code or waiting:
             self.fail("not ready", ["Cause: " + (", ".join(waiting) + " not answering" if waiting else "status check failed"),
-                                    "Check the private log, fix the cause, then rerun: rtk proxy make"])
+                                    "Check the private log, fix the cause, then rerun: make"])
         self.screen.finish("PASS", ", ".join(sorted(self.applications)) + " answer")
 
     def summary(self):
@@ -537,7 +537,7 @@ class Installer:
         print()
         if self.log.path:
             print(f"  Log:  {self.log.path}")
-        print(f"  Next: fix the cause above, then rerun: {paint('rtk proxy make', 'bold')}")
+        print(f"  Next: fix the cause above, then rerun: {paint('make', 'bold')}")
         python = VENV_PYTHON if (ROOT / ".venv/.controller-ready").exists() else "python3"
         try:
             code, lines = self.capture([str(python), "deploy/doctor.py", *self.inputs(), "--open", "--quiet",

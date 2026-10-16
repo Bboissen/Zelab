@@ -1,15 +1,15 @@
 # Zelab setup
 
-Run `rtk proxy make` on the server, then rerun it after each step below; it
+Run `make` on the server, then rerun it after each step below; it
 resumes where it stopped and refreshes this guide. From a laptop:
-`rtk proxy make REMOTE_HOST=user@server REMOTE_DIR=/absolute/path/to/Zelab`.
+`make REMOTE_HOST=user@server REMOTE_DIR=/absolute/path/to/Zelab`.
 
 ### Server
 
-x86-64 Debian/Ubuntu with KVM, Docker Compose, SSH, Python 3.12+, Make and [RTK](https://github.com/rtk-ai/rtk).
+x86-64 Debian/Ubuntu with KVM, Docker Compose, SSH, Python 3.12+ and Make.
 
 - 28 GiB free disk and 6 GiB available RAM (the guest uses 2 vCPU, 4 GiB, 20 GiB).
-- Laptop (optional): Python 3.9+, Make, RTK and SSH.
+- Laptop (optional): Python 3.9+, Make and SSH.
 - Fresh installs briefly use up to 70% of spare CPU/RAM; set
   `vm_install_resource_fraction: 0` in `config/site.yaml` to disable.
 - Projects are optional; the example ships none. To add your own, copy
@@ -50,10 +50,10 @@ At the end of a fresh install, make asks how many bots to set up and opens Herme
     and delivers, and when it asks you first. The one-line role is only a label.
   - **Task key** (optional): pick the Paperclip projects this bot may file tickets
     in. Until a project and a task key exist, it can chat but cannot file tickets.
-- Add, change or remove bots later with `rtk proxy make bot`. Removing one
+- Add, change or remove bots later with `make bot`. Removing one
   terminates its Paperclip agent (its keys are revoked) and archives its profile
   without logins or tokens before deleting it.
-- Every step can be skipped and run again from `rtk proxy make bot`.
+- Every step can be skipped and run again from `make bot`.
 - A skipped task key stays in the guide as a pending step; it does not fail make.
 - Plain `make` reconciles existing bots even without a terminal: it refreshes
   managed skills, repairs routing and task credentials, and retires stale chat
@@ -64,7 +64,7 @@ At the end of a fresh install, make asks how many bots to set up and opens Herme
 ### Desktop notes
 
 Read and edit the vault in desktop Obsidian on your laptop. Plain make offers this
-once after the bots; `rtk proxy make notes` sets it up any time.
+once after the bots; `make notes` sets it up any time.
 
 - Pick **Create a new private repository** (with the server's GitHub CLI login) or
   **Use an existing private repository** (its notes join the vault).
@@ -82,7 +82,7 @@ Claude Code (the default, Opus 5.5) or Codex (gpt-5.6-sol), chosen per member
 in that file before the first make, with its own persona in `config/team/`.
 Both CLIs are installed.
 
-- Sign each harness your team uses in once: option 4 in `rtk proxy make bot`,
+- Sign each harness your team uses in once: option 4 in `make bot`,
   then `claude` (Anthropic's sign-in page, Claude subscription) or `codex`
   (OpenAI's device code, ChatGPT subscription); type the other one next, Enter
   when done. Paperclip also asks on the team's first task.
@@ -126,8 +126,8 @@ In a project's channel, ask a bot to research something; expect a Paperclip tick
 
 ## Commands
 
-- `rtk proxy make`: install or resume; keeps existing state.
-- `rtk proxy make bot`: add, set up or remove Hermes bots (terminal only).
+- `make`: install or resume; keeps existing state.
+- `make bot`: add, set up or remove Hermes bots (terminal only).
 - `make clean`: clear local choices and generated files.
 - `make fclean`: preview, confirm and reset this site.
 - `make re`: reset and reinstall (**deletes Zelab data**).

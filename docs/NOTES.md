@@ -7,7 +7,7 @@ notes in desktop Obsidian on your laptop.
 Notes move between the two only when you sync them with Git, through a private GitHub
 repository:
 
-- on the server: `rtk proxy make notes`;
+- on the server: `make notes`;
 - on the laptop: `git pull` and `git push`.
 
 Nothing syncs on its own. The root-only vault history on the server
@@ -30,7 +30,7 @@ still your undo for anything an agent does, synced or not.
 
 ## Set up once
 
-**On the server:** plain `make` offers this once, after the bots. `rtk proxy make notes`
+**On the server:** plain `make` offers this once, after the bots. `make notes`
 runs the same steps any time sync is not set up yet.
 
 1. Choose a repository:
@@ -70,7 +70,7 @@ the next `make`. The vault, the share, the history and the browser's saved setti
 
 Always in this order, so the server saves the agents' work before taking yours:
 
-1. **Server:** `rtk proxy make notes`. This commits what agents changed since the last
+1. **Server:** `make notes`. This commits what agents changed since the last
    sync, takes anything you pushed, and pushes the result.
 2. **Laptop:** in `~/Notes/zelab`, run `git pull --no-rebase`.
 3. Work in Obsidian.
@@ -81,7 +81,7 @@ Always in this order, so the server saves the agents' work before taking yours:
        git push
 
    If `git push` is refused, run `git pull --no-rebase` and push again.
-5. **Server:** `rtk proxy make notes`. Your edits land in the vault, where the agents see
+5. **Server:** `make notes`. Your edits land in the vault, where the agents see
    them.
 
 A `git pull` alone on the laptop never sees the agents' latest edits. They are plain
@@ -113,7 +113,7 @@ The merge always happens on the laptop, where you see both versions:
     git commit --no-edit
     git push
 
-Then run `rtk proxy make notes` on the server. It takes the merged notes and deletes
+Then run `make notes` on the server. It takes the merged notes and deletes
 `server-pending`. If a new conflict appears before you merged the last one,
 `make notes` asks you to merge the waiting one first.
 

@@ -77,9 +77,8 @@ def authenticate(archive, key, plaintext, limit):
     if limit <= 0:
         raise ValueError('Insufficient free storage for authentication and host reserve')
 
-    # Apply limits to GPG itself. Limiting the RTK wrapper also limits writes to
-    # its existing accounting database and can fail before authentication starts.
-    result = subprocess.run(['rtk', 'proxy', 'prlimit', f'--fsize={limit}:{limit}', '--core=0:0',
+    # Bound the decrypted file before GPG processes untrusted archive data.
+    result = subprocess.run(['prlimit', f'--fsize={limit}:{limit}', '--core=0:0',
                              '--', 'gpg', '--batch', '--pinentry-mode', 'loopback',
                              '--no-symkey-cache', '--passphrase-file', str(key), '--output',
                              str(plaintext), '--decrypt', str(archive)],

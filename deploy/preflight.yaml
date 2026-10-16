@@ -7,14 +7,12 @@
   tasks:
     - name: Report the recommended OS baseline and require the pinned architecture
       ansible.builtin.command:
-        argv: [rtk, proxy, python3, "{{ playbook_dir }}/doctor.py", --platform-only]
+        argv: [python3, "{{ playbook_dir }}/doctor.py", --platform-only]
       changed_when: false
 
     - name: Require administrator access, KVM, Docker and the host SSH server
       ansible.builtin.command:
         argv:
-          - rtk
-          - proxy
           - python3
           - -c
           - |
@@ -26,12 +24,12 @@
                 problems.append('KVM (/dev/kvm): enable virtualization and load the kvm module')
             if pwd.getpwnam(sys.argv[1]).pw_uid == 0:
                 problems.append('a non-root operator_user')
-            for command, label in [('docker', 'Docker Engine'), ('sshd', 'openssh-server'), ('rtk', 'RTK')]:
+            for command, label in [('docker', 'Docker Engine'), ('sshd', 'openssh-server')]:
                 if not shutil.which(command, path=os.environ.get('PATH', '') + ':/usr/sbin'):
                     problems.append(label)
             for argv, label in [(['docker', 'info'], 'a running Docker daemon'),
                                 (['docker', 'compose', 'version'], 'the Docker Compose v2 plugin')]:
-                if 'Docker Engine' not in problems and subprocess.run(['rtk', 'proxy', *argv], stdout=subprocess.DEVNULL,
+                if 'Docker Engine' not in problems and subprocess.run([*argv], stdout=subprocess.DEVNULL,
                                                                       stderr=subprocess.DEVNULL).returncode:
                     problems.append(label)
             if problems:
@@ -42,8 +40,6 @@
     - name: Require free component ports unless this site's own service holds them
       ansible.builtin.command:
         argv:
-          - rtk
-          - proxy
           - python3
           - -c
           - |
@@ -58,11 +54,11 @@
                     except OSError:
                         pass
                 if owner.startswith('docker:'):
-                    found = subprocess.run(['rtk', 'proxy', 'docker', 'container', 'inspect', owner[7:]],
+                    found = subprocess.run(['docker', 'container', 'inspect', owner[7:]],
                                            capture_output=True, text=True)
                     ours = found.returncode == 0 and json.loads(found.stdout)[0]['State']['Running']
                 else:
-                    ours = subprocess.run(['rtk', 'proxy', 'systemctl', 'is-active', '--quiet', owner]).returncode == 0
+                    ours = subprocess.run(['systemctl', 'is-active', '--quiet', owner]).returncode == 0
                 if not ours:
                     busy.append(f'{name} {port}')
             if busy:

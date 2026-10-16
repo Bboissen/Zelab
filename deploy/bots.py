@@ -112,7 +112,7 @@ class Guest:
 
     def ssh(self, remote, tty=False):
         site = self.site
-        return ['rtk', 'proxy', 'ssh', *(['-t'] if tty else []), '-F', '/dev/null', '-i', site['deploy_key'],
+        return ['ssh', *(['-t'] if tty else []), '-F', '/dev/null', '-i', site['deploy_key'],
                 '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10',
                 '-o', 'UserKnownHostsFile=' + site['guest_known_hosts'], '-p', str(site['guest_ssh_port']),
                 site['guest_user'] + '@127.0.0.1', remote]
@@ -365,7 +365,7 @@ class Paperclip:
             self.ids = json.loads(ids.read_text())
             self.company = self.ids['company_id']
         except (OSError, ValueError, KeyError):
-            raise Stop('Paperclip is not set up yet; run rtk proxy make first.') from None
+            raise Stop('Paperclip is not set up yet; run make first.') from None
 
     def request(self, method, path, body=None):
         headers = {'Content-Type': 'application/json', 'Origin': self.base}
@@ -985,7 +985,7 @@ class Bots:
         self.reparent(members, lead)
         for harness in sorted(unsigned):
             print(f'  Members on {HARNESSES[harness][2]} run on your subscription: sign in once with '
-                  f'rtk proxy make bot, option 4 ({harness}),')
+                  f'make bot, option 4 ({harness}),')
             print('  then quit it; those members are switched to that connection.')
 
     def reparent(self, members, lead):
@@ -1223,7 +1223,7 @@ class Bots:
         print('  Running Paperclip\'s sign-in command as its service account; approve the code it prints.')
         previous = signal.signal(signal.SIGINT, lambda *_: None)
         try:
-            subprocess.run(shell.rtk(*shell.as_root(
+            subprocess.run(shell.command(*shell.as_root(
                 'runuser', '-u', self.site['paperclip_user'], '--', 'env', 'PATH=/usr/local/bin:/usr/bin:/bin',
                 f"HOME={self.site['paperclip_home']}", 'sh', '-c', attempt['command'])))
         finally:
@@ -1299,7 +1299,7 @@ def installer(bots):
         return
     heading('HERMES BOTS')
     print('  Each bot is a Hermes profile with its own model login, chat app and persona,')
-    print('  and a Paperclip agent. Add more later with: rtk proxy make bot')
+    print('  and a Paperclip agent. Add more later with: make bot')
     while True:
         answer = input('  How many bots do you want to set up now? [1]: ').strip() or '1'
         if answer.isdigit() and 0 <= int(answer) <= 10:
@@ -1319,7 +1319,7 @@ def main(argv=None):
     if sys.prefix != str(ROOT / '.venv'):
         # The controller environment holds the YAML parser the site inputs need.
         if not venv.exists():
-            raise Stop('Run rtk proxy make first: make bot works on an installed site.')
+            raise Stop('Run make first: make bot works on an installed site.')
         os.execv(venv, [str(venv), __file__, *(sys.argv[1:] if argv is None else argv)])
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('action', choices=['menu', 'installer', 'refresh'])
@@ -1327,7 +1327,7 @@ def main(argv=None):
     parser.add_argument('--env-file', type=Path, default=ROOT / '.env')
     parser.add_argument('--runtime-dir', help='RAM directory holding the owner password during make')
     args = parser.parse_args(argv)
-    # rtk proxy hands us a pipe, not the terminal: flush each line so it lands before the wizards' output.
+    # Flush each line before the interactive wizards write their output.
     sys.stdout.reconfigure(line_buffering=True)
     if args.action != 'refresh' and not (sys.stdin.isatty() and os.isatty(0)):
         print('  make bot needs your terminal: it opens Hermes\' sign-in and chat wizards.', file=sys.stderr)
@@ -1352,6 +1352,6 @@ if __name__ == '__main__':
     except Stop as error:
         raise SystemExit(f'  {error}') from None
     except KeyboardInterrupt:
-        raise SystemExit('\n  Stopped. Run rtk proxy make bot to continue.') from None
+        raise SystemExit('\n  Stopped. Run make bot to continue.') from None
     except (EOFError, getpass.GetPassWarning):
         raise SystemExit('  make bot needs your terminal; nothing secret was printed.') from None

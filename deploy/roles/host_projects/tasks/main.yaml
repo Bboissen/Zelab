@@ -28,7 +28,7 @@
 
 - name: Generate one SSH key per tier outside Git
   ansible.builtin.command:
-    argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -C, "zelab-team-{{ item }}", -f, "{{ private_dir }}/projects/team-{{ item }}.key"]
+    argv: [ssh-keygen, -q, -t, ed25519, -N, '', -C, "zelab-team-{{ item }}", -f, "{{ private_dir }}/projects/team-{{ item }}.key"]
     creates: "{{ private_dir }}/projects/team-{{ item }}.key"
   loop: "{{ zelab_tiers | list }}"
   become: false

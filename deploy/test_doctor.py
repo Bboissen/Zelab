@@ -180,7 +180,7 @@ class HostReadinessTest(unittest.TestCase):
         server_browser.assert_not_called()
         self.assertIn("scp -P 2222", output.getvalue())
         self.assertIn("@[2001:db8::1]:", output.getvalue())
-        self.assertIn("rtk proxy open ~/Downloads/zelab-guide.html", output.getvalue())
+        self.assertIn("open ~/Downloads/zelab-guide.html", output.getvalue())
 
     def test_machine_guide_path_output_is_not_mixed_with_readiness_or_color(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -261,22 +261,21 @@ class HostReadinessTest(unittest.TestCase):
             self.assertFalse(doctor.command_succeeds(["docker", "info"]))
         self.assertEqual(output.getvalue(), "")
 
-    def test_root_binary_cannot_be_a_symlink_or_writable_by_other_accounts(self):
-        with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "rtk"
-            target.write_text("fixture")
-            target.chmod(0o777)
-            self.assertFalse(doctor.trusted_root_rtk(target))
-            link = Path(directory) / "alias"
-            link.symlink_to(target)
-            self.assertFalse(doctor.trusted_root_rtk(link))
-
     def test_preflight_uses_the_shared_guard_before_installation(self):
         tasks = yaml.safe_load(Path("deploy/preflight.yaml").read_text())[0]["tasks"]
         self.assertEqual(tasks[0]["ansible.builtin.command"]["argv"][-2:],
                          ["{{ playbook_dir }}/doctor.py", "--platform-only"])
         self.assertFalse(tasks[0]["changed_when"])
         self.assertTrue(any("ansible.builtin.apt" in task for task in tasks[1:]))
+
+    def test_failed_native_sudo_probe_keeps_administration_pending(self):
+        with patch.object(doctor, 'command_output', return_value=None) as probe:
+            checks, elevated = doctor.admin_checks()
+        self.assertFalse(elevated)
+        self.assertEqual([check.label for check in checks], ['PENDING'])
+        command = probe.call_args.args[0]
+        self.assertEqual(command[:3], ['sudo', '-n', '/usr/bin/python3'])
+        probe.assert_called_once()
 
 
 if __name__ == "__main__":

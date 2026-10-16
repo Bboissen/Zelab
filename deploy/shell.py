@@ -1,30 +1,26 @@
 """Host command and Tailscale status helpers shared by deployment tools.
 
 Standard library only: install.py imports this before the controller exists.
-Every host command runs through `rtk proxy`; privileged commands go through the
-root-owned RTK. Output is captured and returned, never echoed, because probes
-can contain private host or account details.
+Privileged commands use native sudo. Output is captured and returned, never
+echoed, because probes can contain private host or account details.
 """
 
 import json
 import subprocess
 
 
-ROOT_RTK = '/usr/local/bin/rtk'
-
-
-def rtk(*argv):
-    return ['rtk', 'proxy', *map(str, argv)]
+def command(*argv):
+    return list(map(str, argv))
 
 
 def as_root(*argv, prompt=False):
-    """sudo through the root-owned RTK; without prompt, sudo must not ask."""
-    return ['sudo', *([] if prompt else ['-n']), ROOT_RTK, 'proxy', *map(str, argv)]
+    """Native sudo; without prompt, sudo must not ask."""
+    return ['sudo', *([] if prompt else ['-n']), *map(str, argv)]
 
 
 def quiet(argv, *, text=False, timeout=None):
     """Run with captured output; the caller decides what a failure means."""
-    return subprocess.run(rtk(*argv), capture_output=True, text=text, timeout=timeout)
+    return subprocess.run(command(*argv), capture_output=True, text=text, timeout=timeout)
 
 
 def output(argv, timeout=15):
@@ -55,7 +51,7 @@ def tailnet_name(status):
 
 
 def serve_routes(serve):
-    """(host, port, root proxy target) per web endpoint of `tailscale serve status --json`."""
+    """(host, port, backend target) per web endpoint of `tailscale serve status --json`."""
     for endpoint, web in (serve.get('Web') or {}).items():
         host, _, port = endpoint.rpartition(':')
         yield host, int(port), (((web or {}).get('Handlers') or {}).get('/') or {}).get('Proxy')

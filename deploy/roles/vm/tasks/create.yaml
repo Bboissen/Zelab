@@ -29,7 +29,7 @@
     fail_msg: >-
       {{ vm_disk }} or {{ vm_service }}.service exists without this site's creation receipt, so it may
       belong to something else and is never replaced. Move it aside or choose another vm_data/vm_service
-      in config/site.yaml. If it is this site's own install, `rtk proxy make fclean` previews a project reset.
+      in config/site.yaml. If it is this site's own install, `make fclean` previews a project reset.
 
 - name: Require public package egress for first boot
   ansible.builtin.assert:
@@ -39,8 +39,6 @@
 - name: Validate creation receipts before reusing state
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - python3
       - -c
       - |
@@ -71,8 +69,6 @@
 - name: Refuse symlinked directories and initial port collisions
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - python3
       - -c
       - |
@@ -99,8 +95,6 @@
 - name: Check free resources before creating a guest
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - python3
       - "{{ playbook_dir }}/files/check_headroom.py"
       - "{{ vm_data }}"
@@ -171,7 +165,7 @@
 
 - name: Generate the guest host key once for verified first SSH
   ansible.builtin.command:
-    argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -f, "{{ vm_bootstrap_dir }}/ssh_host_ed25519_key"]
+    argv: [ssh-keygen, -q, -t, ed25519, -N, '', -f, "{{ vm_bootstrap_dir }}/ssh_host_ed25519_key"]
     creates: "{{ vm_bootstrap_dir }}/ssh_host_ed25519_key"
 
 - name: Read the private guest host key for cloud-init
@@ -196,13 +190,13 @@
 
 - name: Create the self-contained fresh disk without a backing chain
   ansible.builtin.command:
-    argv: [rtk, proxy, qemu-img, convert, -f, qcow2, -O, qcow2, "{{ '/var/cache/zelab/' + (guest_image_url | basename) }}", "{{ vm_disk }}"]
+    argv: [qemu-img, convert, -f, qcow2, -O, qcow2, "{{ '/var/cache/zelab/' + (guest_image_url | basename) }}", "{{ vm_disk }}"]
     creates: "{{ vm_disk }}"
   register: fresh_disk_created
 
 - name: Set the initial small disk capacity once
   ansible.builtin.command:
-    argv: [rtk, proxy, qemu-img, resize, "{{ vm_disk }}", "{{ vm_disk_gib }}G"]
+    argv: [qemu-img, resize, "{{ vm_disk }}", "{{ vm_disk_gib }}G"]
   when: fresh_disk_created.changed
 
 # The disk is self-contained, so the base image is no longer needed.
@@ -229,7 +223,7 @@
 
 - name: Generate the native cloud-init configuration media once
   ansible.builtin.command:
-    argv: [rtk, proxy, cloud-localds, "{{ vm_data }}/cloud-init.iso", "{{ vm_bootstrap_dir }}/user-data", "{{ vm_bootstrap_dir }}/meta-data"]
+    argv: [cloud-localds, "{{ vm_data }}/cloud-init.iso", "{{ vm_bootstrap_dir }}/user-data", "{{ vm_bootstrap_dir }}/meta-data"]
     creates: "{{ vm_data }}/cloud-init.iso"
 
 - name: Permit only the VM identity to read its disk and configuration media

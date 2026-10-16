@@ -125,7 +125,7 @@ class CleanTest(unittest.TestCase):
 
         def retry(command, **kwargs):
             lock.__exit__.assert_called_once()
-            self.assertEqual(command[:6], ['rtk', 'proxy', 'sudo', '-n', '/usr/local/bin/rtk', 'proxy'])
+            self.assertEqual(command[:2], ['sudo', '-n'])
             self.assertEqual(command[-5:], ['-B', str(Path(maintenance.__file__).resolve()), 'clean',
                                             '--site-config', 'config/site.yaml'])
             self.assertEqual(kwargs['cwd'], maintenance.ROOT)
@@ -151,7 +151,7 @@ class CleanTest(unittest.TestCase):
              redirect_stdout(io.StringIO()) as output:
             clean()
         command = run.call_args.args[0]
-        self.assertEqual(command[:5], ['rtk', 'proxy', 'sudo', '/usr/local/bin/rtk', 'proxy'])
+        self.assertEqual(command[:1], ['sudo'])
         self.assertNotIn('-n', command)
         self.assertEqual(output.getvalue(), '')
 
@@ -175,7 +175,7 @@ class CleanTest(unittest.TestCase):
              patch.object(maintenance.os, 'geteuid', return_value=1000), \
              patch.object(maintenance.subprocess, 'run', return_value=Mock(returncode=1)), \
              redirect_stdout(io.StringIO()), \
-             self.assertRaisesRegex(RuntimeError, 'rerun rtk proxy make clean'):
+             self.assertRaisesRegex(RuntimeError, 'rerun make clean'):
             clean()
 
     def test_permission_error_never_escalates_other_roots_or_retries_as_root(self):

@@ -7,7 +7,7 @@
 #   codex    Codex (ChatGPT subscription; model IDs such as gpt-5.6-sol)
 # `harness` is the team default; a member sets its own `harness:`. Each harness
 # block gives the model and reasoning effort (low, medium, high, xhigh, max)
-# used at hire. Sign each harness in once with: rtk proxy make bot, option 4.
+# used at hire. Sign each harness in once with: make bot, option 4.
 #
 # Tiers. Each is one host account zelab-team-<tier> (home below projects_dir,
 # a workspace, the preset's rights) and the Paperclip SSH environment

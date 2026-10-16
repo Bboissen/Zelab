@@ -6,7 +6,7 @@ from console import heading
 
 def main():
     heading('ZELAB COMMANDS')
-    print('  Prefix each command with rtk proxy; run from the checkout.\n')
+    print('  Run these commands from the checkout.\n')
     print('  make          Install/reapply or resume; keep state and open the guide')
     print('  make clean    Reset repo choices and generated files; keep installed data')
     print('  make fclean   Preview, confirm, then remove this site and its application data')

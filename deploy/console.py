@@ -24,8 +24,8 @@ def _stream(stream):
 def interactive(stream=None):
     """True when the stream reaches a person's terminal.
 
-    `rtk proxy` relays output through a pipe as it arrives, so standard output
-    is not a TTY even in a terminal; standard input still is.
+    Captured output may be a pipe while standard input still reaches a
+    terminal, as during installer progress reporting.
     """
     stream = _stream(stream)
     if os.environ.get("TERM", "dumb") == "dumb":

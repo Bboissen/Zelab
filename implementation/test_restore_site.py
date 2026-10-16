@@ -47,7 +47,7 @@ class RestoreFixture:
         environment = patch.dict(os.environ, GNUPGHOME=str(self.gpg))
         environment.start()
         self.addCleanup(environment.stop)
-        self.addCleanup(lambda: subprocess.run(['rtk', 'proxy', 'gpgconf', '--homedir', str(self.gpg), '--kill', 'gpg-agent'], capture_output=True))
+        self.addCleanup(lambda: subprocess.run(['gpgconf', '--homedir', str(self.gpg), '--kill', 'gpg-agent'], capture_output=True))
         self.site = {**yaml.safe_load((ROOT / 'config/defaults.yaml').read_text()),
                      **yaml.safe_load((ROOT / 'config/site.example.yaml').read_text())}
         self.site['operator_user'] = pwd.getpwuid(os.geteuid()).pw_name
@@ -102,7 +102,7 @@ class RestoreFixture:
         self.events = []
 
     def command(self, *args):
-        result = subprocess.run(['rtk', 'proxy', *map(str, args)], capture_output=True)
+        result = subprocess.run([*map(str, args)], capture_output=True)
         self.assertEqual(result.returncode, 0, 'Disposable archive operation failed')
 
     @contextmanager

@@ -1,153 +1,133 @@
 # Zelab
 
-Private chat agents for a home server, built from upstream parts:
-[Hermes](https://github.com/NousResearch/hermes-agent) runs in a KVM guest, one
-shared gateway serving one Hermes profile per bot, each on its own Discord (or
-Telegram, Slack...) identity; [Paperclip](https://github.com/paperclipai/paperclip)
-on the host tracks the work and dispatches it to the bots and to a default team
-of coding agents (PM, frontend, backend, mobile, game, data, devops, sysadmin),
-each on Claude Code or Codex as you choose per member, working on the host over
-SSH; one vault holds the notes, one folder
-per project, which you open in desktop Obsidian on your laptop through a private
-Git repository (`make notes`). Administration UIs are reachable only through Tailscale or localhost.
+Chat with your agents, track their work in Paperclip, and keep their notes in
+Obsidian. Zelab installs upstream applications on a Linux home server:
 
-In a project's channel you ask a bot to research something; it files a Paperclip
-ticket and, when Paperclip runs it, writes notes under `Projects/<slug>/`. Chat
-itself runs no commands. Work on the server goes to the team's PM, who splits it
-across the team; each member runs on its rights tier's own account, and the bot
-brings the answer back to the chat in plain words.
+- [Hermes](https://github.com/NousResearch/hermes-agent) runs in a KVM guest,
+  with one native profile and chat identity per bot.
+- [Paperclip](https://github.com/paperclipai/paperclip) runs on the host. It
+  tracks tickets and dispatches work to bots or a team running Claude Code and
+  Codex over SSH, with one host account per rights tier.
+- A shared notes vault stays on the host. `make notes` syncs it with a private
+  GitHub repository for desktop Obsidian. Browser Obsidian is optional and off
+  by default.
+
+Ask a bot in Discord, Telegram or another supported chat app to research a
+topic: it files a ticket, works on it when Paperclip starts its run, writes
+notes under `Projects/<slug>/`, and replies in chat. Server work goes to the
+team's PM, who assigns it to the appropriate team member.
+
+**Experimental:** source checks and isolated qualification cover parts of the
+system. The complete chat-to-team return path, recovery and network acceptance
+still have **NOT RUN** items. See [Status](docs/STATUS.md).
+
+## Where everything runs
+
+![Zelab architecture: chat and model services connect to Hermes in a KVM guest; private tailnet HTTPS reaches authenticated UIs; host Paperclip dispatches agents over SSH; SFTP shares the vault with the guest; host snapshots and private Git sync retain notes.](docs/assets/architecture.svg)
+
+Blue links use encrypted transport. Amber links use local HTTP. Green links
+stay on the host filesystem. Placement and transport do not imply that an
+agent's actions are safe; its account and credentials determine its authority.
+
+| Link | Protection | Limit |
+| --- | --- | --- |
+| Your devices → administration UIs | Tailnet-only HTTPS through Tailscale Serve, plus native app authentication; public Funnel is refused | Tailnet permissions and app logins both matter. TLS ends at Serve |
+| Serve → Paperclip / Hermes dashboard | HTTP on host loopback; Hermes is reached through a loopback QEMU port forward | These local hops have no TLS; they trust the host and VM boundary |
+| Chat / model services ↔ agents | Provider TLS, bot tokens, model logins and Hermes chat allowlists | Providers receive the messages or prompts sent to them; TLS does not prevent prompt injection |
+| Hermes → Paperclip | HTTP through QEMU's host gateway, authenticated by a task key scoped to selected projects and assignees | The key limits ticket access; the guest-to-host hop has no TLS |
+| Paperclip → Hermes runs | HTTP through a host-loopback QEMU forward, with a separate API key per profile | Keys select profiles; all profiles share one guest account |
+| Paperclip → host team | SSH with a key per tier, restricted by source address and native SSH options | The tier account grants command execution; the key is not a command allowlist |
+| Guest ↔ vault | SSHFS over key-authenticated SFTP, pinned host key, chroot, no shell or forwarding | Every bot can read, edit and delete the whole vault |
+| Vault ↔ desktop notes | Deliberate SSH Git sync through a private repository; server deploy key and Git metadata stay outside the vault | Notes leave the server for GitHub and your laptop; keep Obsidian plugins that execute note content off |
+| Vault → local history | Root-only Git snapshots every five minutes, outside the shared vault | Protects against direct bot edits; host root can alter it. Use encrypted backups too |
+
+The guest firewall permits public internet traffic, DNS/DHCP for QEMU, and the
+Paperclip API and notes SFTP exceptions. It rejects other private networks,
+tailnet addresses and IPv6 for normal bot traffic. These rules live inside the
+guest; guest root can change them. Read the [architecture](docs/ARCHITECTURE.md)
+and [trust model](docs/TRUST_MODEL.md) for the exact boundaries.
+
+## Understand the host privileges
+
+Bots share the guest account, subscription logins and vault: profiles and
+project folders are **not isolation boundaries**. Use a separate site for
+projects or audiences that must stay separate.
+
+Chat sessions have no command tools, but can create tickets that trigger
+command-capable bot runs or reach the host team through the PM. The default
+team includes:
+
+| Tier | Default members | Host authority |
+| --- | --- | --- |
+| `dev` | PM, frontend, backend, mobile, game, data | Own workspaces, configured paths and shared vault; no sudo |
+| `ops` | Devops | Docker access, which is root-equivalent on most hosts |
+| `root` | Sysadmin | Full sudo: root on the host |
+
+Team runs have no per-command approval or CLI sandbox. A steered bot or PM can
+therefore send work to privileged team members without an owner approval step.
+Narrow or remove those tiers in `config/team.yaml` if you do not want that
+authority. Prompt instructions do not enforce access control. Root can read
+host credentials and change note history.
 
 ## Install
 
-On the Linux server, from this checkout:
+Use an x86-64 Debian or Ubuntu server with KVM, Docker Compose, OpenSSH,
+Python 3.12+ and Make. From the server checkout:
 
 ```sh
-rtk proxy make
+make
 ```
 
-From a Mac/Linux laptop, driving an existing server checkout over SSH:
+Or, from a Mac/Linux laptop with Python 3.9+, Make and SSH, drive an existing
+server checkout:
 
 ```sh
-rtk proxy make REMOTE_HOST=user@server REMOTE_DIR=/absolute/path/to/Zelab
+make REMOTE_HOST=user@server REMOTE_DIR=/absolute/path/to/Zelab
 ```
 
-Plain `make` installs, reapplies or resumes. It asks for your sudo password
-once, writes `config/site.yaml` from what it discovers on the host, keeps tool
-output in a private log, and on a fresh install asks how many bots to set up,
-opening Hermes' own sign-in and chat-app wizards for each. It ends with the URLs
-and the steps still waiting for you. Projects and their host accounts come from
-`config/projects.yaml` (see `config/projects.example.yaml`). Rerunning keeps all
-data and native settings.
+Plain `make` installs, reapplies or resumes while keeping existing state. It
+asks for your sudo password to configure unattended administration, discovers
+host settings into the ignored `config/site.yaml`, and opens Hermes' native
+model sign-in and chat-app wizards for each new bot. Passwords and tokens go
+into terminal prompts, never Git. It finishes with a private setup guide and
+the remaining account steps.
 
-Follow the [setup checklist](docs/SETUP.md). Server requirements: x86-64
-Debian or Ubuntu with KVM, Docker Compose, OpenSSH, Python 3.12+, Make and
-[RTK](https://github.com/rtk-ai/rtk).
+Follow the [setup checklist](docs/SETUP.md) for resources, Tailscale, chat apps
+and logins.
 
 ## Commands
 
+Run these from the checkout:
+
 | Command | Effect |
 | --- | --- |
-| `rtk proxy make` | Install, reapply or resume; refresh the guide |
-| `rtk proxy make clean` | Reset local deployment choices and generated files; keep installed data |
-| `rtk proxy make fclean` | Preview and confirm removal of this site's installation/data, then reset local choices |
-| `rtk proxy make re` | Full reset, then reinstall |
-| `rtk proxy make backup` | Verified encrypted application backup |
-| `rtk proxy make restore` | Verify and restore a backup onto a compatible installed site |
-| `rtk proxy make bot` | Add, set up or remove Hermes bots (terminal only) |
-| `rtk proxy make help` | List these commands |
+| `make` | Install, reapply or resume; refresh the setup guide |
+| `make bot` | Add, set up or remove Hermes bots; requires a terminal |
+| `make notes` | Set up or sync desktop notes through a private Git repository |
+| `make backup` | Create and verify an encrypted application backup |
+| `make restore` | Verify and restore a backup onto a compatible installed site |
+| `make clean` | Reset local deployment choices and generated files; keep installed data |
+| `make fclean` | Preview and confirm removal of this site's installation and data |
+| `make re` | Full reset, then reinstall |
+| `make help` | List all nine commands |
 
 `fclean` and `re` delete notes, tasks and application logins. Noninteractive
-destructive runs need `CONFIRM=<host:vm>`. See [operations](docs/OPERATIONS.md).
+destructive runs need `CONFIRM=<host:vm>`; restore also needs
+`RESTORE_ARCHIVE`. See [Operations](docs/OPERATIONS.md).
 
-## Isolation
+## Configure your site
 
-Each wall below is an OS account, a firewall rule, a scoped key or a native
-product setting, never prompt text. The guest is the only hard wall.
+| Input | Purpose |
+| --- | --- |
+| `config/site.yaml` | Discovered host settings and local overrides; ignored by Git |
+| `config/projects.yaml` | Your projects and tier path grants; ignored by Git; start from [the example](config/projects.example.yaml) |
+| `config/team.yaml` and `config/team/` | Team membership, tier presets, harness, model and initial personas |
+| `make bot` | Native bot profiles, provider logins, chat apps, personas and project task keys |
 
-```mermaid
-flowchart TB
-  Chat[Discord, Telegram, Slack]
-  subgraph Guest["KVM guest: the hard wall (nftables: internet, Paperclip API and notes share only)"]
-    direction LR
-    Gateway[Hermes gateway: one account, every bot profile]
-    Share[/Vault mount over SFTP, whole vault/]
-  end
-  subgraph Host["Host (everything on loopback; UIs only through Tailscale)"]
-    direction LR
-    Paperclip[Paperclip: tickets, task keys scoped per bot]
-    subgraph Tiers["Team tier accounts, one per rights level"]
-      direction TB
-      Dev[zelab-team-dev: repo-dev, no sudo]
-      Ops[zelab-team-ops: docker group]
-      Root[zelab-team-root: full sudo]
-    end
-    Vault[(Vault)]
-    History[(Root-only history, every 5 min)]
-    Private[(private_dir: keys, hashes, resource IDs, mode 0700)]
-  end
-  Chat -->|allowlisted users| Gateway
-  Gateway -->|task key: own projects, assign bots or the PM| Paperclip
-  Paperclip -->|SSH, restricted key per tier| Tiers
-  Tiers -->|read/write| Vault
-  Share <-->|SFTP, loopback| Vault
-  Vault -. snapshot .-> History
-```
-
-A hijacked bot owns the guest and the shared vault, nothing else; a team
-member owns its tier account, nothing above it; note history and credentials
-stay where neither can reach.
-
-## Modularity
-
-Every part is one upstream unit you add, swap or remove on its own; `make`
-reconciles the rest.
-
-```mermaid
-flowchart LR
-  subgraph Bots["Bots (make bot)"]
-    direction TB
-    Profile[Hermes profile] --> Login[Model login: any provider in Hermes' menu]
-    Profile --> App[Chat app: Discord, Telegram, Slack...]
-    Profile --> Soul[SOUL.md persona]
-    Profile --> Key[Task key: the projects you pick]
-  end
-  subgraph Team["Team (config/team.yaml)"]
-    direction TB
-    Member[Member persona config/team/name.md] --> Harness{Harness}
-    Harness --> Claude[Claude Code: claude_local]
-    Harness --> Codex[Codex: codex_local]
-    Member --> Tier[Tier: dev, ops, root or your own preset]
-  end
-  subgraph Projects["Projects (config/projects.yaml)"]
-    direction TB
-    Project[Slug] --> PProject[Paperclip project]
-    Project --> Folder[Vault folder under Projects, one per slug]
-  end
-  subgraph Notes["Notes"]
-    direction TB
-    Sync[make notes: private Git remote, desktop Obsidian]
-    Browser[Optional browser Obsidian container, off by default]
-  end
-  Bots --> Projects
-  Team --> Projects
-  Projects --> Notes
-```
-
-Both CLIs are installed and pinned, so switching a member between Claude Code
-and Codex is one line in the team file before hiring, or one setting in
-Paperclip afterwards. Every upstream download is pinned and checked.
-
-## Security model in one paragraph
-
-The KVM guest is the hard wall: bots cannot reach the host, the LAN or the
-tailnet, only the internet, the Paperclip API and the notes share. Inside the
-guest every bot shares one account and the whole vault, so bots are not isolated
-from each other; a project that must stay separate needs its own site. Team
-members have only their tier account's rights; the `full-sudo` tier's member
-is root. Access is enforced by OS accounts, scoped keys and firewall rules, not
-prompt text. Secrets stay out of Git and logs; every upstream download is
-pinned. Read the [trust model](docs/TRUST_MODEL.md) and [status](docs/STATUS.md).
-This is experimental software.
+Team settings apply when hiring; later edits in Paperclip remain authoritative.
+Every upstream download is pinned and verified. Application state, credentials,
+private notes and deployment logs belong outside this public source repository.
+GitHub account names and commit attribution are public repository metadata.
 
 ## Documentation
 

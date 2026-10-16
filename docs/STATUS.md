@@ -7,6 +7,38 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Public source review and native commands: 2026-10-16
+
+At 20:44 UTC, GitHub reported the source repository as public and anonymous
+browser access succeeded. Public heads, tags and retained pull request heads
+were fetched into a fresh, disposable bare repository: Gitleaks scanned all
+56 reachable commits with no leaks found. No private checkpoint refs were
+advertised. Searches of historical blobs and commit messages found no known
+private site identifiers. Reviewed address and ID matches were QEMU defaults,
+network ranges, synthetic fixtures, dependency versions or public citations.
+The 23 public issue/PR entries and eight issue comments contained no known
+private site identifiers either. GitHub account identity, commit attribution
+and older command examples remain public metadata/history; this is not an
+anonymity guarantee or a rewrite of published history.
+
+Make, deployment subprocesses, recovery fixtures, CI and all operator guides
+now invoke native commands directly. Installation no longer copies an extra
+command wrapper into the privileged executable path. The README and shared
+SVG diagram distinguish encrypted transport from local HTTP, shared guest
+credentials, whole-vault access, ticketed host execution and privileged tiers.
+They also state that guest root can change the guest's firewall; no root-level
+network-denial guarantee has been demonstrated for X1.
+
+Source checks passed: 273 tests, public source checks and playbook parsing,
+with only `/usr/bin:/bin` on the subprocess search path. `make help`, SVG XML
+parsing and visual inspection passed. The working-tree Gitleaks scan passed.
+These are repository checks, not deployment acceptance.
+
+Repository changes are source, documentation, fixtures and CI. Production host
+changes: none; guest changes: none. Fresh installation, full live reapply,
+chat-to-team delivery, live recovery and root-level network acceptance:
+**NOT RUN** for this change.
+
 ## Quiet Discord tool progress: 2026-10-16
 
 Every bot now receives Hermes' native per-platform setting
@@ -185,7 +217,7 @@ application E2E: **NOT RUN**.
 
 ## Chat without commands: 2026-10-16
 
-In the family Discord, a bot asked chat members to approve a Python heredoc it wrote
+In the live Discord, a bot asked chat members to approve a Python heredoc it wrote
 to read Paperclip: chat sessions had the terminal, and Hermes' default `smart`
 approval escalated the command to Allow/Deny buttons. Chat now runs no commands.
 Each chat platform `make bot` sets up gets Hermes' native `platform_toolsets` without

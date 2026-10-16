@@ -3,7 +3,7 @@
 # settings (obsidian_state_dir), its Compose inputs and other routes are kept.
 - name: Look for the browser Obsidian container
   ansible.builtin.command:
-    argv: [rtk, proxy, docker, container, inspect, zelab-obsidian]
+    argv: [docker, container, inspect, zelab-obsidian]
   register: obsidian_retire_inspect
   failed_when: false
   changed_when: false
@@ -12,8 +12,8 @@
   ansible.builtin.command:
     argv: "{{ item }}"
   loop:
-    - [rtk, proxy, docker, stop, zelab-obsidian]
-    - [rtk, proxy, docker, rm, zelab-obsidian]
+    - [docker, stop, zelab-obsidian]
+    - [docker, rm, zelab-obsidian]
   when:
     - obsidian_retire_inspect.rc == 0
     - ((obsidian_retire_inspect.stdout | from_json)[0].Config.Labels | default({}, true)).get('com.docker.compose.project') == 'zelab-notes'
@@ -21,7 +21,7 @@
 
 - name: Read the Tailscale Serve routes without changing them
   ansible.builtin.command:
-    argv: [rtk, proxy, tailscale, serve, status, --json]
+    argv: [tailscale, serve, status, --json]
   register: obsidian_retire_serve
   changed_when: false
   no_log: true
@@ -29,7 +29,7 @@
 
 - name: Remove only the route that still points at the browser Obsidian
   ansible.builtin.command:
-    argv: [rtk, proxy, tailscale, serve, "--https={{ ui_tail_obsidian_port | default(9443) }}", "off"]
+    argv: [tailscale, serve, "--https={{ ui_tail_obsidian_port | default(9443) }}", "off"]
   vars:
     endpoint: "{{ ui_tailscale_hostname }}:{{ ui_tail_obsidian_port | default(9443) }}"
     serve: "{{ (obsidian_retire_serve.stdout | default('{}', true)) | from_json }}"

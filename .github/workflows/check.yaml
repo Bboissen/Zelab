@@ -13,35 +13,20 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
-      - name: Bootstrap verified RTK
-        shell: python
-        run: |
-          import hashlib, io, os, pathlib, tarfile, urllib.request
-          url = 'https://github.com/rtk-ai/rtk/releases/download/v0.50.0/rtk-x86_64-unknown-linux-musl.tar.gz'
-          data = urllib.request.urlopen(url, timeout=60).read()
-          assert hashlib.sha256(data).hexdigest() == 'bc2b8902b0d9c796c82ef45f16ae2307e17757afeca5ee156235a3dc7bda5f89'
-          directory = pathlib.Path.home() / '.local/bin'
-          directory.mkdir(parents=True, exist_ok=True)
-          with tarfile.open(fileobj=io.BytesIO(data)) as archive:
-              member = next(m for m in archive if pathlib.PurePosixPath(m.name).name == 'rtk' and m.isfile())
-              (directory / 'rtk').write_bytes(archive.extractfile(member).read())
-          (directory / 'rtk').chmod(0o755)
-          with open(os.environ['GITHUB_PATH'], 'a') as path:
-              path.write(str(directory) + '\n')
       - name: Install recovery fixture tools
         run: |
-          rtk proxy sudo apt-get update
-          rtk proxy sudo apt-get install -y qemu-utils gnupg
+          sudo apt-get update
+          sudo apt-get install -y qemu-utils gnupg
       - name: Validate public inputs, regression tests and playbooks
-        run: rtk proxy python3 tools/check.py
+        run: python3 tools/check.py
       - name: Audit the production npm lock
         working-directory: deploy/roles/paperclip/files
-        run: rtk proxy npm audit --omit=dev --package-lock-only --audit-level=moderate
+        run: npm audit --omit=dev --package-lock-only --audit-level=moderate
       - name: Audit the Paperclip MCP server lock
         working-directory: deploy/roles/paperclip_mcp/files
-        run: rtk proxy npm audit --omit=dev --package-lock-only --audit-level=moderate
+        run: npm audit --omit=dev --package-lock-only --audit-level=moderate
       - name: Audit the qualified Hermes Python inventory
         run: |
-          rtk proxy python3 -m venv /tmp/zelab-audit-tools
-          rtk proxy /tmp/zelab-audit-tools/bin/pip install pip-audit==2.10.1
-          rtk proxy /tmp/zelab-audit-tools/bin/pip-audit --no-deps --disable-pip -r deploy/roles/hermes/files/dependencies/runtime-requirements.txt
+          python3 -m venv /tmp/zelab-audit-tools
+          /tmp/zelab-audit-tools/bin/pip install pip-audit==2.10.1
+          /tmp/zelab-audit-tools/bin/pip-audit --no-deps --disable-pip -r deploy/roles/hermes/files/dependencies/runtime-requirements.txt

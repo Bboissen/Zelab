@@ -32,8 +32,6 @@
 - name: Install only locked web build dependencies
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/npm"
       - ci
       - --workspace
@@ -52,8 +50,6 @@
 - name: Start the native dashboard asset build in the background
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/npm"
       - run
       - build

@@ -1,5 +1,5 @@
 # Projects make creates, and this site's tier paths. Copy to config/projects.yaml
-# (kept out of Git), edit, then run `rtk proxy make`.
+# (kept out of Git), edit, then run `make`.
 #
 # projects: the key is the project's slug, its vault folder Projects/<slug>/.
 #   name: the Paperclip project name (default: the slug).

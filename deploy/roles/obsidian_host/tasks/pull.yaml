@@ -1,7 +1,7 @@
 # Started early by prefetch.yaml so the download overlaps guest installation.
 - name: Inspect the immutable container input
   ansible.builtin.command:
-    argv: [rtk, proxy, docker, image, inspect, "{{ obsidian_image }}", --format, '{{ "{{.Id}}" }}']
+    argv: [docker, image, inspect, "{{ obsidian_image }}", --format, '{{ "{{.Id}}" }}']
   register: obsidian_existing_image
   failed_when: obsidian_existing_image.rc not in [0, 1]
   changed_when: false
@@ -9,8 +9,6 @@
 - name: Preserve the host disk and RAM reserves before a new image pull
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - python3
       - "{{ playbook_dir }}/files/check_headroom.py"
       - docker
@@ -32,7 +30,7 @@
 # The image is pinned by digest, so a present image is already the right one.
 - name: Pull the checksum-pinned upstream browser container in the background
   ansible.builtin.command:
-    argv: [rtk, proxy, docker, pull, "{{ obsidian_image }}"]
+    argv: [docker, pull, "{{ obsidian_image }}"]
   async: 3600
   poll: 0
   register: obsidian_pull_job

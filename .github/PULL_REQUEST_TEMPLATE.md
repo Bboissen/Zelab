@@ -4,7 +4,7 @@
 
 ## Checks run
 
-- [ ] `rtk proxy python3 tools/check.py` passes locally
+- [ ] `python3 tools/check.py` passes locally
 - [ ] Affected guide or document updated
 
 Live acceptance (versions, timestamp, sanitized evidence), or **NOT RUN**:

@@ -23,7 +23,7 @@
 
 - name: Generate the fresh guest deployment key once
   ansible.builtin.command:
-    argv: [rtk, proxy, ssh-keygen, -q, -t, ed25519, -N, '', -C, zelab-deploy, -f, "{{ deploy_key }}"]
+    argv: [ssh-keygen, -q, -t, ed25519, -N, '', -C, zelab-deploy, -f, "{{ deploy_key }}"]
     creates: "{{ deploy_key }}"
   become: false
 
@@ -67,8 +67,6 @@
 - name: Prepare temporary installation resources before the first VM boot
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - "{{ zelab_controller_python }}"
       - "{{ playbook_dir }}/install_resources.py"
       - begin
@@ -96,8 +94,6 @@
 - name: Grow the guest disk to vm_disk_gib without a restart
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - "{{ zelab_controller_python | default('python3') }}"
       - "{{ playbook_dir }}/vm_disk.py"
       - --disk

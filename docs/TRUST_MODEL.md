@@ -1,7 +1,9 @@
 # Trust model
 
-The KVM guest is the only hard wall. A hijacked bot can reach everything inside
-the guest and the whole shared vault, but not the host. Team members (host
+The KVM guest separates bot processes from the host OS. A hijacked bot can
+reach everything inside the guest and the whole shared vault. It cannot
+directly execute host commands with its guest account, but tickets can reach
+privileged host team members through the PM, as described below. Team members (host
 agents) have the rights of their tier's account, set in `config/team.yaml`. Prompt text is
 advice to a model, never an access control: every boundary below is enforced by
 an OS account, a scoped key, a firewall rule or a native product setting.
@@ -10,11 +12,27 @@ an OS account, a scoped key, a firewall rule or a native product setting.
 
 | A hijacked bot can | It cannot, because |
 | --- | --- |
-| Read and change every bot's memory, sessions and logins in the guest | Reach the host: KVM guest boundary |
-| Read, change and delete any note in the shared vault | Erase note history: a root-only git snapshot on the host every 5 minutes, outside the share |
+| Read and change every bot's memory, sessions and logins in the guest | Directly execute host commands: separate KVM guest OS; ticketed host work remains possible |
+| Read, change and delete any note in the shared vault | Directly erase host note history: root-only git snapshots every 5 minutes, outside the share; privileged host agents can alter it |
 | Create tickets in the projects of its own task key, assigned to itself, to another bot or unassigned | Create tickets elsewhere or read others' tickets: Paperclip's `task_bridge` key scope |
 | Assign the team lead (the PM), which then runs at once on its tier account and can hand work to any team member | Assign any other team member, or act on the host itself: `allowedAssigneeAgentIds` of its key, the guest boundary |
-| Use the internet | Reach the LAN, the tailnet, other host ports or IPv6: guest nftables |
+| Use the internet | Reach the LAN, tailnet, other host ports or IPv6 as the normal bot account: guest nftables; guest root can change the rules |
+
+## Transport and network enforcement
+
+Owner-facing HTTPS terminates at Tailscale Serve; backend UI requests use
+HTTP on host loopback and, for Hermes, a QEMU forward into the guest. The
+Paperclip API exception from guest to host and the loopback Hermes run API
+also use HTTP, authenticated with task keys and profile API keys respectively.
+They rely on the host/VM boundary for network privacy, with no TLS on those
+local hops. Team SSH, notes SFTP and notes Git sync use encrypted transport.
+See the [connection table](../README.md#where-everything-runs).
+
+The outbound nftables policy is installed **inside** the guest. It constrains
+normal bot processes; guest root can remove or change it. KVM still separates
+the operating systems, but the current configuration does not establish a
+network-denial guarantee against guest root. The root-level network acceptance
+item X1 in [Status](STATUS.md) remains **NOT RUN**.
 
 ## Authority by role
 

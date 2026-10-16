@@ -26,7 +26,7 @@ SECRET_PATTERNS = {
 
 def source_files(root=ROOT):
     result = subprocess.run(
-        ["rtk", "proxy", "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         cwd=root, check=True, capture_output=True,
     )
     return sorted({Path(name.decode()) for name in result.stdout.split(b"\0") if name
@@ -79,7 +79,7 @@ def export(root, files, destination):
             target.chmod(0o755 if (root / relative).stat().st_mode & 0o111 else 0o644)
         # Check the copied bytes, then scan exactly the tree that will be shipped.
         check(stage, files)
-        subprocess.run(["rtk", "proxy", "gitleaks", "detect", "--no-git", "--source", str(stage), "--redact"], check=True)
+        subprocess.run(["gitleaks", "detect", "--no-git", "--source", str(stage), "--redact"], check=True)
         with destination.open("xb") as output, tarfile.open(fileobj=output, mode="w:gz") as archive:
             for relative in files:
                 info = archive.gettarinfo(stage / relative, arcname=str(Path("zelab") / relative))

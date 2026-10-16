@@ -42,8 +42,6 @@
     - name: Generate the native one-time administrator claim
       ansible.builtin.command:
         argv:
-          - rtk
-          - proxy
           - "/opt/zelab-tools/node-v{{ node_version }}-linux-x64/bin/node"
           - "{{ paperclip_runtime_dir }}/node_modules/paperclipai/dist/index.js"
           - auth

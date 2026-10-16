@@ -18,14 +18,14 @@ class RemoteTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             directory = Path(folder) / "checkout ' with $(touch unwanted)"
             directory.mkdir()
-            command = remote.remote_command(str(directory), ["rtk", "proxy", "python3", "-c",
+            command = remote.remote_command(str(directory), ["python3", "-c",
                 "import os,sys,json; print(json.dumps([os.getcwd(),sys.argv[1:]]))",
                 "SITE_CONFIG=config/a file.yaml", "ENV_FILE=$(touch unwanted)"])
             for shell in ("sh", "bash", "zsh"):
                 if not shutil.which(shell):
                     continue
                 with self.subTest(shell=shell):
-                    result = subprocess.run(["rtk", "proxy", shell, "-c", command],
+                    result = subprocess.run([shell, "-c", command],
                                             capture_output=True, text=True, check=True)
                     self.assertIn(str(directory), result.stdout)
                     self.assertIn("ENV_FILE=$(touch unwanted)", result.stdout)
@@ -41,7 +41,7 @@ class RemoteTest(unittest.TestCase):
         guide = server / "private guide.html"
         guide.write_text("<!doctype html><title>Private guide</title>")
         (server / "Makefile").write_text(
-            "install recover guide:\n\t@rtk proxy python3 -c 'print(\"fixture install\"); exit(" + str(install_status) + ")'\n")
+            "install recover guide:\n\t@python3 -c 'print(\"fixture install\"); exit(" + str(install_status) + ")'\n")
         (server / "deploy/doctor.py").write_text(
             "import sys\n"
             f"open({str(root / 'doctor-runs')!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
@@ -54,9 +54,9 @@ class RemoteTest(unittest.TestCase):
 
         def transport(argv, **kwargs):
             calls.append(argv)
-            if argv[:3] == ["rtk", "proxy", "ssh"]:
-                return native_run(["rtk", "proxy", "sh", "-c", argv[-1]], **kwargs)
-            if argv[:3] == ["rtk", "proxy", "scp"]:
+            if argv[:1] == ["ssh"]:
+                return native_run(["sh", "-c", argv[-1]], **kwargs)
+            if argv[:1] == ["scp"]:
                 if not copy_status:
                     shutil.copyfile(argv[-2].split(":", 1)[1], argv[-1])
                 return subprocess.CompletedProcess(argv, copy_status)
@@ -85,7 +85,7 @@ class RemoteTest(unittest.TestCase):
         status, destination, guide, calls, _ = self.run_fixture(action="guide")
         self.assertEqual(status, 0)
         self.assertEqual(destination.read_text(), guide.read_text())
-        self.assertEqual([call[2] for call in calls], ["ssh", "scp"])
+        self.assertEqual([call[0] for call in calls], ["ssh", "scp"])
         self.assertEqual(len(self.doctor_runs), 1)
         self.assertIn("--guide-path-only", self.doctor_runs[0])
         self.assertIn("--brief", self.doctor_runs[0])
@@ -129,10 +129,10 @@ class MakeLifecycleTest(unittest.TestCase):
             stub.mkdir()
             # Replace only the privileged reset and installer processes. The real
             # Makefile, dependencies and recursive Make invocation are exercised.
-            wrapper = stub / "rtk"
-            wrapper.write_text("#!/usr/bin/env python3\n" +
+            wrapper = stub / "python3"
+            wrapper.write_text(f"#!{os.sys.executable}\n" +
                 "import os,sys,subprocess\nfrom pathlib import Path\n" +
-                "args=sys.argv[2:]\n" +
+                "args=sys.argv[1:]\n" +
                 "if 'deploy/maintenance.py' in args and 'fclean' in args:\n" +
                 "    Path('events').open('a').write('fclean\\n')\n" +
                 "    sys.exit(int(os.environ.get('FIXTURE_CLEAN_STATUS','0')))\n" +
@@ -145,9 +145,9 @@ class MakeLifecycleTest(unittest.TestCase):
                 for fail in (False, True):
                     events = fixture / "events"
                     events.unlink(missing_ok=True)
-                    env = dict(os.environ, FIXTURE_CLEAN_STATUS="2" if fail else "0")
-                    result = subprocess.run(["rtk", "proxy", "make", "-j4", target, confirmation,
-                                             "RTK_BIN_DIR=" + str(stub)], cwd=fixture, env=env,
+                    env = dict(os.environ, FIXTURE_CLEAN_STATUS="2" if fail else "0",
+                               PATH=str(stub) + os.pathsep + os.environ["PATH"])
+                    result = subprocess.run(["make", "-j4", target, confirmation], cwd=fixture, env=env,
                                             capture_output=True, text=True)
                     with self.subTest(target=target, fail=fail):
                         self.assertEqual(result.returncode == 0, not fail, result.stderr)

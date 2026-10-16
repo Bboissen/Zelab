@@ -41,8 +41,8 @@ class ConfigureTest(unittest.TestCase):
     def test_ssh_listener_prefers_loopback_then_a_lan_address(self):
         self.assertEqual(configure.ssh_listener("port 22\nlistenaddress 0.0.0.0:22\nlistenaddress [::]:22\n"),
                          ("127.0.0.1", 22))
-        self.assertEqual(configure.ssh_listener("port 2222\nlistenaddress 100.93.1.2:2222\n"
-                                                "listenaddress 192.168.1.9:2222\n"), ("192.168.1.9", 2222))
+        self.assertEqual(configure.ssh_listener("port 2222\nlistenaddress 100.64.0.1:2222\n"
+                                                "listenaddress 192.168.0.1:2222\n"), ("192.168.0.1", 2222))
         self.assertEqual(configure.ssh_listener(None), ("127.0.0.1", 22))
 
     def test_generated_site_validates_with_public_defaults_and_is_never_overwritten(self):

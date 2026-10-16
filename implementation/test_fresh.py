@@ -42,17 +42,17 @@ class FreshTest(unittest.TestCase):
             self.assertIn('preserved', fresh.safe_to_delete(state, [state], []))
             self.assertIn('canonical', fresh.safe_to_delete(Path('/srv'), [], []))
 
-    def test_only_routes_proxying_to_this_site_are_selected(self):
+    def test_only_routes_forwarding_to_this_site_are_selected(self):
         config = {'Web': {
-            'box.ts.net:443': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:3773'}}},
-            'box.ts.net:8444': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:18640'}}},
-            'box.ts.net:8443': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:13100'}}},
-            'other.ts.net:9443': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:18645'}}},
-            'box.ts.net:9443': {'Handlers': {'/': {'Path': '/srv/site'}}},
+            'box.example.ts.net:443': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:3773'}}},
+            'box.example.ts.net:8444': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:18640'}}},
+            'box.example.ts.net:8443': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:13100'}}},
+            'other.example.ts.net:9443': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:18645'}}},
+            'box.example.ts.net:9443': {'Handlers': {'/': {'Path': '/srv/site'}}},
         }}
         backends = {'http://127.0.0.1:18640', 'http://127.0.0.1:13100', 'http://127.0.0.1:18645'}
-        self.assertEqual(fresh.owned_tail_ports(config, 'box.ts.net', backends), [8443, 8444])
-        self.assertEqual(fresh.owned_tail_ports({}, 'box.ts.net', backends), [])
+        self.assertEqual(fresh.owned_tail_ports(config, 'box.example.ts.net', backends), [8443, 8444])
+        self.assertEqual(fresh.owned_tail_ports({}, 'box.example.ts.net', backends), [])
 
     def test_backup_key_logs_and_personal_login_are_never_generated_files(self):
         self.assertNotIn('backup-passphrase', fresh.GENERATED_PRIVATE)
@@ -60,7 +60,7 @@ class FreshTest(unittest.TestCase):
 
     def test_wrong_or_missing_confirmation_changes_nothing(self):
         plan = fresh.Plan('fixture-host:zelab', units=[('zelab-vm.service', 'evidence')])
-        site = {'ui_tailscale_hostname': 'box.ts.net', 'backup_dir': '/b', 'private_dir': '/p'}
+        site = {'ui_tailscale_hostname': 'box.example.ts.net', 'backup_dir': '/b', 'private_dir': '/p'}
         for confirmation in ['', 'fixture-host:other', 'zelab']:
             with self.subTest(confirmation=confirmation), \
                  patch.object(fresh.os, 'geteuid', return_value=0), \

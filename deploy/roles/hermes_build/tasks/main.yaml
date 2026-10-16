@@ -22,8 +22,6 @@
 - name: Package only native web build output for transfer
   ansible.builtin.command:
     argv:
-      - rtk
-      - proxy
       - tar
       - -C
       - "/var/cache/zelab/hermes-agent-{{ hermes_commit }}"

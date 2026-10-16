@@ -84,7 +84,7 @@ def sample_host():
 
 
 def command(*argv):
-    result = subprocess.run(['rtk', 'proxy', *map(str, argv)], capture_output=True, text=True)
+    result = subprocess.run([*map(str, argv)], capture_output=True, text=True)
     if result.returncode:
         raise RuntimeError(f'{argv[0]} {argv[1]} failed; see systemctl status for the selected VM')
     return result.stdout
@@ -251,7 +251,7 @@ class InstallationResources:
             # A confirmed reset may have stopped/deleted the unit before an
             # interruption left these two artifacts. Remove them only if the
             # VM is stopped; there is no permanent unit to restore while live.
-            state = subprocess.run(['rtk', 'proxy', 'systemctl', 'is-active', '--quiet', self.unit])
+            state = subprocess.run(['systemctl', 'is-active', '--quiet', self.unit])
             if state.returncode not in (3, 4):
                 raise RuntimeError('The normal VM unit is missing and its stopped state is unproven; restore the unit before recovery')
             active = False

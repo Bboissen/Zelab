@@ -5,7 +5,7 @@
   tasks:
     - name: Read native host supervision state
       ansible.builtin.command:
-        argv: [rtk, proxy, systemctl, show, "{{ vm_service | default('zelab-vm') }}.service", zelab-paperclip-db.service, zelab-paperclip.service, zelab-notes-sshd.service, '--property=Id,LoadState,ActiveState,SubState,UnitFileState,Result,ExecMainStatus,NRestarts', --no-pager]
+        argv: [systemctl, show, "{{ vm_service | default('zelab-vm') }}.service", zelab-paperclip-db.service, zelab-paperclip.service, zelab-notes-sshd.service, '--property=Id,LoadState,ActiveState,SubState,UnitFileState,Result,ExecMainStatus,NRestarts', --no-pager]
       register: host_services
       changed_when: false
       failed_when: host_services.rc != 0 and 'LoadState=not-found' not in host_services.stdout
@@ -13,14 +13,14 @@
         var: host_services.stdout_lines
     - name: Read owned running container state without environments
       ansible.builtin.command:
-        argv: [rtk, proxy, docker, ps, -a, --filter, 'name=^zelab-', --format, '{{ "{{.Names}} {{.State}} {{.Status}}" }}']
+        argv: [docker, ps, -a, --filter, 'name=^zelab-', --format, '{{ "{{.Names}} {{.State}} {{.Status}}" }}']
       register: host_containers
       changed_when: false
     - ansible.builtin.debug:
         var: host_containers.stdout_lines
     - name: Read whether the selected VM can provide guest status
       ansible.builtin.command:
-        argv: [rtk, proxy, systemctl, show, "{{ vm_service | default('zelab-vm') }}.service", -p, ActiveState, --value]
+        argv: [systemctl, show, "{{ vm_service | default('zelab-vm') }}.service", -p, ActiveState, --value]
       register: status_vm
       changed_when: false
       failed_when: status_vm.rc not in [0, 1]

@@ -35,7 +35,7 @@ for path in sys.argv[1:]:
 
 def run(argv, env=None):
     started = time.monotonic()
-    result = subprocess.run(['rtk', 'proxy', *map(str, argv)], cwd=ROOT, capture_output=True, text=True,
+    result = subprocess.run([*map(str, argv)], cwd=ROOT, capture_output=True, text=True,
                             env=dict(os.environ, **(env or {})))
     return result, time.monotonic() - started
 
@@ -48,7 +48,7 @@ def jobs(python):
     modules.sort(key=lambda path: (ROOT / path).stat().st_size, reverse=True)
     playbooks = [str(path) for path in modules
                  if any(marker in (ROOT / path).read_text() for marker in ('ansible-playbook', 'run_play('))]
-    listed = subprocess.run(['rtk', 'proxy', python, '-c', LIST_TESTS, *playbooks], cwd=ROOT,
+    listed = subprocess.run([python, '-c', LIST_TESTS, *playbooks], cwd=ROOT,
                             capture_output=True, text=True)
     split = {}
     for line in listed.stdout.splitlines() if listed.returncode == 0 else []:
@@ -78,7 +78,7 @@ def main():
     for argv in (['bash', '-n', 'deploy/bootstrap-access.sh'],
                  ['python3', '-c', "import ast,pathlib; [ast.parse(p.read_text(),filename=str(p)) for root in ('deploy','implementation','tools') for p in pathlib.Path(root).rglob('*.py')]; print('Syntax checks passed')"],
                  ['git', 'diff', '--check']):
-        if code := subprocess.run(['rtk', 'proxy', *argv], cwd=ROOT).returncode:
+        if code := subprocess.run([*argv], cwd=ROOT).returncode:
             return code
     started = time.monotonic()
     planned = list(jobs(python))

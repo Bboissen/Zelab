@@ -88,11 +88,11 @@ def require_separate_backup(destination, paths):
 
 def pipeline(first, second, log):
     with log.open('ab') as errors:
-        producer = subprocess.Popen(['rtk', 'proxy', *map(str, first)], stdout=subprocess.PIPE, stderr=errors,
+        producer = subprocess.Popen([*map(str, first)], stdout=subprocess.PIPE, stderr=errors,
                                     start_new_session=True)
         consumer = None
         try:
-            consumer = subprocess.Popen(['rtk', 'proxy', *map(str, second)], stdin=producer.stdout,
+            consumer = subprocess.Popen([*map(str, second)], stdin=producer.stdout,
                                         stdout=subprocess.DEVNULL, stderr=errors, start_new_session=True)
             producer.stdout.close()
             consumer_code = consumer.wait()

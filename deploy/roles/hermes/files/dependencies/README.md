@@ -14,8 +14,8 @@ Qualification uses a disposable copy of the verified source, with these
 manifests, never a running installation:
 
 ```sh
-rtk proxy python3 -m pm.build_env --source /absolute/disposable/source --lock-only
-rtk proxy python3 -m pm.build_env --source /absolute/disposable/source --out /absolute/disposable/runtime --extra all --extra ddgs
+python3 -m pm.build_env --source /absolute/disposable/source --lock-only
+python3 -m pm.build_env --source /absolute/disposable/source --out /absolute/disposable/runtime --extra all --extra ddgs
 ```
 
 Set `HERMES_HOME` and `HERMES_RUNTIME_DIR` to disposable directories for both
