@@ -45,12 +45,12 @@ the exact boundaries.
 | Paperclip | Host service under `zelab-paperclip`, authenticated private mode, loopback only; embedded PostgreSQL reachable only by root, the operator and the service account (nftables) |
 | Paperclip bot agents | One `hermes_gateway` agent per bot, hired with `/agent-hires` and approved by `make bot`; `apiBaseUrl` is `http://127.0.0.1:<guest_api_port>/p/<bot>` |
 | Task bridge | One `task_bridge` key per bot, scoped to the projects the owner picks, in the profile's `.env`. In chat the bot uses it through Paperclip's official MCP server (`@paperclipai/mcp-server`, same release as Paperclip, locked in `deploy/roles/paperclip_mcp/files`, installed read-only at `/opt/zelab-tools/paperclip-mcp-server` in the guest), limited to `paperclipCreateIssue`, `paperclipGetIssue` and `paperclipListComments`. In a Paperclip run it closes tickets with Paperclip's bundled `paperclip-task-bridge` helper, reconciled unchanged into each profile; the key reaches the terminal through `terminal.env_passthrough` |
-| Chat tools | Every chat platform `make bot` sets up (`platform_toolsets.<platform>` in each profile, reset on every `make`) gets web, vision, image generation, speech, skills, to-do, memory, session search, clarify and the Paperclip MCP tools: no terminal, code, file, browser, cron, delegation or kanban tools. Paperclip runs use Hermes' `api_server` tools, which keep the terminal |
+| Chat tools | Every chat platform `make bot` sets up (`platform_toolsets.<platform>` in each profile, reset on every `make`) gets web, vision, image generation, speech, native files, skills, to-do, memory, session search, clarify and optional Paperclip MCP tools. Files inherit the guest account's access; they are not confined to the vault. No terminal, code, browser, cron, delegation or kanban tools. Paperclip runs use Hermes' `api_server` tools, which keep the terminal |
 | Zelab skill | Written when a bot is added, updated before its task key enables Paperclip tools, and reconciled on every `make`; Hermes' native `skills.auto_load` includes it in each session, retaining other auto-loaded skills; lists only the bot's permitted projects (Paperclip IDs, vault folders), the team and other bots; no secrets |
 | Projects | `config/projects.yaml`: a Paperclip project and a vault folder each; no host rights |
 | Team tiers | `config/team.yaml`: one account `zelab-team-<tier>` per tier (`dev` repo-dev, `ops` docker, `root` full-sudo; home below `/var/lib/zelab-projects`), read/write on the vault, and the Paperclip SSH environment `<tier> host`; site paths in `config/projects.yaml` |
 | Team | Coding agents make hires once from `config/team.yaml` (PM as lead; frontend, backend, mobile, game, data on `dev`; devops on `ops`; sysadmin on `root`). Each member runs on one harness, Claude Code (`claude_local`, default) or Codex (`codex_local`), chosen per member in the file with that harness's model and effort, on Paperclip's CLI engine; persona `config/team/<member>.md` plus `TEAM.md` as the first `AGENTS.md`; runs use the owner's subscription sign-in for that harness. Both pinned CLIs are installed as `codex` and `claude` |
-| Notes | Host vault `/var/lib/zelab-vault` with `Projects/<slug>/`; one notes-only SFTP listener on loopback exports the whole vault; the guest mounts it with SSHFS as the Hermes account |
+| Notes | Host vault `/var/lib/zelab-vault`: `Hermes/<bot>/` for personal work, `Paperclip/Projects/<slug>/` and `Paperclip/Server/` for project knowledge; both bots and team write directly. The bundled Hermes `obsidian` skill uses native file tools. One notes-only SFTP listener exports the whole vault; the guest mounts it with SSHFS as the Hermes account. Existing root `Projects/` and `Server/` notes remain in place |
 | Vault history | `/var/lib/zelab-vault-history`, a root-only git directory outside the vault, snapshotted by `zelab-vault-history.timer` every 5 minutes |
 | Desktop notes | Obsidian on the owner's laptop, on a clone of a private GitHub repository; `make notes` syncs the server vault with it on demand (Git directory, hooks, config and deploy key in `private_dir/notes-sync`, outside the vault and the guest; `.obsidian/`, Git files and symlinks never travel). See [NOTES.md](NOTES.md) |
 | Browser Obsidian (optional, off) | linuxserver.io container pinned by digest, loopback-published, password from a file, vault bind-mounted; `obsidian_enabled: false` retires it and its own Tailscale route |
@@ -58,15 +58,21 @@ the exact boundaries.
 
 ## Flows
 
-1. **Chat to ticket (G1).** Someone asks a bot in a project's channel. Chat
-   runs no commands: the bot reads its `zelab` skill and, with the Paperclip MCP
-   tools, files a ticket in that project assigned to itself, opening with a
+1. **Direct notes (N3).** Someone asks a bot to save research, an idea or a note.
+   The bot loads the bundled `obsidian` skill, writes through native file tools
+   to the shared vault and reads the note back. Personal work uses
+   `Hermes/<bot>/`; project notes use `Paperclip/Projects/<slug>/`. No Paperclip
+   key, ticket or project is needed for personal notes. Small project notes can
+   also be written directly. Hermes memory remains in the profile.
+2. **Tracked bot work (G1).** The user asks for tracking, delegation, or work
+   that needs commands. The bot reads its `zelab` skill and, with the Paperclip
+   MCP tools, files a ticket in that project assigned to itself, opening with a
    reply block (`Reply to`, `Asked by`, `Question`). Paperclip runs it through
    the bot's `hermes_gateway` agent; in that run the bot does the work (notes go
-   under `Projects/<slug>/`), answers the chat with its profile's native
+   under `Paperclip/Projects/<slug>/`), answers the chat with its profile's native
    `hermes send` CLI and closes the ticket with the task-bridge helper and the
    run ID.
-2. **Team work (G2).** From chat, in two tool calls, the bot files the job for
+3. **Team work (G2).** From chat, in two tool calls, the bot files the job for
    the PM, the only team member its key may assign, and a reply ticket for
    itself that is `blocked` by the job (`blockedByIssueIds`). The PM splits the
    job into tickets for the team, which Paperclip runs as Claude Code over SSH on
@@ -76,9 +82,9 @@ the exact boundaries.
    ticket. Asked for news before then, the bot reads the job in chat. A simple
    status question requests only a narrow current check; detailed evidence stays
    on the tickets.
-3. **Owner to bot (G3).** A ticket the owner assigns to a bot in Paperclip is
+4. **Owner to bot (G3).** A ticket the owner assigns to a bot in Paperclip is
    dispatched to `/p/<bot>/v1/runs` of the shared gateway.
-4. **Bot to bot (G4).** By chat, a bot that allows bots (`DISCORD_ALLOW_BOTS`)
+5. **Bot to bot (G4).** By chat, a bot that allows bots (`DISCORD_ALLOW_BOTS`)
    answers another bot's @mention; by ticket, a bot files work assigned to
    another bot's agent ID, which its key allows.
 
@@ -107,7 +113,7 @@ Replaced projects are archived only after their open tickets are resolved;
 their notes and tickets are retained.
 
 Projects and task keys are optional. A keyless profile still receives the
-managed integration and a chat-only skill; its Paperclip MCP entry stays
+managed integration, direct note-writing and its Zelab skill; its Paperclip MCP entry stays
 disabled until a verified task key is written. The guide lists the remaining
 setup steps, and plain `make` succeeds.
 
@@ -164,4 +170,5 @@ downloads, build trees, releases and images the current pins no longer use.
   [Codex adapter](https://docs.paperclip.ing/reference/adapters/codex/),
   [Claude Code adapter](https://docs.paperclip.ing/reference/adapters/claude-code/)
 - [Obsidian container](https://docs.linuxserver.io/images/docker-obsidian/),
+  [Hermes Obsidian skill](https://github.com/NousResearch/hermes-agent/blob/3637c512fc3211bdccb61b7140d09ac1018508ba/skills/note-taking/obsidian/SKILL.md),
   [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve)

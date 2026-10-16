@@ -7,6 +7,46 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Direct Hermes notes: 2026-10-16
+
+Chat now includes Hermes' native `file` toolset. The generated Zelab skill uses
+Hermes' bundled `obsidian` skill for direct vault writes and read-back, including
+without a Paperclip task key or project. A quick project note needs no ticket;
+Paperclip remains the path for tracked, delegated or command-based work.
+Native memory stays native. No upstream source, pin or handler changed.
+
+The host creates `Hermes/`, `Paperclip/Projects/<slug>/` and `Paperclip/Server/`.
+Bot folders appear on first write. Existing root `Projects/` and `Server/`
+notes stay in place, and the instructions tell writers to consult and update
+those notes at their existing paths. Team persona edits remain authoritative;
+new hires receive the new layout. The diagram shows the two direct writers.
+
+File tools inherit the shared guest account's access beyond the vault. The
+folders are not a sandbox, and keyless profiles have the same file tools.
+Chat terminal, code, browser, cron and delegation toolsets remain excluded.
+
+Repository checks: **PASS**, 274 tests, playbook syntax, public-source checks,
+SVG parsing and visual review; working-tree Gitleaks found no leaks.
+
+Native verification at 21:28 UTC used the installed, commit-verified Hermes
+`3637c512` and the configured model login, with an isolated temporary home, the
+new managed skill and chat toolsets. Paperclip MCP was disabled and no task key
+was supplied. The model loaded the bundled Obsidian skill, wrote a unique
+personal note and read it back; the exact marker was also verified in the host
+vault. No Paperclip or terminal tool was called. The temporary home and probe
+note were removed. The first fixture failed before inference because its
+temporary home lacked the installed dependency state; borrowing that unchanged
+state corrected the fixture without changing the product or pins.
+
+Repository changes are deployment settings, generated instructions, the vault
+layout, regression checks and docs. Host changes were only the temporary probe
+note; guest changes were temporary verification state and normal model-login
+use. Live bot configuration, Paperclip adapters, team personas and notes sync
+were not reapplied. Run normal `make` to apply the source change and refresh
+old chat contexts. Full-site reapply, a real Discord request, direct project-note
+model verification, complete Paperclip handoff, laptop Git sync and Obsidian
+desktop visibility: **NOT RUN** for this change.
+
 ## Work and notes overview: 2026-10-16
 
 The shorter README and rearranged diagram describe roles and goals, with the
@@ -372,12 +412,12 @@ Record PASS, FAIL or NOT RUN with timestamp, steps and sanitized evidence.
 
 | ID | Criterion | Result |
 | --- | --- | --- |
-| G1 | In a project's Discord channel, "@bot do research on X" ends with a Paperclip ticket and notes with sources under `Projects/<slug>/` in Obsidian | NOT RUN |
+| G1 | In a project's Discord channel, "@bot track research on X in Paperclip" ends with a ticket and notes with sources under `Paperclip/Projects/<slug>/` in Obsidian | NOT RUN |
 | G2 | A bot hands a chat question to the PM by child ticket; the PM splits it across the team; members do the work on their tier accounts; the bot is woken and answers in the same channel without the owner | NOT RUN |
 | T1 | make hires the default team once (lead first, others reporting to it, each member on its `config/team.yaml` harness with Paperclip's CLI engine and that harness's model, persona as AGENTS.md) and a second make hires nobody and leaves edited instructions alone | NOT RUN |
 | T3 | After the lead is terminated, `make` hires a new lead, moves the orphaned members under it and lists the tickets the old lead held; after a login expires, `make bot` option 4 renews the same connection and every member of that harness runs again | NOT RUN |
 | T4 | A team mixing Claude Code and Codex members: option 4 signs both in; a Codex member completes a ticket on its tier account with sudo where its tier allows it, and a Claude member likewise | NOT RUN |
-| T2 | The onboarding ticket is filed once; the PM splits it; sysadmin and devops write `Server/` (no secret values, nothing changed on the host) | NOT RUN |
+| T2 | The onboarding ticket is filed once; the PM splits it; sysadmin and devops write `Paperclip/Server/` (no secret values, nothing changed on the host) | NOT RUN |
 | G3 | A ticket the owner assigns to a bot in Paperclip is done by that bot and answered on the ticket | NOT RUN |
 | G4 | Two bots hand work over by chat @mention and by ticket | NOT RUN |
 | B1 | `make bot` adds a bot, signs it in to a model and a chat app through Hermes' menus and hires it in Paperclip, without restarting the guest | NOT RUN |
@@ -391,6 +431,7 @@ Record PASS, FAIL or NOT RUN with timestamp, steps and sanitized evidence.
 | O2 | `make backup`, `make fclean`, `make restore` bring back Paperclip, the vault and its history, every bot and its logins; a host task then runs | NOT RUN |
 | O3 | Source checks and gitleaks are clean; the docs describe v1.1 | NOT RUN |
 | N1 | With the browser Obsidian off: an agent reads and writes notes; `make` and a reboot keep the container and its route gone; root-only snapshots still run | NOT RUN |
+| N3 | Direct personal and project notes use the native Obsidian skill and file tools, read back on the host, without Paperclip; keyless personal notes work | PARTIAL: native model personal-note write/read-back and host marker passed with MCP disabled; project-note model and real chat checks NOT RUN |
 | N2 | `make notes`: a server edit reaches desktop Obsidian, a laptop edit reaches the server and an agent, a conflict keeps both versions, `.obsidian/` never travels, a public repository is refused | NOT RUN (unit-tested against a local bare remote) |
 
 ## Earlier versions

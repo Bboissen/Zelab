@@ -7,16 +7,22 @@ notes. Zelab brings three upstream tools to a Linux home server:
   research and reply in Discord, Telegram and other chat apps.
 - **[Paperclip](https://github.com/paperclipai/paperclip):** tasks, progress and
   a coding team that builds and maintains your projects.
-- **A shared notes vault:** project knowledge you can read and edit in desktop
-  Obsidian on your laptop.
+- **A shared notes vault:** personal and project knowledge you can read and
+  edit in desktop Obsidian on your laptop.
 
 ## Where everything runs
 
-![Zelab: chat reaches Hermes bots in a guest; MCP files tickets in host Paperclip, which starts bot runs or coding-team work; bots and team share notes, with separate history and private Git sync to optional desktop Obsidian.](docs/assets/architecture.svg)
+![Zelab: Hermes writes notes directly; optional Paperclip MCP coordinates tracked work and the coding team. One vault has Hermes and Paperclip sections, protected history and private Git sync to desktop Obsidian.](docs/assets/architecture.svg)
 
-Each bot with a task key uses **Paperclip's official MCP server** to create
-and read tickets. In the other direction, Paperclip starts the bot's work
-through Hermes' gateway API. The bot then does the work and replies in chat.
+Hermes bots use their **bundled Obsidian skill** to write notes directly,
+without a ticket or project. Personal work goes in `Hermes/<bot>/`; project
+knowledge goes in `Paperclip/Projects/<project>/`. Both bots and the coding
+team can edit project notes.
+
+Use Paperclip when work needs tracking, delegation or the host team. A keyed
+bot creates and reads tickets through **Paperclip's official MCP server**;
+Paperclip starts bot runs through Hermes' gateway API. Simple notes and
+research stay in the current chat, avoiding an extra dispatched run.
 
 Bots write Markdown files into the server vault. Obsidian reads those files;
 no Obsidian app needs to run on the server. The browser Obsidian container is
@@ -25,9 +31,9 @@ a private Git repository with `make notes` and `git pull`.
 
 ## Try it
 
-In an existing project's chat channel, ask your bot to create a new test note
-with a unique phrase, then give you its file path and Paperclip ticket. Check
-the file on the server before syncing it to your laptop. See the
+Ask your bot to save a new note with a unique phrase in its Hermes folder,
+read it back and give you its path. No Paperclip ticket is needed. Check the
+file on the server before syncing it to your laptop. See the
 [step-by-step notes check](docs/NOTES.md#check-that-a-bot-really-wrote-a-note).
 
 ## Install
@@ -75,8 +81,9 @@ destructive runs need `CONFIRM=<host:vm>`; restore also needs
 - Dashboards use private tailnet HTTPS and app logins. Local task/API links
   use HTTP with scoped keys; encrypted access to a dashboard does not encrypt
   every internal link.
-- Bots share one guest account, its credentials and the whole vault. Projects
-  and bot profiles do not isolate private data from each other.
+- Chat file tools can access what the shared guest account can access, beyond
+  the vault. Bots share that account, its credentials and the whole vault.
+  Projects and bot profiles do not isolate private data from each other.
 - Chat can trigger command-capable bot runs and reach host team members through
   the PM. Team permissions depend on their role: `dev` has no sudo, while
   `ops` has Docker access (root-equivalent) and `root` has full sudo. Runs have

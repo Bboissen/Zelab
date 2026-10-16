@@ -1,7 +1,7 @@
 # Projects make creates, and this site's tier paths. Copy to config/projects.yaml
 # (kept out of Git), edit, then run `make`.
 #
-# projects: the key is the project's slug, its vault folder Projects/<slug>/.
+# projects: the key is the project's slug, its vault folder Paperclip/Projects/<slug>/.
 #   name: the Paperclip project name (default: the slug).
 # A project is only where tickets and notes go; it grants no host rights.
 # Projects are optional: bots can chat without one, but tickets need a project and task key.

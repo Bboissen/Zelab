@@ -49,7 +49,7 @@ At the end of a fresh install, make asks how many bots to set up and opens Herme
     and the other bots, which you finish in nano: what it watches, decides
     and delivers, and when it asks you first. The one-line role is only a label.
   - **Task key** (optional): pick the Paperclip projects this bot may file tickets
-    in. Until a project and a task key exist, it can chat but cannot file tickets.
+    in. Until a project and a task key exist, it can chat and save notes directly, but cannot file tickets.
 - Add, change or remove bots later with `make bot`. Removing one
   terminates its Paperclip agent (its keys are revoked) and archives its profile
   without logins or tokens before deleting it.
@@ -91,10 +91,10 @@ Both CLIs are installed.
   folders under `tiers:` in `config/projects.yaml`.
 - Bots hand work only to the PM, who splits it across the team; the bot brings the
   answer back, in plain words, to the chat it was asked in. In chat, bots run no
-  commands: they talk and file Paperclip tickets.
+  commands: they research, save notes directly and file tickets when tracking or delegation helps.
 - Edit a member's instructions in Paperclip; make writes them only at hire.
 - The team's first ticket, filed by make for the PM, maps your server into the
-  vault folder `Server/`, read-only. Review its findings before asking for fixes.
+  vault folder `Paperclip/Server/`, read-only. Review its findings before asking for fixes.
 
 ### Discord
 
@@ -122,7 +122,7 @@ Create one channel per project, named after its slug, and invite the bots that w
 
 ### Test
 
-In a project's channel, ask a bot to research something; expect a Paperclip ticket and notes under Projects/<slug>/.
+Ask a bot to save and read back a note under `Hermes/<bot>/`; expect a direct write without a ticket. For tracked work, explicitly ask for a Paperclip task; project notes go under `Paperclip/Projects/<slug>/`.
 
 ## Commands
 

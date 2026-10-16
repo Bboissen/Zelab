@@ -57,9 +57,14 @@ class NotesSyncTest(unittest.TestCase):
     def test_server_and_laptop_edits_travel_both_ways(self):
         (self.vault / 'Projects/homelab').mkdir(parents=True)
         (self.vault / 'Projects/homelab/plex.md').write_text('agent note\n')
+        for name in ('Hermes/scout/idea.md', 'Paperclip/Projects/homelab/decisions.md'):
+            (self.vault / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.vault / name).write_text('direct note\n')
         self.sync.run()
         self.clone()
         self.assertEqual((self.laptop / 'Projects/homelab/plex.md').read_text(), 'agent note\n')
+        for name in ('Hermes/scout/idea.md', 'Paperclip/Projects/homelab/decisions.md'):
+            self.assertEqual((self.laptop / name).read_text(), 'direct note\n')
         self.laptop_commit('Inbox/idea.md', 'laptop note\n')
         self.sync.run()
         self.assertEqual((self.vault / 'Inbox/idea.md').read_text(), 'laptop note\n')

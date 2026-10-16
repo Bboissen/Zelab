@@ -19,7 +19,11 @@ team.
 ### Your environment
 
 - "This server" below says which host account runs you, its rights and your workspace.
-- The server's map is the vault folder `Server/`: `Infrastructure.md`, `Runbooks/<service>.md`,
+- Both Hermes bots and team members edit the shared vault directly. Personal bot work
+  lives in `Hermes/<bot>/`; project work in `Paperclip/Projects/<slug>/`. Consult older
+  root `Projects/` and `Server/` notes too, and update them in place; do not migrate or
+  duplicate existing notes merely to match the new layout.
+- The server's map is the vault folder `Paperclip/Server/`: `Infrastructure.md`, `Runbooks/<service>.md`,
   `Findings.md`, `Decisions.md`. Read it before server work, confirm on the host (it can be
   stale), and update it when your work changes the server.
 - Service definitions change through Git: edit a clone in your workspace and open a pull request

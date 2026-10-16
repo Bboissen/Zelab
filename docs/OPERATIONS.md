@@ -94,7 +94,7 @@ still appear. Installation, plain `make` and `make bot` apply this default.
 
 | Menu | What runs | Native to |
 | --- | --- | --- |
-| Add a bot | `hermes profile create <name> --description <role>`; a new `API_SERVER_KEY` in the profile; Paperclip's task-bridge skill copied into it; `terminal.env_passthrough` for the bridge variables; the `paperclip` MCP server, chat tools without commands (`platform_toolsets`) and `tools.tool_search.enabled: off` through `hermes config set`; Paperclip `/agent-hires` plus approval for a `hermes_gateway` agent at `/p/<name>` | Hermes, Paperclip |
+| Add a bot | `hermes profile create <name> --description <role>`; a new `API_SERVER_KEY` in the profile; Paperclip's task-bridge skill copied into it; `terminal.env_passthrough` for the bridge variables; the `paperclip` MCP server, native file tools without terminal access (`platform_toolsets`) and `tools.tool_search.enabled: off` through `hermes config set`; Paperclip `/agent-hires` plus approval for a `hermes_gateway` agent at `/p/<name>` | Hermes, Paperclip |
 | Model sign-in | `hermes -p <name> setup model`: Hermes' provider menu, including subscription logins | Hermes |
 | Chat app | `hermes -p <name> gateway setup`: Hermes' platform menu; the token is typed there. For Discord, make bot then asks whether other bots may hand work over by @mention (`DISCORD_ALLOW_BOTS=mentions`) | Hermes |
 | Persona | The profile's `SOUL.md`, edited in nano or pasted | Hermes file |
@@ -126,7 +126,7 @@ projects, add one to `config/projects.yaml` first and rerun `make`, then use
 
 `config/projects.yaml` (copy `config/projects.example.yaml`; kept out of Git)
 declares projects by slug. Each `make` creates a missing Paperclip project with
-the declared name and the vault folder `Projects/<slug>/`. Projects grant no
+the declared name and the vault folder `Paperclip/Projects/<slug>/`. Projects grant no
 host rights; removing one keeps its Paperclip project, tickets and notes.
 
 `config/team.yaml` declares the rights tiers and the default team. Each tier is
@@ -188,7 +188,7 @@ needs a new sign-in onto the connected company-shared one.
 Once the lead is hired, `make` files the team's first ticket for it, once per site
 (`config/team/ONBOARDING.md`, Paperclip's `idempotencyKey`, and the marker
 `private_dir/team-onboarding.json`): map the server, read-only, into the vault
-folder `Server/` (Infrastructure.md, Runbooks/, Findings.md, Decisions.md).
+folder `Paperclip/Server/` (Infrastructure.md, Runbooks/, Findings.md, Decisions.md).
 Every member and every bot's `zelab` skill points at that map.
 
 Bots may assign only the lead (the PM). Chat has no command tools; the `zelab`
@@ -244,7 +244,8 @@ explicitly choose an absent/empty override file for a separate guest test.
 | Hermes native state inside VM (one profile per bot) | `/var/lib/zelab/hermes/home` |
 | Paperclip database, uploads, agent state, AI connections | `/var/lib/zelab-paperclip` |
 | Team tier homes | `/var/lib/zelab-projects/<tier>` |
-| Durable notes | `/var/lib/zelab-vault/Projects/<slug>` |
+| Project notes | `/var/lib/zelab-vault/Paperclip/Projects/<slug>` |
+| Personal bot notes | `/var/lib/zelab-vault/Hermes/<bot>` |
 | Vault history (root only) | `/var/lib/zelab-vault-history` |
 | Notes sync: Git directory, deploy key, GitHub host keys | `private_dir/notes-sync` (operator only) |
 | Browser Obsidian settings (kept when it is off) | `/var/lib/zelab-obsidian` |
@@ -260,8 +261,8 @@ The host takes a git snapshot of the vault every 5 minutes into a root-only
 directory the guest cannot reach. To bring back a folder as it was:
 
 ```sh
-sudo git --git-dir=/var/lib/zelab-vault-history log --oneline -- Projects/<slug>
-sudo git --git-dir=/var/lib/zelab-vault-history checkout <commit> -- Projects/<slug>
+sudo git --git-dir=/var/lib/zelab-vault-history log --oneline -- Paperclip/Projects/<slug>
+sudo git --git-dir=/var/lib/zelab-vault-history checkout <commit> -- Paperclip/Projects/<slug>
 ```
 
 The restored files appear in the guest at once, and on the laptop after the next

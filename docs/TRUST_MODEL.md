@@ -43,7 +43,7 @@ item X1 in [Status](STATUS.md) remains **NOT RUN**.
 | A bot's Paperclip agent | Paperclip runs it for tickets assigned to it | Its `hermes_gateway` adapter reaches only `/p/<bot>` with that profile's own API key (other profiles' keys are refused) |
 | A bot's task key | Create tickets in the picked projects, assigned to itself, another bot, the team lead, or nobody; read the tickets it created or is assigned; comment on and update them only inside a Paperclip run | `task_bridge` scope: `projectIds`, `allowedAssigneeAgentIds`; Paperclip's run-ID check |
 | Team member on tier `<tier>` | The account `zelab-team-<tier>`: its home and workspace, the preset's groups, sudo commands and path rights, read/write on the whole vault; Paperclip's standard agent key | OS account, `/etc/sudoers.d/zelab-team-<tier>`, POSIX ACLs on the tier's paths and the vault, SSH key with `from=<host>` and `restrict` |
-| Chat users | Talk to the bots each allowlist admits; through them, file and read tickets. A chat session runs no command | Hermes' native allowlist, set in `hermes gateway setup`; `platform_toolsets` per chat platform, reset by every `make`, offers no terminal, code, file, browser, cron, delegation or kanban tool |
+| Chat users | Talk to the bots each allowlist admits; through them, read and edit files accessible to the shared guest account, use memory, and optionally file and read tickets. No chat terminal tool | Hermes' native allowlist, set in `hermes gateway setup`; `platform_toolsets` per chat platform, reset by every `make`, includes native files but no terminal, code, browser, cron, delegation or kanban tool |
 
 Default tiers (`config/team.yaml`): `dev` is `repo-dev` (PM, frontend,
 backend, mobile, game, data: own paths, no sudo), `ops` is `docker` (devops:
@@ -75,6 +75,11 @@ layer.
   command, but it can file a ticket that the bot's Paperclip run then works with
   its terminal, under the same account. Chat also keeps Hermes' `skills`
   toolset, which can write skill files that later runs read.
+- **Chat file access extends beyond notes.** The native `file` tools use the
+  shared guest account's filesystem rights. They can read or change accessible
+  profile state and files used by later runs; `Hermes/` and `Paperclip/` are
+  organizational folders, not a sandbox. Enabling direct notes does not confine
+  reads or writes to the vault, and a missing task key does not restrict files.
 - **Team members run without per-command approval or a CLI sandbox.** Claude
   Code members keep Paperclip's default `dangerouslySkipPermissions`; Codex
   members are hired with `dangerouslyBypassApprovalsAndSandbox` because Codex's
