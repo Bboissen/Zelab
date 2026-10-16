@@ -5,8 +5,9 @@ Private chat agents for a home server, built from upstream parts:
 shared gateway serving one Hermes profile per bot, each on its own Discord (or
 Telegram, Slack...) identity; [Paperclip](https://github.com/paperclipai/paperclip)
 on the host tracks the work and dispatches it to the bots and to a default team
-of Claude Code agents (PM, frontend, backend, mobile, game, data, devops,
-sysadmin) working on the host over SSH; one vault holds the notes, one folder
+of coding agents (PM, frontend, backend, mobile, game, data, devops, sysadmin),
+each on Claude Code or Codex as you choose per member, working on the host over
+SSH; one vault holds the notes, one folder
 per project, which you open in desktop Obsidian on your laptop through a private
 Git repository (`make notes`). Administration UIs are reachable only through Tailscale or localhost.
 
@@ -58,13 +59,91 @@ Debian or Ubuntu with KVM, Docker Compose, OpenSSH, Python 3.12+, Make and
 `fclean` and `re` delete notes, tasks and application logins. Noninteractive
 destructive runs need `CONFIRM=<host:vm>`. See [operations](docs/OPERATIONS.md).
 
+## Isolation
+
+Each wall below is an OS account, a firewall rule, a scoped key or a native
+product setting, never prompt text. The guest is the only hard wall.
+
+```mermaid
+flowchart TB
+  Chat[Discord, Telegram, Slack]
+  subgraph Guest["KVM guest: the hard wall (nftables: internet, Paperclip API and notes share only)"]
+    direction LR
+    Gateway[Hermes gateway: one account, every bot profile]
+    Share[/Vault mount over SFTP, whole vault/]
+  end
+  subgraph Host["Host (everything on loopback; UIs only through Tailscale)"]
+    direction LR
+    Paperclip[Paperclip: tickets, task keys scoped per bot]
+    subgraph Tiers["Team tier accounts, one per rights level"]
+      direction TB
+      Dev[zelab-team-dev: repo-dev, no sudo]
+      Ops[zelab-team-ops: docker group]
+      Root[zelab-team-root: full sudo]
+    end
+    Vault[(Vault)]
+    History[(Root-only history, every 5 min)]
+    Private[(private_dir: keys, hashes, resource IDs, mode 0700)]
+  end
+  Chat -->|allowlisted users| Gateway
+  Gateway -->|task key: own projects, assign bots or the PM| Paperclip
+  Paperclip -->|SSH, restricted key per tier| Tiers
+  Tiers -->|read/write| Vault
+  Share <-->|SFTP, loopback| Vault
+  Vault -. snapshot .-> History
+```
+
+A hijacked bot owns the guest and the shared vault, nothing else; a team
+member owns its tier account, nothing above it; note history and credentials
+stay where neither can reach.
+
+## Modularity
+
+Every part is one upstream unit you add, swap or remove on its own; `make`
+reconciles the rest.
+
+```mermaid
+flowchart LR
+  subgraph Bots["Bots (make bot)"]
+    direction TB
+    Profile[Hermes profile] --> Login[Model login: any provider in Hermes' menu]
+    Profile --> App[Chat app: Discord, Telegram, Slack...]
+    Profile --> Soul[SOUL.md persona]
+    Profile --> Key[Task key: the projects you pick]
+  end
+  subgraph Team["Team (config/team.yaml)"]
+    direction TB
+    Member[Member persona config/team/name.md] --> Harness{Harness}
+    Harness --> Claude[Claude Code: claude_local]
+    Harness --> Codex[Codex: codex_local]
+    Member --> Tier[Tier: dev, ops, root or your own preset]
+  end
+  subgraph Projects["Projects (config/projects.yaml)"]
+    direction TB
+    Project[Slug] --> PProject[Paperclip project]
+    Project --> Folder[Vault folder under Projects, one per slug]
+  end
+  subgraph Notes["Notes"]
+    direction TB
+    Sync[make notes: private Git remote, desktop Obsidian]
+    Browser[Optional browser Obsidian container, off by default]
+  end
+  Bots --> Projects
+  Team --> Projects
+  Projects --> Notes
+```
+
+Both CLIs are installed and pinned, so switching a member between Claude Code
+and Codex is one line in the team file before hiring, or one setting in
+Paperclip afterwards. Every upstream download is pinned and checked.
+
 ## Security model in one paragraph
 
 The KVM guest is the hard wall: bots cannot reach the host, the LAN or the
 tailnet, only the internet, the Paperclip API and the notes share. Inside the
 guest every bot shares one account and the whole vault, so bots are not isolated
-from each other; a project that must stay separate needs its own site. Host
-agents have only their project account's rights; a `full-sudo` project's agent
+from each other; a project that must stay separate needs its own site. Team
+members have only their tier account's rights; the `full-sudo` tier's member
 is root. Access is enforced by OS accounts, scoped keys and firewall rules, not
 prompt text. Secrets stay out of Git and logs; every upstream download is
 pinned. Read the [trust model](docs/TRUST_MODEL.md) and [status](docs/STATUS.md).

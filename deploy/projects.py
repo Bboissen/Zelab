@@ -8,8 +8,9 @@ rights. It may also override a tier's preset or paths for this site.
 config/team.yaml (public) declares the rights tiers and the default team. A
 tier is one host account zelab-team-<tier> with a preset (a fixed catalogue of
 groups, a sudoers fragment and path rights), its SSH key and the Paperclip SSH
-environment "<tier> host". A member is a Claude Code agent make hires on its
-tier's environment, with config/team/<member>.md as its first instructions.
+environment "<tier> host". A member is a Claude Code or Codex agent (its
+harness) make hires on its tier's environment, with config/team/<member>.md as
+its first instructions.
 make applies both files on each run; nothing watches them in between.
 """
 
@@ -27,6 +28,8 @@ MEMBER = re.compile(r'[a-z][a-z0-9-]{0,22}[a-z0-9]')
 # Paperclip's own agent roles.
 ROLES = ('ceo', 'cto', 'cmo', 'cfo', 'security', 'engineer', 'designer', 'pm', 'qa', 'devops', 'researcher', 'general')
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+# Host agent harnesses, both installed by make, and the pinned Paperclip adapters' default models.
+HARNESS_MODELS = {'claude': 'claude-opus-5-5', 'codex': 'gpt-5.6-sol'}
 # Paths a preset may own: real directories that are not system trees.
 FORBIDDEN_PATHS = ('/', '/bin', '/boot', '/dev', '/etc', '/home', '/lib', '/lib64', '/opt', '/proc', '/root',
                    '/run', '/sbin', '/srv', '/sys', '/tmp', '/usr', '/var', '/var/lib', '/var/log')
@@ -121,15 +124,24 @@ def validate(data):
 
 
 def validate_team(data, persona_dir=None):
-    """config/team.yaml: model, effort, tiers and members; raises ValueError on anything unclear."""
-    if not isinstance(data, dict) or set(data) - {'model', 'effort', 'tiers', 'members'}:
-        raise ValueError('config/team.yaml may contain only model, effort, tiers and members')
-    model = data.get('model', 'claude-opus-5-5')
-    if not isinstance(model, str) or not re.fullmatch(r'[a-z0-9][a-z0-9.\-\[\]]{2,63}', model):
-        raise ValueError('team model must be a Claude model ID such as claude-opus-5-5')
-    effort = data.get('effort', 'high')
-    if effort not in EFFORTS:
-        raise ValueError(f'team effort must be one of {", ".join(EFFORTS)}')
+    """config/team.yaml: harness defaults, tiers and members; raises ValueError on anything unclear."""
+    if not isinstance(data, dict) or set(data) - {'harness', *HARNESS_MODELS, 'tiers', 'members'}:
+        raise ValueError(f'config/team.yaml may contain only harness, {", ".join(HARNESS_MODELS)}, tiers and members')
+    default = data.get('harness', 'claude')
+    if default not in HARNESS_MODELS:
+        raise ValueError(f'team harness must be one of {", ".join(HARNESS_MODELS)}')
+    harnesses = {}
+    for harness, default_model in HARNESS_MODELS.items():
+        settings = data.get(harness) or {}
+        if not isinstance(settings, dict) or set(settings) - {'model', 'effort'}:
+            raise ValueError(f'{harness}: only model and effort are allowed')
+        model = settings.get('model', default_model)
+        if not isinstance(model, str) or not re.fullmatch(r'[a-z0-9][a-z0-9.\-\[\]]{2,63}', model):
+            raise ValueError(f'{harness} model must be a model ID such as {default_model}')
+        effort = settings.get('effort', 'high')
+        if effort not in EFFORTS:
+            raise ValueError(f'{harness} effort must be one of {", ".join(EFFORTS)}')
+        harnesses[harness] = {'model': model, 'effort': effort}
     tiers = {}
     for tier, settings in (data.get('tiers') or {}).items():
         if not isinstance(tier, str) or not TIER.fullmatch(tier):
@@ -141,8 +153,10 @@ def validate_team(data, persona_dir=None):
     for name, settings in (data.get('members') or {}).items():
         if not isinstance(name, str) or not MEMBER.fullmatch(name):
             raise ValueError(f'Member {name!r} must be 2-24 lowercase letters, digits and dashes')
-        if not isinstance(settings, dict) or set(settings) - {'title', 'role', 'tier', 'lead'}:
-            raise ValueError(f'{name}: only title, role, tier and lead are allowed')
+        if not isinstance(settings, dict) or set(settings) - {'title', 'role', 'tier', 'lead', 'harness'}:
+            raise ValueError(f'{name}: only title, role, tier, lead and harness are allowed')
+        if settings.get('harness', default) not in HARNESS_MODELS:
+            raise ValueError(f'{name}: harness must be one of {", ".join(HARNESS_MODELS)}')
         if settings.get('role', 'engineer') not in ROLES:
             raise ValueError(f'{name}: role must be one of {", ".join(ROLES)}')
         if settings.get('tier') not in tiers:
@@ -153,12 +167,12 @@ def validate_team(data, persona_dir=None):
             raise ValueError(f'{name}: its persona {Path(persona_dir) / (name + ".md")} is missing')
         members[name] = {'title': one_line(f'{name}: title', settings.get('title', name)),
                          'role': settings.get('role', 'engineer'), 'tier': settings['tier'],
-                         'lead': settings.get('lead', False)}
+                         'lead': settings.get('lead', False), 'harness': settings.get('harness', default)}
         if members[name]['lead']:
             leads.append(name)
     if len(leads) > 1:
         raise ValueError(f'Only one member can lead the team, not {", ".join(leads)}')
-    return {'model': model, 'effort': effort, 'tiers': tiers, 'members': members}
+    return {'harness': default, 'harnesses': harnesses, 'tiers': tiers, 'members': members}
 
 
 def load(path):

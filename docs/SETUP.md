@@ -74,13 +74,15 @@ once after the bots; `rtk proxy make notes` sets it up any time.
 ### The team
 
 make hires a default team in Paperclip from `config/team.yaml`: a PM who leads,
-frontend, backend, mobile, game, data, devops and sysadmin. Each is a Claude
-Code agent (Opus 5.5, Claude CLI engine) with its own persona in
-`config/team/`.
+frontend, backend, mobile, game, data, devops and sysadmin. Each runs on
+Claude Code (the default, Opus 5.5) or Codex (gpt-5.6-sol), chosen per member
+in that file before the first make, with its own persona in `config/team/`.
+Both CLIs are installed.
 
-- Sign the team in to your Claude subscription once: option 4 in
-  `rtk proxy make bot`, then `claude` (Anthropic's own sign-in page). Paperclip
-  also asks on the team's first task.
+- Sign each harness your team uses in once: option 4 in `rtk proxy make bot`,
+  then `claude` (Anthropic's sign-in page, Claude subscription) or `codex`
+  (OpenAI's device code, ChatGPT subscription); type the other one next, Enter
+  when done. Paperclip also asks on the team's first task.
 - Rights come from three tiers, one host account each: `dev` (no sudo), `ops`
   (docker) and `root` (full sudo, the sysadmin). Give `ops` your Docker
   folders under `tiers:` in `config/projects.yaml`.

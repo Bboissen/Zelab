@@ -9,8 +9,8 @@ is a task_bridge key scoped to the projects the owner picks.
 
   menu       the terminal menu (make bot)
   installer  after a fresh plain make: ask how many bots, set each up
-  refresh    hire the default team, rewrite each bot's Zelab skill and widen task
-             keys to all bots and the team lead
+  refresh    hire the default team (Claude Code or Codex per member), rewrite each
+             bot's Zelab skill and widen task keys to all bots and the team lead
 
 Needs a terminal for anything that asks; tokens and passwords are typed into
 the native wizards or hidden prompts and never printed or logged.
@@ -425,9 +425,11 @@ class Paperclip:
         return data.get('connections', []) if isinstance(data, dict) else data
 
 
-# Paperclip's local subscription sign-in for host agents, shared by every agent.
-AI_PROVIDERS = {'codex': ('openai', 'Codex subscription (host agents)'),
-                'claude': ('anthropic', 'Claude subscription (host agents)')}
+# Host agent harnesses (config/team.yaml): Paperclip adapter, AI connection provider, display name and
+# the label of Paperclip's company-shared subscription sign-in (make bot, option 4).
+HARNESSES = {'claude': ('claude_local', 'anthropic', 'Claude Code', 'Claude subscription (host agents)'),
+             'codex': ('codex_local', 'openai', 'Codex', 'Codex subscription (host agents)')}
+ADAPTER_HARNESS = {adapter: harness for harness, (adapter, *_) in HARNESSES.items()}
 
 
 def starter(name, role, others, tone=''):
@@ -475,8 +477,22 @@ PRESET_TEXT = {
     'full-sudo': 'unrestricted sudo: you are root on this host',
 }
 TEAM_DIR = ROOT / 'config/team'
-# Without a company-shared Claude connection, runs use the hiring owner's personal default.
-TEAM_CONNECTION = {'provider': 'anthropic', 'method': 'subscription', 'mode': 'responsible_user'}
+
+
+def initial_binding(provider):
+    """Without a company-shared connection for the provider, runs use the hiring owner's personal default."""
+    return {'provider': provider, 'method': 'subscription', 'mode': 'responsible_user'}
+
+
+def adapter_config(harness, settings):
+    """Paperclip's CLI engine on the pinned adapter, with its own field names for the model and the effort."""
+    if harness == 'codex':
+        # Paperclip's Claude adapter skips permissions by default; the Codex one keeps Codex's approvals and
+        # workspace sandbox, which no_new_privs makes useless for sudo and for paths outside the workspace.
+        # Unattended members get the same rule on both: the tier account is the limit (docs/TRUST_MODEL.md).
+        return {'engine': 'cli', 'model': settings['model'], 'modelReasoningEffort': settings['effort'],
+                'dangerouslyBypassApprovalsAndSandbox': True}
+    return {'engine': 'cli', 'model': settings['model'], 'effort': settings['effort']}
 # The team's first ticket: map the server into the vault. Filed once per site, for the lead.
 ONBOARDING_KEY = 'zelab-team-onboarding'
 
@@ -497,14 +513,19 @@ def team_agents(site, agents, ids):
     return members, others
 
 
-def team_binding(connections):
-    """The team's AI binding: the connected company-shared Claude subscription (make bot, option 4), if any."""
+def team_binding(connections, provider='anthropic'):
+    """A harness's AI binding: the provider's connected company-shared subscription (make bot, option 4), if any."""
     for connection in connections:
         if (connection.get('provider'), connection.get('method'), connection.get('ownership'), connection.get('status')) \
-                == ('anthropic', 'subscription', 'shared', 'connected'):
-            return {'provider': 'anthropic', 'method': 'subscription', 'mode': 'shared',
+                == (provider, 'subscription', 'shared', 'connected'):
+            return {'provider': provider, 'method': 'subscription', 'mode': 'shared',
                     'connectionId': connection['id'], 'grantId': connection['grantId']}
-    return TEAM_CONNECTION
+    return initial_binding(provider)
+
+
+def team_bindings(connections):
+    """{harness: AI binding} for every harness."""
+    return {harness: team_binding(connections, provider) for harness, (_, provider, *_) in HARNESSES.items()}
 
 
 def team_lead(site):
@@ -541,8 +562,8 @@ def team_instructions(site, name, projects):
         (TEAM_DIR / f'{name}.md').read_text().strip(), '',
         (TEAM_DIR / 'TEAM.md').read_text().strip(), '',
         '## This server', '',
-        f"- You are **{name}**, the team's {member['title']}. Paperclip runs you as Claude Code over SSH on this "
-        f"host as `{tier['account']}`: {PRESET_TEXT[tier['preset']]}.",
+        f"- You are **{name}**, the team's {member['title']}. Paperclip runs you as {HARNESSES[member['harness']][2]} "
+        f"over SSH on this host as `{tier['account']}`: {PRESET_TEXT[tier['preset']]}.",
         f"- Your workspace: `{site['projects_dir']}/{member['tier']}/workspace`. Other paths you may use: {paths}.",
         notes,
         reporting,
@@ -895,7 +916,8 @@ class Bots:
             return
         team = self.site['zelab_team']
         projects = self.site.get('zelab_projects', {})
-        binding = team_binding(self.paperclip.ai_connections())
+        bindings = team_bindings(self.paperclip.ai_connections())
+        unsigned = set()
         print(f'  Hiring the team in Paperclip ({", ".join(missing)}) ...', end=' ', flush=True)
         for name in missing:
             member = declared[name]
@@ -904,21 +926,26 @@ class Bots:
                 print(f'\n  {name}: skipped ({"no " + member["tier"] + " host environment" if not environment else "a bot has that name"}).',
                       end=' ')
                 continue
+            harness = member['harness']
+            adapter, provider, *_ = HARNESSES[harness]
+            if bindings[harness] == initial_binding(provider):
+                unsigned.add(harness)
             members[name] = self.paperclip.hire({
                 'name': name, 'role': member['role'], 'title': member['title'], 'capabilities': member['title'],
-                'adapterType': 'claude_local', 'defaultEnvironmentId': environment,
+                'adapterType': adapter, 'defaultEnvironmentId': environment,
                 'reportsTo': members[lead]['id'] if lead in members and name != lead else None,
-                'adapterConfig': {'engine': 'cli', 'model': team['model'], 'effort': team['effort']},
+                'adapterConfig': adapter_config(harness, team['harnesses'][harness]),
                 'instructionsBundle': {'entryFile': 'AGENTS.md',
                                        'files': {'AGENTS.md': team_instructions(self.site, name, projects)}},
-                'runtimeConfig': {'aiConnection': binding,
+                'runtimeConfig': {'aiConnection': bindings[harness],
                                   'heartbeat': {'enabled': False, 'wakeOnDemand': True, 'maxConcurrentRuns': 1}},
                 'metadata': {'zelab_team': name}})
         print('done')
         self.reparent(members, lead)
-        if binding is TEAM_CONNECTION:
-            print('  The team runs on your Claude subscription: sign in once with rtk proxy make bot, option 4,')
-            print('  then quit it; the team is switched to that connection.')
+        for harness in sorted(unsigned):
+            print(f'  Members on {HARNESSES[harness][2]} run on your subscription: sign in once with '
+                  f'rtk proxy make bot, option 4 ({harness}),')
+            print('  then quit it; those members are switched to that connection.')
 
     def reparent(self, members, lead):
         """Put members whose manager was terminated back under the live lead; other managers are the owner's choice."""
@@ -942,25 +969,30 @@ class Bots:
                 print('  Reassign or cancel them in Paperclip.')
 
     def bind_team(self, initial=True):
-        """Move Claude members to the connected shared Claude connection: members bound to a Claude connection
-        that needs a new sign-in, and, after an explicit sign-in, members still on the initial binding."""
+        """Move members to their harness's connected shared connection: members bound to a connection of that
+        provider that needs a new sign-in, and, after an explicit sign-in, members still on the initial binding."""
         connections = self.paperclip.ai_connections()
-        binding = team_binding(connections)
-        if binding is TEAM_CONNECTION:
-            return
-        broken = {connection['id'] for connection in connections
-                  if connection.get('provider') == 'anthropic' and connection.get('status') != 'connected'}
+        bindings = team_bindings(connections)
         members, _ = self.team()
-        moved = []
+        moved = {}
         for name, agent in sorted(members.items()):
+            harness = ADAPTER_HARNESS.get(agent.get('adapterType'))
+            if harness is None or bindings[harness] == initial_binding(HARNESSES[harness][1]):
+                continue
+            provider = HARNESSES[harness][1]
+            broken = {connection['id'] for connection in connections
+                      if connection.get('provider') == provider and connection.get('status') != 'connected'}
             runtime = agent.get('runtimeConfig') or {}
             current = runtime.get('aiConnection')
             stale = isinstance(current, dict) and current.get('connectionId') in broken
-            if agent.get('adapterType') == 'claude_local' and (stale or (initial and current == TEAM_CONNECTION)):
-                self.paperclip.call('PATCH', f"/agents/{agent['id']}", {'runtimeConfig': {**runtime, 'aiConnection': binding}})
-                moved.append(name)
+            if stale or (initial and current == initial_binding(provider)):
+                self.paperclip.call('PATCH', f"/agents/{agent['id']}",
+                                    {'runtimeConfig': {**runtime, 'aiConnection': bindings[harness]}})
+                moved.setdefault(harness, []).append(name)
+        for harness, names in sorted(moved.items()):
+            print(f'  Members on {HARNESSES[harness][2]} now run on the shared {HARNESSES[harness][2]} '
+                  f'connection ({", ".join(names)}).')
         if moved:
-            print(f'  The team now runs on the shared Claude connection ({", ".join(moved)}).')
             print('  A task that failed for want of a connection: open it in Paperclip and press Retry.')
 
     def onboard(self):
@@ -1111,18 +1143,29 @@ class Bots:
         self.restart_needed = True
 
     def host_sign_in(self):
-        """Paperclip's own subscription sign-in for Codex or Claude Code host agents."""
+        """Paperclip's own subscription sign-in for Claude Code and Codex host agents, one harness at a time."""
         heading('HOST AGENTS')
-        connected = [c for c in self.paperclip.ai_connections() if c.get('status') in ('ready', 'connected', 'active')]
-        if connected:
-            print(f'  Paperclip already has {len(connected)} AI connection(s) for host agents.')
-        print('  The team runs Claude Code (or Codex) on the host, with a subscription login Paperclip')
-        print('  keeps. make hires the default team from config/team.yaml; agents you hire yourself go on a')
-        print('  "<tier> host" environment. Rerun make afterwards so every bot\'s zelab skill knows them.')
-        choice = input('  Sign in now? codex, claude or Enter to skip: ').strip().lower()
-        if choice not in AI_PROVIDERS:
-            return
-        provider, label = AI_PROVIDERS[choice]
+        connections = self.paperclip.ai_connections()
+        declared = (self.site.get('zelab_team') or {}).get('members', {})
+        print('  Team members run Claude Code (claude) or Codex (codex) on the host, each with a subscription')
+        print('  login Paperclip keeps. make hires the default team from config/team.yaml; agents you hire')
+        print('  yourself go on a "<tier> host" environment. Rerun make afterwards so every bot\'s zelab skill knows them.')
+        for harness, (_, provider, title, _) in HARNESSES.items():
+            members = sorted(name for name, member in declared.items() if member['harness'] == harness)
+            shared = [c for c in connections
+                      if (c.get('provider'), c.get('method'), c.get('ownership')) == (provider, 'subscription', 'shared')]
+            state = ('signed in' if any(c.get('status') == 'connected' for c in shared) else
+                     'needs a new sign-in' if shared else 'not signed in')
+            print(f'  {harness}: {title}, {state}; members: {", ".join(members) or "none"}')
+        while True:
+            choice = input('  Sign in now? codex, claude or Enter to skip: ').strip().lower()
+            if choice not in HARNESSES:
+                return
+            self.sign_in(choice)
+
+    def sign_in(self, harness):
+        """Create or renew the company-shared subscription connection of one harness, then bind its members."""
+        _, provider, _, label = HARNESSES[harness]
         intent = {'provider': provider, 'method': 'subscription', 'name': label, 'ownership': 'shared',
                   'agentIds': [], 'allAgents': True}
         # Signing in again renews the existing connection, so every agent bound to it keeps working.
@@ -1146,8 +1189,7 @@ class Bots:
             return
         self.paperclip.call('POST', path, {**intent, 'localSessionId': attempt['sessionId']})
         print('  Host agent sign-in saved in Paperclip.')
-        if provider == 'anthropic':
-            self.bind_team()
+        self.bind_team()
 
     def finish(self):
         self.refresh()

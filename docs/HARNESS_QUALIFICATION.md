@@ -1,7 +1,8 @@
 # Host agent CLI qualification
 
-Both CLIs are installed for host agents, which run them on a project's host
-account over Paperclip's SSH environment. Codex retains the previously
+Both CLIs are installed for host agents, which run them on a tier's host
+account over Paperclip's SSH environment; `config/team.yaml` picks Claude Code
+or Codex per member. Codex retains the previously
 qualified `0.162.0` package and SHA-256 pin. Claude Code was added without
 changing that version or Paperclip's
 pinned upstream release (`v2026.1005.0`, commit

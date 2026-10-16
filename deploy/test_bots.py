@@ -143,9 +143,10 @@ class BotTest(unittest.TestCase):
         self.assertNotIn('pcp_', text)
 
     def test_team_is_matched_by_metadata_and_only_the_lead_is_assignable(self):
-        team = {'model': 'claude-opus-5-5', 'effort': 'high', 'tiers': {},
-                'members': {'pm': {'title': 'Product Manager', 'role': 'pm', 'tier': 'dev', 'lead': True},
-                            'backend': {'title': 'Backend Engineer', 'role': 'engineer', 'tier': 'dev', 'lead': False}}}
+        team = {'harness': 'claude', 'harnesses': {'claude': {'model': 'claude-opus-5-5', 'effort': 'high'}, 'codex': {'model': 'gpt-5.6-sol', 'effort': 'high'}}, 'tiers': {},
+                'members': {'pm': {'title': 'Product Manager', 'role': 'pm', 'tier': 'dev', 'lead': True, 'harness': 'claude'},
+                            'backend': {'title': 'Backend Engineer', 'role': 'engineer', 'tier': 'dev', 'lead': False,
+                                        'harness': 'codex'}}}
         site = {**SITE, 'zelab_team': team}
         ids = {'environments': {'dev host': 'ed', 'root host': 'er'}}
         agents = [{'id': 'h1', 'name': 'pm', 'adapterType': 'claude_local', 'status': 'idle', 'metadata': {'zelab_team': 'pm'}},
@@ -204,31 +205,43 @@ class BotTest(unittest.TestCase):
         personal = {'id': 'c1', 'grantId': 'g1', 'provider': 'anthropic', 'method': 'subscription',
                     'ownership': 'personal', 'status': 'connected'}
         shared = {**personal, 'id': 'c2', 'grantId': 'g2', 'ownership': 'shared'}
-        self.assertIs(bots.team_binding([personal, {**shared, 'status': 'needs_attention'}]), bots.TEAM_CONNECTION)
+        self.assertEqual(bots.team_binding([personal, {**shared, 'status': 'needs_attention'}]),
+                         bots.initial_binding('anthropic'))
         self.assertEqual(bots.team_binding([personal, shared]),
                          {'provider': 'anthropic', 'method': 'subscription', 'mode': 'shared',
                           'connectionId': 'c2', 'grantId': 'g2'})
+        codex = {**shared, 'id': 'c3', 'grantId': 'g3', 'provider': 'openai'}
+        self.assertEqual(bots.team_bindings([shared, codex]), {
+            'claude': bots.team_binding([shared]),
+            'codex': {'provider': 'openai', 'method': 'subscription', 'mode': 'shared', 'connectionId': 'c3', 'grantId': 'g3'}})
+        self.assertEqual(bots.team_bindings([shared]), {'claude': bots.team_binding([shared]),
+                                                        'codex': bots.initial_binding('openai')})
 
-    def test_claude_sign_in_preserves_changed_harnesses_and_explicit_connections(self):
+    def test_sign_in_preserves_changed_harnesses_and_explicit_connections(self):
         connection = {'id': 'claude', 'grantId': 'grant', 'provider': 'anthropic',
                       'method': 'subscription', 'ownership': 'shared', 'status': 'connected'}
-        explicit = {**bots.TEAM_CONNECTION, 'mode': 'shared', 'connectionId': 'chosen', 'grantId': 'chosen-grant'}
+        codex = {**connection, 'id': 'codex', 'grantId': 'cg', 'provider': 'openai'}
+        explicit = {**bots.initial_binding('anthropic'), 'mode': 'shared', 'connectionId': 'chosen', 'grantId': 'chosen-grant'}
         members = {
             'initial': {'id': 'initial', 'adapterType': 'claude_local',
-                        'runtimeConfig': {'aiConnection': dict(bots.TEAM_CONNECTION), 'heartbeat': {'enabled': False}}},
+                        'runtimeConfig': {'aiConnection': bots.initial_binding('anthropic'), 'heartbeat': {'enabled': False}}},
             'codex': {'id': 'codex', 'adapterType': 'codex_local',
                       'runtimeConfig': {'aiConnection': {'provider': 'openai', 'method': 'subscription',
                                                        'mode': 'shared', 'connectionId': 'codex', 'grantId': 'cg'}}},
+            'codex-initial': {'id': 'codex-initial', 'adapterType': 'codex_local',
+                              'runtimeConfig': {'aiConnection': bots.initial_binding('openai')}},
             'switching': {'id': 'switching', 'adapterType': 'codex_local',
-                          'runtimeConfig': {'aiConnection': dict(bots.TEAM_CONNECTION)}},
+                          'runtimeConfig': {'aiConnection': bots.initial_binding('anthropic')}},
             'explicit': {'id': 'explicit', 'adapterType': 'claude_local', 'runtimeConfig': {'aiConnection': explicit}},
             'legacy': {'id': 'legacy', 'adapterType': 'claude_local', 'runtimeConfig': {}},
+            'other': {'id': 'other', 'adapterType': 'opencode_local',
+                      'runtimeConfig': {'aiConnection': bots.initial_binding('anthropic')}},
         }
         calls = []
 
         class Paperclip:
             def ai_connections(self):
-                return [connection]
+                return [connection, codex]
 
             def call(self, method, path, body):
                 calls.append((method, path, body))
@@ -239,17 +252,19 @@ class BotTest(unittest.TestCase):
         runner.team = lambda: (members, [])
         runner.bind_team()
         runner.bind_team()
-        self.assertEqual(calls, [('PATCH', '/agents/initial', {
-            'runtimeConfig': {'aiConnection': bots.team_binding([connection]), 'heartbeat': {'enabled': False}}})])
+        self.assertEqual(calls, [
+            ('PATCH', '/agents/codex-initial', {'runtimeConfig': {'aiConnection': bots.team_binding([codex], 'openai')}}),
+            ('PATCH', '/agents/initial', {
+                'runtimeConfig': {'aiConnection': bots.team_binding([connection]), 'heartbeat': {'enabled': False}}})])
 
     def test_claude_connection_needing_sign_in_moves_members_to_the_connected_one(self):
         broken = {'id': 'old', 'grantId': 'old-grant', 'provider': 'anthropic', 'method': 'subscription',
                   'ownership': 'shared', 'status': 'needs_attention'}
         connected = {**broken, 'id': 'new', 'grantId': 'new-grant', 'status': 'connected'}
-        stale = {**bots.TEAM_CONNECTION, 'mode': 'shared', 'connectionId': 'old', 'grantId': 'old-grant'}
+        stale = {**bots.initial_binding('anthropic'), 'mode': 'shared', 'connectionId': 'old', 'grantId': 'old-grant'}
         members = {'pm': {'id': 'pm', 'adapterType': 'claude_local', 'runtimeConfig': {'aiConnection': dict(stale)}},
                    'initial': {'id': 'initial', 'adapterType': 'claude_local',
-                               'runtimeConfig': {'aiConnection': dict(bots.TEAM_CONNECTION)}}}
+                               'runtimeConfig': {'aiConnection': bots.initial_binding('anthropic')}}}
         calls = []
 
         class Paperclip:
@@ -267,7 +282,7 @@ class BotTest(unittest.TestCase):
         runner.bind_team(initial=False)
         self.assertEqual(calls, [('PATCH', '/agents/pm')])
         self.assertEqual(members['pm']['runtimeConfig']['aiConnection'], bots.team_binding([connected]))
-        self.assertEqual(members['initial']['runtimeConfig']['aiConnection'], bots.TEAM_CONNECTION)
+        self.assertEqual(members['initial']['runtimeConfig']['aiConnection'], bots.initial_binding('anthropic'))
 
     def test_signing_in_again_renews_the_existing_shared_connection(self):
         connections = [{'id': 'fine', 'provider': 'anthropic', 'method': 'subscription', 'ownership': 'shared',
@@ -292,14 +307,14 @@ class BotTest(unittest.TestCase):
         runner.site = {**SITE, 'paperclip_user': 'zelab-paperclip', 'paperclip_home': '/var/lib/zelab-paperclip'}
         runner.paperclip = Paperclip()
         runner.bind_team = lambda: None
-        with patch('builtins.input', return_value='claude'), patch.object(bots.subprocess, 'run'), \
+        with patch('builtins.input', side_effect=['claude', '']), patch.object(bots.subprocess, 'run'), \
                 patch('sys.stdout'):
             runner.host_sign_in()
         self.assertEqual([path for path, _ in bodies], ['attempts', 'check', 'local'])
         self.assertTrue(all(body['connectionId'] == 'expired' for _, body in bodies))
         connections[1]['status'] = 'connected'
         bodies.clear()
-        with patch('builtins.input', return_value='claude'), patch.object(bots.subprocess, 'run'), \
+        with patch('builtins.input', side_effect=['claude', '']), patch.object(bots.subprocess, 'run'), \
                 patch('sys.stdout'):
             runner.host_sign_in()
         self.assertEqual({body['connectionId'] for _, body in bodies}, {'fine'})
@@ -342,17 +357,24 @@ class BotTest(unittest.TestCase):
 
         runner = bots.Bots.__new__(bots.Bots)
         runner.site = {**SITE, 'zelab_tiers': {'dev': {'account': 'zelab-team-dev', 'preset': 'repo-dev', 'paths': []}},
-                       'zelab_team': {'model': 'claude-opus-5-5', 'effort': 'high', 'members': {
-                           'pm': {'title': 'Product Manager', 'role': 'pm', 'tier': 'dev', 'lead': True},
-                           'backend': {'title': 'Backend Engineer', 'role': 'engineer', 'tier': 'dev', 'lead': False},
-                           'data': {'title': 'Data', 'role': 'researcher', 'tier': 'dev', 'lead': False},
-                           'mobile': {'title': 'Mobile', 'role': 'engineer', 'tier': 'dev', 'lead': False}}}}
+                       'zelab_team': {'harness': 'claude', 'harnesses': {'claude': {'model': 'claude-opus-5-5', 'effort': 'high'}, 'codex': {'model': 'gpt-5.6-sol', 'effort': 'high'}}, 'members': {
+                           'pm': {'title': 'Product Manager', 'role': 'pm', 'tier': 'dev', 'lead': True, 'harness': 'codex'},
+                           'backend': {'title': 'Backend Engineer', 'role': 'engineer', 'tier': 'dev', 'lead': False,
+                                       'harness': 'claude'},
+                           'data': {'title': 'Data', 'role': 'researcher', 'tier': 'dev', 'lead': False, 'harness': 'claude'},
+                           'mobile': {'title': 'Mobile', 'role': 'engineer', 'tier': 'dev', 'lead': False,
+                                      'harness': 'claude'}}}}
         runner.paperclip = Paperclip()
         runner.team = lambda: bots.team_agents(runner.site, agents, Paperclip.ids)
         with patch('sys.stdout') as out:
             runner.hire_team({})
             runner.hire_team({})
         self.assertEqual([(body['name'], body['reportsTo']) for body in hired], [('pm', None)])
+        self.assertEqual((hired[0]['adapterType'], hired[0]['adapterConfig'], hired[0]['runtimeConfig']['aiConnection']),
+                         ('codex_local', {'engine': 'cli', 'model': 'gpt-5.6-sol', 'modelReasoningEffort': 'high',
+                                          'dangerouslyBypassApprovalsAndSandbox': True},
+                          bots.initial_binding('openai')))
+        self.assertIn('runs you as Codex over SSH', hired[0]['instructionsBundle']['files']['AGENTS.md'])
         self.assertEqual(patched, [('/agents/backend', {'reportsTo': 'new-pm'})])
         self.assertEqual(agents[2]['reportsTo'], None)
         self.assertEqual(agents[3]['reportsTo'], 'backend')
@@ -389,13 +411,14 @@ class BotTest(unittest.TestCase):
     def test_member_instructions_join_persona_team_rules_and_this_server(self):
         site = {**SITE, 'zelab_projects': {'media': {'name': 'Media Center'}},
                 'zelab_tiers': {'root': {'account': 'zelab-team-root', 'preset': 'full-sudo', 'paths': []}},
-                'zelab_team': {'members': {'pm': {'title': 'Product Manager', 'tier': 'root', 'lead': True},
-                                           'sysadmin': {'title': 'Linux Sysadmin', 'tier': 'root', 'lead': False}}}}
+                'zelab_team': {'members': {'pm': {'title': 'Product Manager', 'tier': 'root', 'lead': True, 'harness': 'claude'},
+                                           'sysadmin': {'title': 'Linux Sysadmin', 'tier': 'root', 'lead': False,
+                                                        'harness': 'claude'}}}}
         text = bots.team_instructions(site, 'sysadmin', {})
         persona = (bots.TEAM_DIR / 'sysadmin.md').read_text().strip()
         self.assertTrue(text.startswith(persona))
         self.assertIn((bots.TEAM_DIR / 'TEAM.md').read_text().strip(), text)
-        self.assertIn('as `zelab-team-root`: unrestricted sudo', text)
+        self.assertIn('runs you as Claude Code over SSH on this host as `zelab-team-root`: unrestricted sudo', text)
         self.assertIn('Projects/media/`: Media Center', text)
         self.assertIn('You report to **pm**', text)
         self.assertIn('You lead the team', bots.team_instructions(site, 'pm', {}))
@@ -536,7 +559,7 @@ class ReconcileTest(unittest.TestCase):
                                                     'mode': 'shared', 'connectionId': 'codex', 'grantId': 'cg'}}},
             'backend': {'id': 'host-backend', 'adapterType': 'claude_local', 'status': 'idle',
                         'adapterConfig': {'model': 'chosen-claude-model'},
-                        'runtimeConfig': {'aiConnection': dict(bots.TEAM_CONNECTION)}},
+                        'runtimeConfig': {'aiConnection': bots.initial_binding('anthropic')}},
         }
         before = json.loads(json.dumps(members))
         self.runner.site['zelab_team'] = {'members': {

@@ -95,7 +95,7 @@ Do not mutate the same state manually during maintenance.
 | Chat app | `hermes -p <name> gateway setup`: Hermes' platform menu; the token is typed there. For Discord, make bot then asks whether other bots may hand work over by @mention (`DISCORD_ALLOW_BOTS=mentions`) | Hermes |
 | Persona | The profile's `SOUL.md`, edited in nano or pasted | Hermes file |
 | Task key | A `task_bridge` key for the projects you pick, allowed to assign to every bot; replaces and revokes the previous key | Paperclip |
-| Sign the team in | Paperclip's own local subscription sign-in for Claude (or Codex), saved as an AI connection | Paperclip |
+| Sign the team in | Paperclip's own local subscription sign-in for Claude Code and Codex, one harness at a time, saved as company-shared AI connections; shows each harness's state and members | Paperclip |
 | Remove a bot | After you type its name: terminate its Paperclip agent (its keys are revoked), `hermes profile export` (no logins or tokens) to `profile-exports/`, `hermes profile delete` | Hermes, Paperclip |
 
 On quit, make bot rewrites each bot's `zelab` skill (projects with their IDs and
@@ -119,13 +119,19 @@ the Paperclip SSH environment `<tier> host`. A site sets a tier's `paths` (or
 account, grants and environment on the next `make`, and so do the per-project
 accounts `zelab-p-<slug>` of earlier versions.
 
-`make` hires each member once as a Claude Code agent (`claude_local`, Claude
-CLI engine, the file's `model` and `effort`) on its tier's environment, the lead
-first and the others reporting to it. Its first `AGENTS.md` is
-`config/team/<member>.md`, then `config/team/TEAM.md` (shared rules), then a
-generated section about this server; Paperclip versions it and `make` never
-rewrites it. Runs use the owner's Claude sign-in (`make bot`, option 4, or when
-Paperclip asks on the first task). Removing a member from the file does not
+`make` hires each member once on its harness, Claude Code (`claude_local`) or
+Codex (`codex_local`), with Paperclip's CLI engine and that harness's `model`
+and `effort` from the file, on its tier's environment, the lead first and the
+others reporting to it. The file's `harness` is the default; a member's own
+`harness:` overrides it, so one team can mix both. Codex members get
+`dangerouslyBypassApprovalsAndSandbox`, the Codex equivalent of the Claude
+adapter's default `dangerouslySkipPermissions`: Codex's own sandbox sets
+`no_new_privs`, which would make sudo and the tier's paths unusable. Its first
+`AGENTS.md` is `config/team/<member>.md`, then `config/team/TEAM.md` (shared
+rules), then a generated section about this server; Paperclip versions it and
+`make` never rewrites it. Runs use the owner's subscription sign-in for that
+harness (`make bot`, option 4, or when Paperclip asks on the first task).
+Removing a member from the file does not
 fire it: terminate it in Paperclip. A member still in the file is hired again
 on the next `make` after it is terminated (Paperclip cannot resume a terminated
 agent). Members whose manager was terminated move under the live lead, and
@@ -133,18 +139,19 @@ agent). Members whose manager was terminated move under the live lead, and
 under another manager or at the top level stay there.
 
 After hiring, change a member's harness, model and AI connection in Paperclip.
-`make` preserves those choices. When switching Claude Code to Codex, also select
-the shared Codex subscription under **AI connection**, then choose a Codex model
-and save. The pinned UI retains the previous connection until you select the new
-one, so it shows a compatibility error in between. **Responsible user's
-connection** requires that user's personal connection; it does not select the
-company-shared subscription. `make bot` option 4 completes a Claude sign-in only
-for Claude members still using the initial binding; it preserves other explicit
-connections and harnesses. When a subscription login expires ("OAuth access
-token has expired"), option 4 signs the existing company-shared connection in
-again (Paperclip's reconnect), so every agent bound to it keeps working. `make`
-moves Claude members off a Claude connection that needs a new sign-in onto the
-connected company-shared one.
+`make` preserves those choices. When switching a member's harness there, also
+select the shared subscription of the new harness under **AI connection**, then
+choose one of its models and save. The pinned UI retains the previous connection
+until you select the new one, so it shows a compatibility error in between.
+**Responsible user's connection** requires that user's personal connection; it
+does not select the company-shared subscription. `make bot` option 4 signs one
+harness in at a time (type `claude` or `codex`, Enter when done) and then binds
+only the members of that harness still using the initial binding; it preserves
+other explicit connections and harnesses. When a subscription login expires
+("OAuth access token has expired"), option 4 signs the existing company-shared
+connection in again (Paperclip's reconnect), so every agent bound to it keeps
+working. `make` moves members off a connection of their harness's provider that
+needs a new sign-in onto the connected company-shared one.
 
 Once the lead is hired, `make` files the team's first ticket for it, once per site
 (`config/team/ONBOARDING.md`, Paperclip's `idempotencyKey`, and the marker
@@ -172,7 +179,8 @@ routing and detailed evidence stay in Paperclip unless requested.
 
 Depth describes the work; the native model effort setting controls reasoning.
 For an existing team member, edit **Thinking effort** in its Paperclip agent
-configuration ([upstream fields](https://docs.paperclip.ing/reference/adapters/claude-code/)).
+configuration (upstream fields: [Claude Code](https://docs.paperclip.ing/reference/adapters/claude-code/),
+[Codex](https://docs.paperclip.ing/reference/adapters/codex/)).
 For a Hermes bot, use its native profile configuration, `agent.reasoning_effort`.
 `config/team.yaml` sets effort at hire; changing it does not retune existing
 members. No model or effort setting is changed by refreshing the skill.
