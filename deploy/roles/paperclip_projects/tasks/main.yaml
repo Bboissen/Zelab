@@ -31,9 +31,10 @@
       ansible.builtin.set_fact:
         projects_company: "{{ projects_company_created.json if projects_company_created is not skipped else (projects_companies.json | selectattr('name', 'equalto', paperclip_company_name) | first) }}"
 
+    # The native route defaults to active-only; archives still own their names and IDs.
     - name: Read native projects
       ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ projects_company.id }}/projects"
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ projects_company.id }}/projects?includeArchived=true"
         headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
       register: projects_native
 
@@ -53,7 +54,7 @@
 
     - name: Read native projects after creation
       ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ projects_company.id }}/projects"
+        url: "http://127.0.0.1:{{ paperclip_port }}/api/companies/{{ projects_company.id }}/projects?includeArchived=true"
         headers: {Cookie: "{{ paperclip_owner_session.cookies_string }}"}
       register: projects_native
 

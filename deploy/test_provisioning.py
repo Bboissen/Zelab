@@ -1,20 +1,74 @@
 """Exercise deployment boundaries without contacting or changing installed services."""
 
 import copy
+from http.server import BaseHTTPRequestHandler
 import json
+import os
 from pathlib import Path
+import pwd
 import tempfile
 import unittest
 
 import yaml
 
-from fixtures import role_tasks, run_play
+from fixtures import role_tasks, run_play, serve
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProvisioningTest(unittest.TestCase):
+    def test_reapply_keeps_archived_project_ids_without_creating_renamed_duplicates(self):
+        projects = [{'id': 'active-id', 'name': 'Current', 'archivedAt': None},
+                    {'id': 'archived-id', 'name': 'Earlier', 'archivedAt': '2026-10-01T00:00:00Z'}]
+        original = copy.deepcopy(projects)
+        requests = []
+
+        class API(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                requests.append(self.path)
+                # Match the pinned native route's active-only default.
+                rows = projects if 'includeArchived=true' in self.path else [p for p in projects if not p['archivedAt']]
+                body = json.dumps(rows).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_POST(self):
+                data = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                # Native Paperclip suffixes a name already used by an archived project.
+                row = {'id': 'duplicate-id', 'name': data['name'] + ' (2)', 'archivedAt': None}
+                projects.append(row)
+                self.send_response(201)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(row).encode())
+
+        port = serve(self, API)
+        tasks = role_tasks('deploy/roles/paperclip_projects/tasks/main.yaml',
+                           'Read native projects', 'Create each declared project once, matched by name',
+                           'Read native projects after creation',
+                           'Save native resource IDs privately for make bot and checks')
+        with tempfile.TemporaryDirectory() as directory:
+            variables = {'paperclip_port': port, 'projects_company': {'id': 'company'},
+                         'paperclip_owner_session': {'cookies_string': 'fixture'},
+                         'private_dir': directory, 'operator_user': pwd.getpwuid(os.getuid()).pw_name,
+                         'zelab_projects': {'current': {'name': 'Current'}, 'earlier': {'name': 'Earlier'}},
+                         'projects_environments': {'json': []}}
+            self.run_play(directory, tasks=tasks, variables=variables)
+            ids = Path(directory) / 'paperclip-ids.json'
+            self.assertEqual(json.loads(ids.read_text())['projects'],
+                             {'current': 'active-id', 'earlier': 'archived-id'})
+            self.assertEqual(ids.stat().st_mode & 0o777, 0o600)
+            result = self.run_play(directory, tasks=tasks, variables=variables)
+            self.assertIn('changed=0', result.stdout)
+            self.assertEqual(projects, original)
+            self.assertTrue(all('includeArchived=true' in path for path in requests))
+
     def test_dependency_upgrade_adopts_known_qualified_manifests_and_rejects_unknown_edits(self):
         task, = role_tasks('deploy/roles/hermes/tasks/dependencies.yaml',
                            'Preserve independently edited dependency manifests for explicit adoption')
