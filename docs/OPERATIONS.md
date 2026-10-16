@@ -31,7 +31,8 @@ and all but the five newest private install logs. The guest then returns freed
 blocks to the host so `disk.qcow2` shrinks. Shared tools stay while another Zelab
 guest on the host may use them. A failed run removes nothing, so it can resume.
 
-`clean` removes `.venv` and Python caches and clears repo choices from the selected
+`clean` removes `.venv`, Python caches, `.cache/`, `dist/`, root `node_modules/`,
+test/lint/coverage outputs and clears repo choices from the selected
 local, untracked site file: VM resource limits and install boost, host reserve
 preferences and optional apps. `config/projects.yaml` is kept.
 Host connections, account identities, ports and installed resource paths remain
@@ -46,6 +47,27 @@ grants and path ACLs), owned units/routes and project-installed software/cache.
 Host/path inputs, `config/projects.yaml`, backups, recovery key, private logs,
 host SSH/Tailscale and unrelated services are preserved.
 A later `make` rebuilds the controller.
+
+Full cleanup also finds disposable qualification artifacts in the operator's
+`~/.local/state`, `/tmp` and `/var/tmp`. New scratch fixtures carry a
+`.zelab-artifact.json` receipt naming their exact directory and checkout;
+`tools/check_paperclip.py` writes it before starting its disposable server.
+For older private `zelab-v*-qual` workspaces, a qualification report and an
+owned script referencing this checkout identify only the known build, download,
+runtime and VM subdirectories. Reports, private logs, other saved state and Git
+recovery bundles outside those subdirectories stay. A prefix alone is never
+enough to remove a directory.
+
+The preview lists these outputs and any qualification services to stop. A VM's
+transient systemd unit must run an operator-owned QEMU using the identified qualification
+disk; a scratch Paperclip user unit must contain PostgreSQL using the identified
+runtime and its qualification database. Other services stay. Cleanup refuses
+artifact directories still used by another process, symlink aliases, mounted
+trees and generated checkout paths containing tracked files. It stops identified
+qualification services before checking for remaining artifact users, and checks
+those users before stopping the live site.
+Plain `make clean` only clears the checkout; full cleanup requires the existing
+site confirmation.
 
 `fclean` prints exact ownership evidence and data loss before asking for the
 displayed `host:vm_instance` identity. Noninteractive use supplies `CONFIRM=<site>`.

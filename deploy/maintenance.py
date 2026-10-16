@@ -111,20 +111,39 @@ def clean(root=ROOT, site_config=Path('config/site.yaml')):
             raise RuntimeError('Generated-file cleanup failed; check administrator access, then rerun rtk proxy make clean')
 
 
-def clean_files(root, site_config=Path('config/site.yaml')):
-    """Reset local deployment choices and remove controller/bytecode files."""
+def generated_paths(root):
+    """Only known generated paths; never delete tracked files or mounted trees."""
     root = root.resolve()
-    reset = choice_reset(root, site_config)
     paths = [path for name in ('deploy', 'implementation', 'tools')
              for path in (root / name).rglob('__pycache__')]
+    paths += [root / name for name in ('.cache', 'dist', 'node_modules', '.pytest_cache',
+                                      '.ruff_cache', 'htmlcov', '.coverage')
+              if (root / name).exists() or (root / name).is_symlink()]
     venv = root / '.venv'
     if venv.exists() or venv.is_symlink():
         if venv.is_symlink() or not (venv / 'pyvenv.cfg').is_file():
             raise ValueError('The checkout .venv is not a generated virtual environment; nothing was removed')
         paths.append(venv)
+    mounts = [Path(line.split()[4].replace('\\040', ' '))
+              for line in Path('/proc/self/mountinfo').read_text().splitlines()]
     for path in paths:
-        if path.is_symlink() or root.resolve() not in path.resolve().parents:
+        if path.is_symlink() or path.resolve() != path or root not in path.parents:
             raise ValueError('A generated directory has an unsafe symlink alias; nothing was removed')
+        if any(mount == path or mount.is_relative_to(path) for mount in mounts):
+            raise ValueError('A generated path contains a mount; nothing was removed')
+        tracked = subprocess.run(['rtk', 'proxy', 'git', '-c', f'safe.directory={root}',
+                                  'ls-files', '-z', '--', str(path.relative_to(root))],
+                                 cwd=root, capture_output=True)
+        if tracked.stdout or (tracked.returncode and (root / '.git').exists()):
+            raise ValueError('Cannot prove a generated path contains no tracked source; nothing was removed')
+    return paths
+
+
+def clean_files(root, site_config=Path('config/site.yaml')):
+    """Reset local deployment choices and remove generated checkout artifacts."""
+    root = root.resolve()
+    reset = choice_reset(root, site_config)
+    paths = generated_paths(root)
     # Check before deleting anything so a permission retry cannot encounter a
     # half-removed virtual environment whose pyvenv.cfg is already gone.
     def inaccessible(error):
@@ -133,7 +152,7 @@ def clean_files(root, site_config=Path('config/site.yaml')):
     for path in paths:
         if not os.access(path.parent, os.W_OK | os.X_OK):
             raise PermissionError(f'Cannot remove generated directory: {path}')
-        for directory, _dirs, _files in os.walk(path, onerror=inaccessible):
+        for directory, _dirs, _files in os.walk(path, onerror=inaccessible) if path.is_dir() else ():
             if not os.access(directory, os.W_OK | os.X_OK):
                 raise PermissionError(f'Cannot clear generated directory: {directory}')
     if reset and not os.access(reset[0], os.W_OK):
@@ -144,8 +163,11 @@ def clean_files(root, site_config=Path('config/site.yaml')):
         path.write_text(content)
         print(f'  {mark("PASS")} Repository choices reset: {", ".join(sorted(set(keys)))}')
     for path in paths:
-        shutil.rmtree(path)
-    print(f'  {mark("PASS")} Generated controller and Python caches removed. Host settings, installation locations and installed data kept.')
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    print(f'  {mark("PASS")} Generated controller, build/export artifacts and checkout caches removed. Host settings, installation locations and installed data kept.')
 
 
 def main(argv=None):
@@ -167,6 +189,7 @@ def main(argv=None):
     if args.action == 'fclean':
         # Validate the later local reset before any installed resource is deleted.
         choice_reset(ROOT, args.site_config)
+        generated_paths(ROOT)
     if code := subprocess.run(['rtk', 'proxy', 'bash', 'deploy/bootstrap-access.sh'], cwd=ROOT).returncode:
         return code
     if code := controller.main():
