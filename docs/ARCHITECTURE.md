@@ -97,7 +97,8 @@ Replaced projects are archived only after their open tickets are resolved;
 their notes and tickets are retained.
 
 A private fingerprint covers each profile's persona, configuration, managed
-skills and qualified component pins. On first adoption and after a change,
+skills and qualified component pins, including the resolved dependency inputs.
+On first adoption and after a change,
 `make` ends old chat contexts through Hermes' native session API. Transcripts,
 logins, memory and Paperclip run sessions remain; the next chat starts with
 current instructions. Unchanged reapplies keep the current conversation. Busy

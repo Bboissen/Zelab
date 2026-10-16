@@ -7,6 +7,22 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Final v1.1 dependency qualification: 2026-10-16
+
+MCP and MCP types 2.2.0 replace 2.0.0 in the qualified dependency manifests;
+all other locked package versions and the upstream source pins stay unchanged.
+Native PM built the `all` + `ddgs` runtime in disposable guest state, and the
+regenerated 108-package inventory passed `pip-audit` 2.10.1. A separate native
+dev environment passed 202 upstream MCP/OAuth tests. Hermes discovered and
+called a real synthetic tool over both stdio and Streamable HTTP. No production
+credentials, inference or live bot configuration were used. The production
+Paperclip npm lock passed its moderate audit. See the
+[dependency qualification](../deploy/roles/hermes/files/dependencies/README.md).
+
+Reapply now recognizes the previous qualified metadata while continuing to
+reject unknown local edits. Bot context freshness also covers dependency-only
+upgrades. Production dependency installation and Discord acceptance: **NOT RUN**.
+
 ## v1.1 qualification: 2026-10-15
 
 Run in a disposable guest with the current pins (2 vCPU / 4 GiB / 20 GiB, Hermes

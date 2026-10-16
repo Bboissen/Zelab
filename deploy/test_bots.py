@@ -27,6 +27,23 @@ def host_projects():
 
 
 class BotTest(unittest.TestCase):
+    def test_context_revision_changes_on_dependency_only_upgrades(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inputs = ('versions.yaml', 'deploy/roles/hermes/files/dependencies/manifest.json',
+                      'deploy/roles/paperclip/files/package.json', 'deploy/roles/paperclip/files/package-lock.json')
+            for name in inputs:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('unchanged pin')
+            previous = bots.integration_revision(root)
+            for name in inputs[1:]:
+                (root / name).write_text('qualified dependency update')
+                current = bots.integration_revision(root)
+                self.assertNotEqual(current, previous)
+                self.assertEqual(current, bots.integration_revision(root))
+                previous = current
+
     def test_declared_replacements_resolve_ids_without_guessing_new_permissions(self):
         projects = [{'id': 'old', 'name': 'Old Lab'}, {'id': 'new', 'name': 'Homelab'}]
         self.assertEqual(bots.project_replacements(SITE, projects), {})

@@ -1,6 +1,7 @@
 """Exercise deployment boundaries without contacting or changing installed services."""
 
 import copy
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,6 +15,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProvisioningTest(unittest.TestCase):
+    def test_dependency_upgrade_adopts_known_qualified_manifests_and_rejects_unknown_edits(self):
+        task, = role_tasks('deploy/roles/hermes/tasks/dependencies.yaml',
+                           'Preserve independently edited dependency manifests for explicit adoption')
+        task.pop('loop')
+        task.pop('loop_control')
+        role = ROOT / 'deploy/roles/hermes'
+        manifest = json.loads((role / 'files/dependencies/manifest.json').read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ('pyproject.toml', 'uv.lock'):
+                prior = manifest['files'][name]['previous_sha256'][-1]
+                for checksum, succeeds in ((prior, True), ('0' * 64, False)):
+                    with self.subTest(name=name, known=succeeds):
+                        self.run_play(directory, tasks=[task], succeeds=succeeds, variables={
+                            'role_path': str(role), 'hermes_dependency_manifest': manifest,
+                            'item': {'item': name, 'stat': {'checksum': checksum}},
+                        })
+
     def test_qualified_bridge_upgrade_removes_old_staging_and_unchanged_make_does_nothing(self):
         plays = yaml.safe_load((ROOT / 'deploy/paperclip-projects.yaml').read_text())
         tasks = copy.deepcopy(plays[1]['tasks'])

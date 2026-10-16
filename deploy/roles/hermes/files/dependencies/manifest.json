@@ -9,12 +9,18 @@
   "files": {
     "pyproject.toml": {
       "upstream_sha256": "cadde2f6a92574d292103f43abf66408b1d841cd9ea332ca7f3e3dfc5dcc87fd",
-      "sha256": "1e13597a488f266d2e6f944d4b5957a0ab5c88c61518bedf71cc436d666fb610"
+      "sha256": "1fc32a8116127c27e52f887a027c43867582fde6443dca8630ab097fc873ec7f",
+      "previous_sha256": [
+        "1e13597a488f266d2e6f944d4b5957a0ab5c88c61518bedf71cc436d666fb610"
+      ]
     },
     "uv.lock": {
       "upstream_sha256": "2bc4db483e9cba927cd7147f9ccbb09635f85bb3f1f36d6e9d51d06b65d1c67e",
-      "sha256": "75041c849e067230c5b895904dabb626109bfdd2867655e1a3f467142e7fd71c"
+      "sha256": "31787400acbd0358b51c74da6dc18065e775b4c2be8bcb3dc2afc466015f0d34",
+      "previous_sha256": [
+        "75041c849e067230c5b895904dabb626109bfdd2867655e1a3f467142e7fd71c"
+      ]
     }
   },
-  "inventory_sha256": "1b8e6ee5251dcf717eaf123d3c6569b1aa28665175039632a049f6909188165c"
+  "inventory_sha256": "24edaba959a617cff79c97a1e4ccebbd7b411d90ead6a7be904dc307069d3752"
 }
