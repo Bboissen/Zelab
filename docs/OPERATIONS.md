@@ -198,7 +198,10 @@ using the Paperclip MCP tools. When the job is done Paperclip wakes the bot once
 (`issue_blockers_resolved`); it answers the chat in plain words with the native
 profile-scoped `hermes send` CLI and closes the ticket. The pinned Hermes has no
 agent-callable `send_message` tool. If delivery fails, the bot files an
-unassigned `Chat delivery failed: <bot>` ticket with the answer and the error.
+unassigned `Chat delivery failed: <bot>` ticket with the answer and the error,
+and closes the reply ticket pointing at it. The reply block carries the numeric
+chat ID; on Discord, Hermes shows it only with the `discord` toolset, which chat
+therefore has there.
 Agents you hire yourself on a `<tier> host` environment are listed too; run
 `make` afterwards so the skills know them.
 

@@ -212,6 +212,14 @@ class BotTest(unittest.TestCase):
         self.assertIn('/profiles/marvin/skills/paperclip/paperclip-task-bridge/paperclip-task.mjs update-status '
                       '--issue <ticket id> --status done', run)
         self.assertIn('-p marvin send --to <Reply to> --file ./reply.txt --json', run)
+        self.assertIn('"Delivery failed, see <failure ticket identifier>."', run)
+
+    def test_discord_chat_gets_the_toolset_that_exposes_its_channel_id(self):
+        settings = bots.chat_settings()
+        self.assertIn('discord', settings['platform_toolsets.discord'])
+        self.assertNotIn('discord_admin', settings['platform_toolsets.discord'])
+        self.assertNotIn('discord', settings['platform_toolsets.telegram'])
+        self.assertIn('never a server or channel name', bots.skill(SITE, 'marvin', {}, [{'id': 'p', 'name': 'Homelab'}]))
 
     def test_direct_notes_use_the_configured_guest_mount_and_keep_legacy_notes(self):
         site = {**SITE, 'notes_guest_root': '/var/lib/custom-vault'}
@@ -239,7 +247,8 @@ class BotTest(unittest.TestCase):
         self.assertEqual(settings['mcp_servers.paperclip'], {'enabled': False})
         for platform in bots.CHAT_PLATFORMS:
             tools = settings[f'platform_toolsets.{platform}']
-            self.assertEqual(tools, [tool for tool in bots.CHAT_TOOLSETS if tool != 'paperclip'])
+            self.assertEqual(tools, [tool for tool in bots.CHAT_TOOLSETS if tool != 'paperclip']
+                             + bots.PLATFORM_TOOLSETS.get(platform, []))
             self.assertIn('file', tools)
             self.assertNotIn('terminal', tools)
 
