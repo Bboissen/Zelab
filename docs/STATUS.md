@@ -403,6 +403,18 @@ the running qualification VM and scratch Paperclip user unit. Actual production
 deletion, qualification service shutdown through `fclean`, clean reinstall and
 application E2E: **NOT RUN**.
 
+## Discord reply target: 2026-10-17
+
+A Plex status answer never reached Discord: the reply ticket said
+`Reply to: discord:<server> / #general` and `hermes send` could not resolve it.
+The pinned Hermes puts a Discord channel ID in the session prompt only when the
+`discord` or `discord_admin` toolset is on, so the chat bot had only the label.
+Discord chat now also gets the `discord` toolset (fetch messages, search members,
+create threads; `discord_admin` stays off), the skill asks for the numeric chat ID,
+and a run whose delivery fails closes the reply ticket with "Delivery failed, see
+<ticket>" instead of "Answered in chat.". Reply targets on other platforms are
+unchanged and not checked.
+
 ## Chat without commands: 2026-10-16
 
 In the live Discord, a bot asked chat members to approve a Python heredoc it wrote

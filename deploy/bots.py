@@ -52,6 +52,9 @@ CHAT_TOKENS = {'DISCORD_BOT_TOKEN': 'Discord', 'TELEGRAM_BOT_TOKEN': 'Telegram',
 # Chats work with native files and memory; Paperclip coordinates tracked and host work.
 CHAT_PLATFORMS = tuple(label.lower() for label in CHAT_TOKENS.values())
 CHAT_TOOLSETS = ['web', 'vision', 'image_gen', 'tts', 'file', 'skills', 'todo', 'memory', 'session_search', 'clarify', 'paperclip']
+# Hermes shows the Discord channel ID, which a reply block needs, only when this toolset is on.
+# It adds fetch_messages, search_members and create_thread, within the bot's Discord permissions.
+PLATFORM_TOOLSETS = {'discord': ['discord']}
 MCP_DIR = '/opt/zelab-tools/paperclip-mcp-server'
 MCP_TOOLS = ['paperclipCreateIssue', 'paperclipGetIssue', 'paperclipListComments']
 # Openings of the SOUL.md texts Hermes seeds into a new profile: its generic identity and older scaffolds.
@@ -607,8 +610,8 @@ def instructions(site, name):
 2. If the ticket has a reply block, write the answer for the person in `Asked by` (their language, plain words, a few sentences) to ./reply.txt and send it with this bot's chat login (there is no send_message tool):
    HERMES_HOME={HERMES_HOME} {hermes} -p {name} send --to <Reply to> --file ./reply.txt --json
    Check the exit code and delivery result before saying it was sent. Never read tokens or call chat APIs yourself. If delivery fails, create one unassigned ticket in the same project titled "Chat delivery failed: {name}" with the answer, the target and the exact error.
-3. Close the ticket, passing the run ID shown in this prompt:
-   PAPERCLIP_RUN_ID=<run ID> {task} update-status --issue <ticket id> --status done --comment "Answered in chat."
+3. Close the ticket, passing the run ID shown in this prompt. The comment is "Answered in chat." only when delivery succeeded; otherwise "Delivery failed, see <failure ticket identifier>.":
+   PAPERCLIP_RUN_ID=<run ID> {task} update-status --issue <ticket id> --status done --comment "<comment>"
    Do not poll, retry delivery or repair Paperclip.'''
 
 
@@ -631,7 +634,8 @@ def chat_settings(*, task_key=True):
     # Deferred tool search would hide the three Paperclip tools behind a lookup step.
     return {'mcp_servers.paperclip': server, 'tools.tool_search.enabled': 'off', 'skills.auto_load': ['zelab'],
             'display.platforms.discord.tool_progress': False,
-            **{f'platform_toolsets.{platform}': toolsets for platform in CHAT_PLATFORMS}}
+            **{f'platform_toolsets.{platform}': toolsets + PLATFORM_TOOLSETS.get(platform, [])
+               for platform in CHAT_PLATFORMS}}
 
 
 def integration_revision(root=ROOT):
@@ -706,6 +710,9 @@ Every ticket that ends with an answer in chat opens with the reply block:
     Reply to: <platform>:<chat ID>[:<thread ID>]
     Asked by: <name>, <how technical they are>
     Question: <their words>
+
+The chat ID is the numeric ID from your session context (on Discord, the Channel and
+Thread IDs), never a server or channel name.
 
 Depth: a status question ("is it up?") is **quick**, one current check; a fault or a feature
 is **standard**; **deep** only when an audit is asked for.'''
