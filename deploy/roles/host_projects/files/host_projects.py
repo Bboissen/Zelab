@@ -4,8 +4,8 @@
 For each tier: group and account zelab-team-<tier> (home <projects_dir>/<tier>,
 its workspace), the preset's groups, its sudoers fragment, read or write ACLs
 on its paths, read/write on the notes vault, and an SSH key restricted to the
-host's own address. Accounts of tiers no longer declared, and the per-project
-accounts zelab-p-<slug> of earlier versions, lose their grants and are removed.
+host's own address. Undeclared managed accounts, including legacy per-project
+accounts, stop reconciliation before any account, grant or home is changed.
 Prints {"changed": N}; never prints key material.
 """
 
@@ -19,7 +19,7 @@ import subprocess
 import sys
 
 COMMENT = 'Zelab team tier {tier}'
-# Per-project accounts of earlier versions; removed on the next run.
+# Per-project accounts of earlier versions; require an explicit migration.
 LEGACY_COMMENT = 'Zelab host project {slug}'
 SUDOERS = Path('/etc/sudoers.d')
 SSHD_DROPIN = Path('/etc/ssh/sshd_config.d/05-zelab-projects.conf')
@@ -117,6 +117,17 @@ def ensure_account(tier, home):
     return changed
 
 
+def preflight_accounts(tiers):
+    """A configuration omission must never implicitly retire an OS identity."""
+    undeclared = sorted(set(zelab_accounts()) - {account(tier) for tier in tiers})
+    if undeclared:
+        raise SystemExit(
+            'Managed accounts are absent from the requested tiers: ' + ', '.join(undeclared)
+            + '. Account reconciliation stopped before changing accounts, grants or homes. '
+            'Existing access remains active. Restore the tier declarations or explicitly '
+            'migrate and retire these accounts after preserving their work and data.')
+
+
 def ensure_groups(user, wanted):
     current = {group.gr_name for group in grp.getgrall() if user in group.gr_mem}
     present = {name for name in OPTIONAL_GROUPS if name in {g.gr_name for g in grp.getgrall()}}
@@ -144,19 +155,6 @@ def revoke(path, user):
         run('setfacl', '-R', '-x', f'u:{user},d:u:{user}', path, check=False)
 
 
-def remove_account(user, key, state):
-    for path in state.get('paths', {}).pop(key, []):
-        revoke(path, user)
-    (SUDOERS / user).unlink(missing_ok=True)
-    run('pkill', '-KILL', '-u', user, check=False)
-    home = pwd.getpwnam(user).pw_dir
-    run('userdel', user)
-    run('groupdel', user, check=False)
-    if home.startswith(state['projects_dir'] + '/'):
-        run('rm', '-rf', '--one-file-system', home)
-    return 1
-
-
 def host_uses_allowusers():
     files = [Path('/etc/ssh/sshd_config'), *sorted(Path('/etc/ssh/sshd_config.d').glob('*.conf'))]
     return any(re.search(r'^\s*AllowUsers\s', path.read_text(), re.M | re.I)
@@ -165,6 +163,7 @@ def host_uses_allowusers():
 
 def apply(config):
     tiers, projects_dir = config['tiers'], config['projects_dir']
+    preflight_accounts(tiers)
     state_file = Path(projects_dir) / '.zelab-grants.json'
     changed = ensure_dir(projects_dir, 0o755, 0, 0)
     state = json.loads(state_file.read_text()) if state_file.is_file() else {}
@@ -212,10 +211,6 @@ def apply(config):
             # Notes are shared work: every tier reads and writes the vault.
             changed += grant(vault, user, 'rwx')
         state['paths'][user] = granted
-    keep = {account(tier) for tier in wanted}
-    for user, key in sorted(zelab_accounts().items()):
-        if user not in keep:
-            changed += remove_account(user, key, state)
     # Extend an existing SSH allowlist; an open host stays open.
     ssh_changed = 0
     if host_uses_allowusers() and wanted:

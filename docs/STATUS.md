@@ -7,6 +7,19 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## Account migration safety: 2026-10-20
+
+Removing or renaming a configured tier previously killed that account's
+processes, deleted the account and removed its home during ordinary account
+reconciliation. The reconciler now refuses undeclared managed accounts before
+changing accounts, grants or homes, including legacy per-project accounts.
+Existing access remains active until an explicit migration retires it.
+
+Regression checks cover removal, renaming, legacy accounts, retained state and
+home data, and fresh, unchanged or additive declarations. This is a migration
+safety guard; it does not implement per-agent isolation. Host and guest account
+changes, full `make` and live migration: **NOT RUN**.
+
 ## aiohttp audit correction: 2026-10-19
 
 CI's Python inventory audit now flags the existing aiohttp 3.14.3 pin for
