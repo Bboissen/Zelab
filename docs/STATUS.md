@@ -7,6 +7,26 @@ anything not exercised live is NOT RUN.
 Versions: Hermes `3637c512` (v0.21.5+9529), Paperclip and its MCP server `2026.1005.0`, Debian 13
 `20261001-2618`, Node `26.7.0`, Codex `0.162.0`, Claude Code `2.1.287`.
 
+## aiohttp audit correction: 2026-10-19
+
+CI's Python inventory audit now flags the existing aiohttp 3.14.3 pin for
+three advisories. The [recorded qualification](../deploy/roles/hermes/files/dependencies/README.md#aiohttp-3144-qualification-2026-10-19)
+updates it to 3.14.4 and its required yarl dependency to 1.25.1. All other
+package versions, upstream source pins and permissions stay unchanged.
+
+Native Hermes PM resolved and built the candidate in disposable Linux x86_64
+state with Python 3.14.7. The 108-package production inventory passes
+`pip-audit` 2.10.1 without skipped entries. Nine upstream HTTP API, run,
+profile/auth, Discord and TLS test files passed **246 tests**, with one
+macOS-only test skipped. All aiohttp/yarl source and wheel hashes in the lock
+were verified against upstream PyPI metadata.
+
+Repository changes: qualified dependency manifests, inventory and evidence.
+Host changes: disposable qualification files and tool caches only; deployed
+services and settings unchanged. Guest changes: none. Production upgrade,
+real Discord delivery, model inference and replay of all advisory exploits:
+**NOT RUN**.
+
 ## Private-mode vault writes and notes sync: 2026-10-16
 
 A real bot note was readable by the notes account and root but not by the
