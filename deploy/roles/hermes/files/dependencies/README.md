@@ -6,7 +6,8 @@ modified. The native installer and Hermes PM still own dependency installation,
 hash verification, generation selection and optional tools.
 
 Security updates: PyJWT 2.15.0, httpx2/httpcore2 2.12.0, multidict 6.9.1,
-oauthlib 4.0.0, urllib3 2.8.0 and MCP/MCP types 2.2.0. The core/client pair must move together. The
+oauthlib 4.0.0, urllib3 2.8.0, MCP/MCP types 2.2.0, aiohttp 3.14.4 and its
+required yarl 1.25.1. The core/client pair must move together. The
 remaining upstream selections are retained; this is not a blanket dependency
 upgrade. `uv.lock` was resolved using native `python3 -m pm.build_env --lock-only`.
 
@@ -64,3 +65,38 @@ The manifest retains the preceding qualified hashes so ordinary `make` can
 upgrade that known installation while still rejecting unrecognized edits.
 Context freshness includes these dependency inputs as well as `versions.yaml`.
 The production dependency upgrade and Discord acceptance are **NOT RUN**.
+
+## aiohttp 3.14.4 qualification: 2026-10-19
+
+The Python audit began rejecting aiohttp 3.14.3 for CVE-2026-111063,
+CVE-2026-111064 and
+[GHSA-2g87-pp6c-29x5](https://github.com/aio-libs/aiohttp/security/advisories/GHSA-2g87-pp6c-29x5).
+[Upstream 3.14.4](https://github.com/aio-libs/aiohttp/releases/tag/v3.14.4)
+is the reported fix. Its metadata requires yarl >=1.25.1, so the native
+resolver also moved yarl from 1.24.5 to 1.25.1. No other package version changed.
+
+Qualification used a fresh, SHA-256-verified archive of the unchanged Hermes
+source pin, with disposable homes, runtime and cache directories on Linux
+x86_64. Native PM resolved the lock and built the production `all` + `ddgs`
+selection with Python 3.14.7. The resulting inventory still has 108 registry
+distributions; its only changes are aiohttp and yarl. All 102 aiohttp and 87
+yarl source/wheel hashes in the lock match their upstream PyPI metadata.
+
+- Native PM validated the installed dependency graph.
+- `pip-audit` 2.10.1 reported no known vulnerabilities across all 108 inventory
+  entries, with none skipped.
+- A separate native PM test environment added `messaging` and the `dev` group.
+  Nine upstream files ran in separate processes: `test_api_server.py`,
+  `test_api_server_runs.py`, `test_api_server_bind_guard.py`,
+  `test_api_server_multiplex_secret_scope.py`,
+  `test_api_server_profile_prefix_misdelivery.py`,
+  `test_discord_connect.py`, `test_discord_send.py`,
+  `test_discord_attachment_download.py` and `test_ssl_cert_detection.py`
+  under `tests/gateway/`. **246 passed; one macOS-only bind test skipped.**
+  These exercise native HTTP API/run routes with local aiohttp test servers,
+  profile/authentication boundaries, Discord adapter fixtures and TLS setup.
+
+The manifest retains the preceding qualified hashes for normal reapply.
+Upstream application source, `versions.yaml`, permissions and deployed state
+are unchanged. Production upgrade, real Discord transport, model inference
+and replay of every advisory's exploit: **NOT RUN**.
