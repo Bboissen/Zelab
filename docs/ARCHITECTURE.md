@@ -2,10 +2,10 @@
 
 ## Where everything runs
 
-![Hermes and its MCP tools run in a KVM VM; Paperclip, the coding team, the shared vault and note history run on the Linux host.](assets/architecture.svg)
+![Hermes runs in a VM. Paperclip dispatches the coding team on the host to edit repositories, build and test code and manage services. Writing notes is a separate output.](assets/architecture.svg)
 
 - **VM:** Hermes bots chat, research and write notes. All profiles share one guest account.
-- **Host:** Paperclip tracks work and runs the coding team as host OS accounts.
+- **Host:** Paperclip runs the team as host OS accounts: they edit code, run builds and tests, and manage services within their tier's rights.
 - **Notes:** bots and team write the same vault. Private Git sync brings it to desktop Obsidian.
 
 Notes need no ticket. Tracked work goes through Paperclip: it starts a bot run

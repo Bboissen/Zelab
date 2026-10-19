@@ -37,10 +37,11 @@
   <text x="650" y="282" class="body">backend dashboard hops use HTTP.</text>
 
   <rect x="24" y="328" width="1152" height="890" rx="18" fill="#f1f5f9" stroke="#475569" stroke-width="3"/>
-  <text x="48" y="365" class="tag">HOST · LINUX SERVER</text>
+  <text x="760" y="365" class="tag">HOST · LINUX SERVER</text>
   <rect x="48" y="390" width="520" height="520" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-width="4"/>
-  <text x="76" y="429" class="tag" style="fill: #1d4ed8">2 · VM / SEPARATE KVM GUEST OS</text>
-  <path class="encrypted" d="M308 286V306H12V539H76"/>
+  <text x="76" y="429" class="tag" style="fill: #1d4ed8">2 · VM</text>
+  <text x="540" y="429" class="body" text-anchor="end" style="fill: #1d4ed8">KVM · separate OS</text>
+  <path class="encrypted" d="M308 286V460"/>
   <rect class="node" x="76" y="460" width="464" height="158" rx="12"/>
   <text x="100" y="498" class="heading">Hermes · one shared account</text>
   <text x="100" y="531" class="body">All profiles share accessible files &amp; logins.</text>
@@ -87,10 +88,11 @@
 
   <rect class="node" x="488" y="980" width="662" height="210" rx="12"/>
   <text x="512" y="1018" class="heading">4 · Host team accounts</text>
-  <text x="512" y="1051" class="body">SSH tier keys: source-restricted, no forwarding.</text>
+  <text x="512" y="1051" class="body">SSH → edit host repositories, run commands &amp; services.</text>
   <text x="512" y="1081" class="body">dev: own paths, no sudo · ops: Docker, root-equivalent</text>
   <text x="512" y="1111" class="body">root: full sudo · each account's OS rights are the limit.</text>
-  <text x="512" y="1160" class="body">All tiers write the whole vault; host root can alter history.</text>
+  <text x="512" y="1141" class="body">Source-restricted tier SSH keys; no forwarding.</text>
+  <text x="512" y="1172" class="body">All tiers write the whole vault; host root can alter history.</text>
   <path class="encrypted" d="M1150 560H1163V948H820V980"/>
   <text x="907" y="937" class="label" text-anchor="middle">Team work · SSH</text>
 

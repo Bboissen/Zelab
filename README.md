@@ -12,7 +12,7 @@ notes. Zelab brings three upstream tools to a Linux home server:
 
 ## Where everything runs
 
-![Zelab: Hermes writes notes directly; optional Paperclip MCP coordinates tracked work and the coding team. One vault has Hermes and Paperclip sections, protected history and private Git sync to desktop Obsidian.](docs/assets/architecture.svg)
+![Zelab: Hermes bots run in a VM; Paperclip dispatches coding agents on the host to edit repositories and run commands. Bots and team also write shared notes, synced to desktop Obsidian through private Git.](docs/assets/architecture.svg)
 
 Hermes bots use their **bundled Obsidian skill** to write notes directly,
 without a ticket or project. Personal work goes in `Hermes/<bot>/`; project
