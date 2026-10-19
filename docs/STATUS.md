@@ -159,13 +159,13 @@ desktop visibility: **NOT RUN** for this change.
 The shorter README and rearranged diagram describe roles and goals, with the
 full connection-security table retained in Architecture. The diagram explicitly
 separates each keyed bot's Paperclip MCP tools from Paperclip's reverse Hermes
-run API. Notes documentation now explains desktop versus browser Obsidian and
+run API. Notes documentation explains desktop notes and
 provides a unique-marker check through a real ticket, the server file and
 optional laptop Git sync.
 
-Read-only checks at 20:59 UTC: browser Obsidian was disabled in local inputs
-and its container was absent; the notes share service and history timer were
-active. The guest notes path was mounted as `fuse.sshfs`, and the bot account
+Read-only checks at 20:59 UTC: the retired browser notes container was absent;
+the notes share service and history timer were active. The guest notes path
+was mounted as `fuse.sshfs`, and the bot account
 passed read/write permission checks. These prove current mount availability,
 not that a bot successfully wrote a requested note.
 
@@ -549,7 +549,7 @@ Record PASS, FAIL or NOT RUN with timestamp, steps and sanitized evidence.
 | O1 | A second `make` changes nothing; a killed `make` resumes | NOT RUN |
 | O2 | `make backup`, `make fclean`, `make restore` bring back Paperclip, the vault and its history, every bot and its logins; a host task then runs | NOT RUN |
 | O3 | Source checks and gitleaks are clean; the docs describe v1.1 | NOT RUN |
-| N1 | With the browser Obsidian off: an agent reads and writes notes; `make` and a reboot keep the container and its route gone; root-only snapshots still run | NOT RUN |
+| N1 | An agent reads and writes notes; `make` and a reboot preserve the notes share and root-only snapshots | NOT RUN |
 | N3 | Direct personal and project notes use the native Obsidian skill and file tools, read back on the host, without Paperclip; keyless personal notes work | PARTIAL: three live profiles passed personal writes; a keyless profile also passed a project write and Git-received note read-back; all used the native Obsidian skill with no Paperclip calls. Real chat transport NOT RUN |
 | N2 | `make notes`: a server edit reaches desktop Obsidian, a laptop edit reaches the server and an agent, a conflict keeps both versions, `.obsidian/` never travels, a public repository is refused | PARTIAL: real two-way sync, agent read-back of an incoming note, conflict preservation/resolution, exclusions, independent clone, unchanged second sync and live public-remote refusal passed; desktop UI NOT RUN |
 

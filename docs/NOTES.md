@@ -73,15 +73,10 @@ For the separate tracked path, explicitly ask for a Paperclip task and follow it
 through completion. Direct note-writing does not prove ticket dispatch or laptop sync.
 Root-only snapshots run every five minutes, so a fresh note may not yet appear in history.
 
-## Which Obsidian app runs where?
+## Desktop app
 
 Desktop Obsidian is an optional application on your laptop. Zelab does not
 install or uninstall that app. Bots can write notes with no Obsidian app open.
-
-Browser Obsidian is the optional server container. `obsidian_enabled: false`
-stops and removes that container and its own Tailscale route on the next
-`make`; the vault, notes share, history and saved browser settings remain.
-Removing the browser container does not remove the notes or the laptop app.
 
 ## What never travels
 
@@ -130,10 +125,6 @@ first, then choose **Use an existing private repository**.
 7. Leave **Restricted mode** on (Settings, Community plugins), or at least enable no
    plugin that runs code from notes: Dataview JavaScript queries, Templater and similar.
    Agents write these notes.
-
-The browser Obsidian container is off by default (`obsidian_enabled: false`). Turning it
-off on an existing site stops and removes the container and its own Tailscale route on
-the next `make`. The vault, the share, the history and the browser's saved settings stay.
 
 ## Sync routine
 

@@ -19,13 +19,13 @@ x86-64 Debian/Ubuntu with KVM, Docker Compose, SSH, Python 3.12+ and Make.
 
 ### Administrator
 
-Enter your sudo password, then the UI passwords (Hermes, Paperclip, and Obsidian if you turn the browser Obsidian on) when make asks.
+Enter your sudo password, then the Hermes and Paperclip UI passwords when make asks.
 
 - Paste unique passwords of 16+ characters from your password manager. Input is
   hidden and nothing is printed or logged.
 - Reapply reuses them; Paperclip asks for its current owner password.
 - After a successful run, make offers to delete spare copies once you confirm
-  they are saved. A browser Obsidian keeps its runtime password file.
+  they are saved.
 
 ### Tailscale
 

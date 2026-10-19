@@ -26,7 +26,7 @@ guide. Source checks are developer tooling: `python3 tools/check.py`.
 A successful `make` ends by deleting what the current pins no longer use:
 consumed downloads and the Hermes build tree in `/var/cache/zelab`, superseded
 runtimes in `/opt/zelab-tools`, earlier Paperclip releases, npm caches, unused
-earlier Obsidian images, guest package files and superseded Hermes installers,
+legacy container images, guest package files and superseded Hermes installers,
 and all but the five newest private install logs. The guest then returns freed
 blocks to the host so `disk.qcow2` shrinks. Shared tools stay while another Zelab
 guest on the host may use them. A failed run removes nothing, so it can resume.
@@ -42,7 +42,7 @@ and input files outside this checkout are never reset. Ambiguous YAML
 merges/anchors/flow mappings are refused before cleanup; use plain top-level keys.
 
 `fclean`/`re` additionally delete Zelab's VM, bots and their logins, tasks,
-notes and their history, Obsidian state, project accounts (with their sudo
+notes and their history, legacy application data, project accounts (with their sudo
 grants and path ACLs), owned units/routes and project-installed software/cache.
 Host/path inputs, `config/projects.yaml`, backups, recovery key, private logs,
 host SSH/Tailscale and unrelated services are preserved.
@@ -251,9 +251,7 @@ explicitly choose an absent/empty override file for a separate guest test.
 | Personal bot notes | `/var/lib/zelab-vault/Hermes/<bot>` |
 | Vault history (root only) | `/var/lib/zelab-vault-history` |
 | Notes sync: Git directory, deploy key, GitHub host keys | `private_dir/notes-sync` (operator only) |
-| Browser Obsidian settings (kept when it is off) | `/var/lib/zelab-obsidian` |
 | Deployment keys, Hermes password hash and resource IDs | Configured `private_dir` |
-| Browser Obsidian startup password | `/etc/zelab-obsidian/password` (root-only) |
 
 Hermes native memory stays in Hermes. Paperclip task state stays in Paperclip.
 The vault holds durable notes, one folder per project; every bot sees all of it.
@@ -279,7 +277,6 @@ Fresh `make` asks for the UI passwords with hidden terminal input and
 confirmation. Keep them in your password manager. Hermes retains a native
 scrypt hash; Paperclip owner login is staged only for the provisioning run in
 a private RAM directory, so future applies request its current password.
-A browser Obsidian, if turned on, retains the protected startup file its container requires.
 Existing deployment password copies are reused without rotation, and may be
 removed after a successful apply only when you confirm password-manager custody
 in the terminal. No input comes from chat, command arguments or shell-sourced `.env`.
@@ -303,7 +300,8 @@ an operator-only ACL). Retain backups for 90 days; there is no scheduled backup
 or automatic pruning.
 
 The archive includes VM/backing chain (every bot's profile and logins),
-coordinator state/keys, project homes, vault and its history, Obsidian state, deployment credentials, native host configuration and
+coordinator state/keys, project homes, vault and its history, retained legacy data,
+deployment credentials, native host configuration and
 source/runtime pins. A database dump or `.env` alone cannot restore the site.
 
 Interactive `restore` lists backups and asks which to use. Noninteractive use
@@ -318,7 +316,7 @@ Restore previews exact application paths and requires the displayed site identit
 (`CONFIRM=<site>` noninteractively). Run `make` with the same `config/projects.yaml`
 before restoring, so the project accounts exist. Current inputs,
 SSH/Tailscale, other services, encrypted backups, recovery key and private logs
-stay. Application/VM state, notes/Obsidian configuration and the Paperclip
+stay. Application/VM state, notes configuration and the Paperclip
 environment are restored; host-wide SSH files and current systemd/network
 configuration stay in place.
 
@@ -371,8 +369,7 @@ before retrying work, since it may already have changed data.
 Versions and hashes live in [versions.yaml](../versions.yaml). Qualify updates
 against native adapters, subscription inference and database recovery before
 adopting new pins. The Hermes role refuses an unexpected source revision;
-native UI updates require explicit adoption. Obsidian auto-update is disabled
-in initial native preferences; verify the actual installed application version.
+native UI updates require explicit adoption.
 The Paperclip lock includes two qualified dependency overrides; the application
 release stays pinned. Hermes dependency manifests are qualified as described in
 [the dependency README](../deploy/roles/hermes/files/dependencies/README.md).

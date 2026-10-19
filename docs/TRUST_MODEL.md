@@ -1,5 +1,7 @@
 # Trust model
 
+![Discord-to-host security layers and their limits](assets/security.svg)
+
 The KVM guest separates bot processes from the host OS. A hijacked bot can
 reach everything inside the guest and the whole shared vault. It cannot
 directly execute host commands with its guest account, but tickets can reach
@@ -145,9 +147,9 @@ code from notes (Dataview JavaScript, Templater) would run agent-written code;
   Paperclip's own sign-in command run as its service account.
 - Project SSH keys are generated per project in `private_dir/projects`; Paperclip
   stores the private key as an encrypted company secret for its SSH environment.
-- Machine credentials (Paperclip JWT secret and master key, deployment keys,
-  the Obsidian runtime password) are retained across reapplies; a missing
-  source stops the run instead of rotating a credential the site still uses.
+- Machine credentials (Paperclip JWT secret and master key, deployment keys)
+  are retained across reapplies; a missing source stops the run instead of
+  rotating a credential the site still uses.
 - `.env` accepts three path names and nothing else; values are data, never
   shell code. Tool output goes to a 0600 log under `private_dir/logs`; tasks that
   touch secrets are `no_log`.

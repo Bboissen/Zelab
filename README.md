@@ -24,10 +24,9 @@ bot creates and reads tickets through **Paperclip's official MCP server**;
 Paperclip starts bot runs through Hermes' gateway API. Simple notes and
 research stay in the current chat, avoiding an extra dispatched run.
 
-Bots write Markdown files into the server vault. Obsidian reads those files;
-no Obsidian app needs to run on the server. The browser Obsidian container is
-**off by default**. Desktop Obsidian is an optional laptop app, synced through
-a private Git repository with `make notes` and `git pull`.
+Bots write Markdown files into the server vault. Desktop Obsidian reads a
+laptop clone, synced through a private Git repository with `make notes`
+and `git pull`.
 
 ## Try it
 
@@ -90,6 +89,7 @@ destructive runs need `CONFIRM=<host:vm>`; restore also needs
   no per-command approval or CLI sandbox; root can change history and read
   host credentials.
 
+See the [Discord-to-host security diagram](docs/assets/security.svg).
 The guest firewall limits normal bot traffic, but guest root can change it.
 Choose narrow team permissions and separate sites for audiences that need
 isolation. The [architecture](docs/ARCHITECTURE.md#connections) explains each
