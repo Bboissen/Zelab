@@ -894,6 +894,41 @@ class ReconcileTest(unittest.TestCase):
 
 
 class HostProjectsTest(unittest.TestCase):
+    def test_removed_or_renamed_tiers_stop_before_any_account_mutation(self):
+        module = host_projects()
+        for existing, desired in [
+            ({'zelab-team-dev': 'zelab-team-dev'}, {}),
+            ({'zelab-team-dev': 'zelab-team-dev'}, {'frontend': {}}),
+            ({'zelab-p-old-project': 'old-project'}, {'dev': {}}),
+        ]:
+            with self.subTest(existing=existing, desired=desired), tempfile.TemporaryDirectory() as directory:
+                state = Path(directory, '.zelab-grants.json')
+                state.write_text('{"retained": true}\n')
+                home = Path(directory, 'old-home')
+                home.mkdir()
+                note = home / 'retained-note'
+                note.write_text('Retain this work\n')
+                with patch.object(module, 'zelab_accounts', return_value=existing), \
+                        patch.object(module, 'ensure_dir') as ensure, \
+                        patch.object(module, 'run') as run:
+                    with self.assertRaisesRegex(SystemExit, 'Existing access remains active'):
+                        module.apply({'tiers': desired, 'projects_dir': directory})
+                ensure.assert_not_called()
+                run.assert_not_called()
+                self.assertEqual(state.read_text(), '{"retained": true}\n')
+                self.assertEqual(note.read_text(), 'Retain this work\n')
+
+    def test_account_preflight_allows_fresh_unchanged_and_additive_configuration(self):
+        module = host_projects()
+        for existing, desired in [
+            ({}, {}), ({}, {'dev': {}}),
+            ({'zelab-team-dev': 'zelab-team-dev'}, {'dev': {}}),
+            ({'zelab-team-dev': 'zelab-team-dev'}, {'dev': {}, 'ops': {}}),
+        ]:
+            with self.subTest(existing=existing, desired=desired), \
+                    patch.object(module, 'zelab_accounts', return_value=existing):
+                module.preflight_accounts(desired)
+
     def test_sudo_fragment_follows_the_preset(self):
         module = host_projects()
         self.assertIsNone(module.sudoers_fragment('web', []))

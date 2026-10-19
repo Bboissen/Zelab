@@ -134,9 +134,13 @@ an account `zelab-team-<tier>` (home and workspace below `projects_dir`) with
 its preset's sudoers fragment, groups and recursive ACLs on its `paths`,
 read/write on the vault, an SSH key restricted to the host's own address, and
 the Paperclip SSH environment `<tier> host`. A site sets a tier's `paths` (or
-`preset`) under `tiers:` in `config/projects.yaml`. A removed tier loses its
-account, grants and environment on the next `make`, and so do the per-project
-accounts `zelab-p-<slug>` of earlier versions.
+`preset`) under `tiers:` in `config/projects.yaml`. If an installed tier is
+removed or renamed, account reconciliation stops before changing accounts,
+grants or homes. Legacy per-project accounts `zelab-p-<slug>` also require an
+explicit migration. Restore the declarations to reapply the existing setup,
+or plan migration and retirement after preserving active work and home data.
+The refusal leaves existing access active; it does not revoke privileges or
+complete the requested migration. Other stages of `make` can already have run.
 
 `make` hires each member once on its harness, Claude Code (`claude_local`) or
 Codex (`codex_local`), with Paperclip's CLI engine and that harness's `model`
